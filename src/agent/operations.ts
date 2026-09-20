@@ -1,10 +1,11 @@
 import { spawn } from "node:child_process";
 import type { ExecOptions, ExecResult } from "../ssh/pool.js";
 import { denySecretPath } from "../security/paths.js";
+import { callExecBroker } from "./exec-broker-client.js";
 
 export interface AgentOperation {
   op: string;
-  args?: Record<string, string | number | boolean>;
+  args?: Record<string, unknown>;
 }
 
 function safePath(value: unknown): string {
@@ -96,6 +97,18 @@ function childEnvForOperation(x: AgentOperation): NodeJS.ProcessEnv {
 }
 
 export async function executeAgentOperation(x: AgentOperation, opts?: ExecOptions): Promise<ExecResult> {
+  if (x.op.startsWith("workspace.") || x.op.startsWith("process.")) {
+    const started = Date.now();
+    try {
+      const response = await callExecBroker({ op: x.op, args: x.args ?? {} }, opts?.timeoutMs ?? 15_000);
+      if (!response.ok) {
+        return { code: 1, stdout: "", stderr: response.error?.code + ": " + response.error?.message, durationMs: Date.now()-started, truncated: false, timedOut: false };
+      }
+      return { code: 0, stdout: JSON.stringify(response.result ?? {}), stderr: "", durationMs: Date.now()-started, truncated: false, timedOut: false };
+    } catch (e) {
+      return { code: 1, stdout: "", stderr: e instanceof Error ? e.message : String(e), durationMs: Date.now()-started, truncated: false, timedOut: false };
+    }
+  }
   const argv=operationArgv(x), timeoutMs=opts?.timeoutMs??15000, maxBytes=opts?.maxBytes??262144, started=Date.now(), childEnv=childEnvForOperation(x);
   return await new Promise<ExecResult>((resolve,reject)=>{
     const child=spawn(argv[0],argv.slice(1),{stdio:["ignore","pipe","pipe"],shell:false,env:childEnv});

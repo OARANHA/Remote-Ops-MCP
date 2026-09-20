@@ -5,7 +5,8 @@ import { assertIdentifier } from "../lib/quote.js";
 import { getTarget, listTargets, publicTarget, targetIds } from "../config/targets.js";
 import type { TargetConfig } from "../config/targets.js";
 import { getTransport } from "../transport.js";
-import { resolveCheckedGitRepo, resolveCheckedPath } from "../security/paths.js";
+import { assertConfiguredPath, resolveCheckedGitRepo, resolveCheckedPath, resolveCheckedProcessCwd } from "../security/paths.js";
+import { dispatchAgentOperation } from "../agent/gateway.js";
 import { redactText, redactObject } from "../security/redact.js";
 import type { ExecResult } from "../ssh/pool.js";
 import { effectiveTargetEnabled } from "../state/store.js";
@@ -29,6 +30,9 @@ export interface ToolDef {
   description: string;
   inputSchema: ZodRawShape;
   run: (args: Record<string, unknown>, ctx: ToolCtx) => Promise<unknown>;
+  mutation?: boolean;
+  destructive?: boolean;
+  idempotent?: boolean;
 }
 
 // ---------- helpers ----------
@@ -99,6 +103,25 @@ function humanBytes(n: number): string {
 
 async function tr(t: TargetConfig) {
   return getTransport(t);
+}
+
+async function agentJson(t: TargetConfig, op: string, args: Record<string, unknown> = {}, timeoutMs = 15_000): Promise<Record<string, unknown>> {
+  if (t.transport !== "agent" || !t.deviceId) throw new OpsError("INVALID_ARGUMENT", "esta capacidade exige target transport=agent");
+  const res = await dispatchAgentOperation(t.deviceId, { op, args }, { timeoutMs, maxBytes: 1024 * 1024 });
+  if (res.code !== 0) throw new OpsError("REMOTE_COMMAND_FAILED", `Agent execution broker recusou ${op}`, redactText(res.stderr).slice(0, 500));
+  try { return redactObject(JSON.parse(res.stdout || "{}")) as Record<string, unknown>; }
+  catch { throw new OpsError("REMOTE_COMMAND_FAILED", `resposta inválida do execution broker para ${op}`); }
+}
+
+function requireOperator(t: TargetConfig): void {
+  if (t.capabilityProfile !== "operator") throw new OpsError("INVALID_ARGUMENT", `target "${t.id}" não está no capability profile operator`);
+}
+
+function requireProgram(t: TargetConfig, value: unknown): string {
+  const program = String(value ?? "");
+  if (!/^[A-Za-z0-9_.+-]{1,80}$/.test(program)) throw new OpsError("INVALID_ARGUMENT", "program inválido");
+  if (!t.allowedProcessPrograms.includes(program)) throw new OpsError("INVALID_ARGUMENT", `program "${program}" não está na allowlist`, `allowlist: ${t.allowedProcessPrograms.join(", ") || "(vazia)"}`);
+  return program;
 }
 
 // ---------- tools ----------
@@ -525,6 +548,300 @@ const TOOL_DEFS: ToolDef[] = [
     },
   },
 
+  // ============ execution MVP ============
+  {
+    name: "create_directory",
+    description: "Cria um diretório dentro da workspace operacional allowlisted do target. Não usa sudo.",
+    inputSchema: {
+      target: targetField,
+      path: z.string().min(1).max(1024),
+    },
+    mutation: true,
+    destructive: false,
+    idempotent: true,
+    run: async (args) => {
+      const t = resolveTarget(args.target);
+      requireOperator(t);
+      const targetPath = assertConfiguredPath(String(args.path ?? ""), t.allowedWritePaths, "escrita");
+      return { target: t.id, ...(await agentJson(t, "workspace.mkdir", { path: targetPath })) };
+    },
+  },
+  {
+    name: "write_file",
+    description: "Escreve ou acrescenta texto em arquivo dentro da workspace operacional allowlisted. Escrita atômica no modo rewrite; paths de segredo continuam bloqueados.",
+    inputSchema: {
+      target: targetField,
+      path: z.string().min(1).max(1024),
+      content: z.string().max(524288),
+      mode: z.enum(["rewrite","append"]).optional(),
+    },
+    mutation: true,
+    destructive: true,
+    idempotent: false,
+    run: async (args) => {
+      const t = resolveTarget(args.target);
+      requireOperator(t);
+      const targetPath = assertConfiguredPath(String(args.path ?? ""), t.allowedWritePaths, "escrita");
+      const content = String(args.content ?? "");
+      const mode = args.mode === "append" ? "append" : "rewrite";
+      return { target: t.id, ...(await agentJson(t, "workspace.write", { path: targetPath, content_b64: Buffer.from(content,"utf8").toString("base64"), mode }, 20_000)) };
+    },
+  },
+  {
+    name: "edit_file",
+    description: "Faz substituição exata em arquivo da workspace operacional, exigindo a quantidade esperada de ocorrências.",
+    inputSchema: {
+      target: targetField,
+      path: z.string().min(1).max(1024),
+      old_string: z.string().min(1).max(262144),
+      new_string: z.string().max(262144),
+      expected_replacements: z.coerce.number().int().min(1).max(100).optional(),
+    },
+    mutation: true,
+    destructive: true,
+    idempotent: false,
+    run: async (args) => {
+      const t = resolveTarget(args.target);
+      requireOperator(t);
+      const targetPath = assertConfiguredPath(String(args.path ?? ""), t.allowedWritePaths, "escrita");
+      const oldText = String(args.old_string ?? ""), newText = String(args.new_string ?? "");
+      return { target: t.id, ...(await agentJson(t, "workspace.edit", {
+        path: targetPath,
+        old_b64: Buffer.from(oldText,"utf8").toString("base64"),
+        new_b64: Buffer.from(newText,"utf8").toString("base64"),
+        expected_replacements: Number(args.expected_replacements ?? 1),
+      }, 20_000)) };
+    },
+  },
+  {
+    name: "move_file",
+    description: "Move/renomeia arquivo ou diretório entre paths permitidos da workspace operacional.",
+    inputSchema: {
+      target: targetField,
+      source: z.string().min(1).max(1024),
+      destination: z.string().min(1).max(1024),
+    },
+    mutation: true,
+    destructive: true,
+    idempotent: false,
+    run: async (args) => {
+      const t = resolveTarget(args.target);
+      requireOperator(t);
+      const source = assertConfiguredPath(String(args.source ?? ""), t.allowedWritePaths, "escrita");
+      const destination = assertConfiguredPath(String(args.destination ?? ""), t.allowedWritePaths, "escrita");
+      return { target: t.id, ...(await agentJson(t, "workspace.move", { source, destination })) };
+    },
+  },
+  {
+    name: "start_process",
+    description: "Inicia processo persistente no execution broker isolado. Não usa shell implícito; program e cwd precisam estar nas allowlists do target.",
+    inputSchema: {
+      target: targetField,
+      cwd: z.string().min(1).max(1024),
+      program: z.string().min(1).max(80),
+      args: z.array(z.string().max(16384)).max(80).optional(),
+    },
+    mutation: true,
+    destructive: true,
+    idempotent: false,
+    run: async (args) => {
+      const t = resolveTarget(args.target);
+      requireOperator(t);
+      const cwd = await resolveCheckedProcessCwd(String(args.cwd ?? ""), t, getTransport(t).exec);
+      const program = requireProgram(t, args.program);
+      const argv = Array.isArray(args.args) ? args.args.map(String) : [];
+      return { target: t.id, ...(await agentJson(t, "process.start", { cwd, program, argv })) };
+    },
+  },
+  {
+    name: "read_process_output",
+    description: "Lê incrementalmente a saída de uma sessão iniciada por start_process.",
+    inputSchema: {
+      target: targetField,
+      session_id: z.string().regex(/^ps_[a-f0-9]{24}$/),
+      offset: z.coerce.number().int().min(0).optional(),
+      max_chars: z.coerce.number().int().min(1).max(262144).optional(),
+    },
+    run: async (args) => {
+      const t = resolveTarget(args.target);
+      return { target: t.id, ...(await agentJson(t, "process.read", { session_id:String(args.session_id), offset:Number(args.offset??0), max_chars:Number(args.max_chars??65536) })) };
+    },
+  },
+  {
+    name: "send_process_input",
+    description: "Envia texto para stdin de uma sessão ativa do execution broker.",
+    inputSchema: {
+      target: targetField,
+      session_id: z.string().regex(/^ps_[a-f0-9]{24}$/),
+      input: z.string().max(65536),
+    },
+    mutation: true,
+    destructive: false,
+    idempotent: false,
+    run: async (args) => {
+      const t = resolveTarget(args.target);
+      requireOperator(t);
+      return { target:t.id, ...(await agentJson(t,"process.input",{session_id:String(args.session_id),input_b64:Buffer.from(String(args.input??""),"utf8").toString("base64")})) };
+    },
+  },
+  {
+    name: "kill_process",
+    description: "Encerra uma sessão de processo criada pelo execution broker.",
+    inputSchema: {
+      target: targetField,
+      session_id: z.string().regex(/^ps_[a-f0-9]{24}$/),
+      signal: z.enum(["SIGTERM","SIGINT","SIGKILL"]).optional(),
+    },
+    mutation: true,
+    destructive: true,
+    idempotent: false,
+    run: async (args) => {
+      const t=resolveTarget(args.target);
+      return { target:t.id, ...(await agentJson(t,"process.kill",{session_id:String(args.session_id),signal:String(args.signal??"SIGTERM")})) };
+    },
+  },
+  {
+    name: "list_processes",
+    description: "Lista somente as sessões criadas no execution broker deste target.",
+    inputSchema: { target: targetField },
+    run: async (args) => {
+      const t=resolveTarget(args.target);
+      return { target:t.id, ...(await agentJson(t,"process.list")) };
+    },
+  },
+
+  // ============ execution MVP ============
+  {
+    name: "create_directory",
+    description: "Cria diretório dentro da workspace de escrita allowlisted do target Agent Mesh.",
+    inputSchema: { target: targetField, path: z.string().min(1).max(1024) },
+    mutation: true,
+    idempotent: true,
+    run: async (args) => {
+      const t=resolveTarget(args.target), p=assertConfiguredPath(String(args.path??""),t.allowedWritePaths,"escrita");
+      return { target:t.id, ...(await agentJson(t,"workspace.mkdir",{path:p})) };
+    },
+  },
+  {
+    name: "write_file",
+    description: "Escreve ou acrescenta arquivo dentro da workspace de escrita allowlisted. Máximo 512 KiB por chamada; caminhos de segredo permanecem bloqueados.",
+    inputSchema: {
+      target: targetField,
+      path: z.string().min(1).max(1024),
+      content: z.string().max(524288),
+      mode: z.enum(["rewrite","append"]).default("rewrite"),
+    },
+    mutation: true,
+    idempotent: false,
+    run: async (args) => {
+      const t=resolveTarget(args.target), p=assertConfiguredPath(String(args.path??""),t.allowedWritePaths,"escrita");
+      const content=String(args.content??""), mode=args.mode==="append"?"append":"rewrite";
+      return { target:t.id, ...(await agentJson(t,"workspace.write",{path:p,content_b64:Buffer.from(content,"utf8").toString("base64"),mode},30_000)) };
+    },
+  },
+  {
+    name: "edit_file",
+    description: "Substitui texto de forma cirúrgica em arquivo allowlisted, exigindo número exato de ocorrências.",
+    inputSchema: {
+      target: targetField,
+      path: z.string().min(1).max(1024),
+      old_string: z.string().min(1).max(262144),
+      new_string: z.string().max(262144),
+      expected_replacements: z.coerce.number().int().min(1).max(100).default(1),
+    },
+    mutation: true,
+    idempotent: false,
+    run: async (args) => {
+      const t=resolveTarget(args.target), p=assertConfiguredPath(String(args.path??""),t.allowedWritePaths,"escrita");
+      return { target:t.id, ...(await agentJson(t,"workspace.edit",{
+        path:p,
+        old_b64:Buffer.from(String(args.old_string??""),"utf8").toString("base64"),
+        new_b64:Buffer.from(String(args.new_string??""),"utf8").toString("base64"),
+        expected_replacements:Number(args.expected_replacements??1),
+      },30_000)) };
+    },
+  },
+  {
+    name: "move_file",
+    description: "Move ou renomeia arquivo/diretório dentro das raízes de escrita allowlisted.",
+    inputSchema: { target:targetField, source:z.string().min(1).max(1024), destination:z.string().min(1).max(1024) },
+    mutation: true,
+    destructive: true,
+    idempotent: false,
+    run: async (args) => {
+      const t=resolveTarget(args.target);
+      const source=assertConfiguredPath(String(args.source??""),t.allowedWritePaths,"escrita");
+      const destination=assertConfiguredPath(String(args.destination??""),t.allowedWritePaths,"escrita");
+      return { target:t.id, ...(await agentJson(t,"workspace.move",{source,destination})) };
+    },
+  },
+  {
+    name: "start_process",
+    description: "Inicia processo não-root persistente na workspace allowlisted. O executável precisa estar na allowlist do target; não usa shell implícito.",
+    inputSchema: {
+      target: targetField,
+      program: z.string().min(1).max(80),
+      argv: z.array(z.string().max(16384)).max(80).default([]),
+      cwd: z.string().min(1).max(1024),
+    },
+    mutation: true,
+    idempotent: false,
+    run: async (args) => {
+      const t=resolveTarget(args.target), program=requireProgram(t,args.program);
+      const cwd=await resolveCheckedProcessCwd(String(args.cwd??""),t,getTransport(t).exec);
+      const argv=Array.isArray(args.argv)?args.argv.map(String):[];
+      return { target:t.id, ...(await agentJson(t,"process.start",{program,argv,cwd},30_000)) };
+    },
+  },
+  {
+    name: "read_process_output",
+    description: "Lê saída acumulada de uma sessão iniciada por start_process.",
+    inputSchema: {
+      target: targetField,
+      session_id: z.string().regex(/^ps_[a-f0-9]{24}$/),
+      offset: z.coerce.number().int().min(0).default(0),
+      max_chars: z.coerce.number().int().min(1).max(262144).default(65536),
+    },
+    run: async (args) => {
+      const t=resolveTarget(args.target);
+      const r=await agentJson(t,"process.read",{session_id:String(args.session_id),offset:Number(args.offset??0),max_chars:Number(args.max_chars??65536)});
+      if(typeof r.output==="string") r.output=redactText(r.output);
+      return { target:t.id, ...r };
+    },
+  },
+  {
+    name: "send_process_input",
+    description: "Envia entrada UTF-8 para uma sessão de processo ativa.",
+    inputSchema: { target:targetField, session_id:z.string().regex(/^ps_[a-f0-9]{24}$/), input:z.string().max(65536) },
+    mutation: true,
+    idempotent: false,
+    run: async (args) => {
+      const t=resolveTarget(args.target);
+      return { target:t.id, ...(await agentJson(t,"process.input",{session_id:String(args.session_id),input_b64:Buffer.from(String(args.input??""),"utf8").toString("base64")})) };
+    },
+  },
+  {
+    name: "kill_process",
+    description: "Encerra uma sessão de processo do execution broker com SIGTERM, SIGINT ou SIGKILL.",
+    inputSchema: { target:targetField, session_id:z.string().regex(/^ps_[a-f0-9]{24}$/), signal:z.enum(["SIGTERM","SIGINT","SIGKILL"]).default("SIGTERM") },
+    mutation: true,
+    destructive: true,
+    idempotent: false,
+    run: async (args) => {
+      const t=resolveTarget(args.target);
+      return { target:t.id, ...(await agentJson(t,"process.kill",{session_id:String(args.session_id),signal:String(args.signal??"SIGTERM")})) };
+    },
+  },
+  {
+    name: "list_processes",
+    description: "Lista somente as sessões criadas pelo execution broker deste agent.",
+    inputSchema: { target:targetField },
+    run: async (args) => {
+      const t=resolveTarget(args.target);
+      return { target:t.id, ...(await agentJson(t,"process.list")) };
+    },
+  },
+
   // ============ resumo ============
   {
     name: "runtime_summary",
@@ -532,6 +849,7 @@ const TOOL_DEFS: ToolDef[] = [
     inputSchema: { target: targetField },
     run: async (args) => {
       const t = resolveTarget(args.target);
+      requireOperator(t);
       const T = await tr(t);
       const [disk, mem, up, dockerPs] = await Promise.all([
         T.exec(["df", "-hP"]).catch(() => null),
