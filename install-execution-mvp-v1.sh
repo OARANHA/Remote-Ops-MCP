@@ -61,6 +61,9 @@ ProtectControlGroups=true
 RestrictSUIDSGID=true
 LockPersonality=true
 RestrictRealtime=true
+TasksMax=128
+MemoryMax=1G
+CPUQuota=200%
 CapabilityBoundingSet=
 AmbientCapabilities=
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
@@ -81,7 +84,8 @@ for t in x["targets"]:
     if t.get("id")=="wandora-agent":
         found=True
         t["capabilityProfile"]="operator"
-        t["allowedPaths"]=list(dict.fromkeys(t.get("allowedPaths",[])+["/opt/wandora/ops-workspace"]))\n        t["allowedWritePaths"]=["/opt/wandora/ops-workspace"]
+        t["allowedPaths"]=list(dict.fromkeys(t.get("allowedPaths",[])+["/opt/wandora/ops-workspace"]))
+        t["allowedWritePaths"]=["/opt/wandora/ops-workspace"]
         t["allowedProcessCwds"]=["/opt/wandora/ops-workspace"]
         t["allowedProcessPrograms"]=["bash","sh","git","node","npm","npx","pnpm","python3","curl","wget","jq","grep","sed","awk","find","head","tail","cat","wc","make"]
 if not found: raise SystemExit("wandora-agent target ausente")
