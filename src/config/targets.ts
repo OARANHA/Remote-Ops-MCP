@@ -14,7 +14,7 @@ const TargetSchema = z.object({
   hostKeyFingerprint: z.string().regex(/^SHA256:[A-Za-z0-9+/=-]+$/).optional(),
   hostKey: z.string().optional(),
   environment: z.enum(["production", "staging", "development"]).default("production"),
-  capabilityProfile: z.enum(["read-only", "prod-read-mostly"]).default("prod-read-mostly"),
+  capabilityProfile: z.enum(["read-only", "prod-read-mostly", "operator"]).default("prod-read-mostly"),
   allowedPaths: z.array(z.string()).default([]),
   allowedDockerContainers: z.array(z.string()).default([]),
   allowedServices: z.array(z.string()).default([]),
