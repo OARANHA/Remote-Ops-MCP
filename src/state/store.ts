@@ -17,6 +17,7 @@ export interface StoredAuthCode {
   client_id: string;
   redirect_uri: string;
   challenge: string;
+  resource?: string;
   expires_at: number;
 }
 
@@ -28,6 +29,7 @@ export interface StoredSession {
   access_expires_at: number;
   refresh_hash: string;
   refresh_expires_at: number;
+  resource?: string;
   revoked_at?: number;
 }
 
