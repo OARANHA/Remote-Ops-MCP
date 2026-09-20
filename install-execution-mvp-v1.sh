@@ -14,6 +14,8 @@ test -f "$BUNDLE/dist/agent/operations.js"
 test -f "$BUNDLE/dist/agent/exec-broker-client.js"
 test -f "$BUNDLE/dist/exec/broker.js"
 test -f "$TARGETS"
+TS="$(date -u +%Y%m%dT%H%M%SZ)"
+cp "$TARGETS" "$TARGETS.bak-execution-mvp-$TS"
 
 id ops-mcp >/dev/null 2>&1 || { echo "ERROR: ops-mcp ausente"; exit 1; }
 if id -nG ops-mcp | grep -Eq '(^| )(sudo|docker)( |$)'; then echo "ERROR: ops-mcp possui grupo privilegiado"; exit 1; fi
