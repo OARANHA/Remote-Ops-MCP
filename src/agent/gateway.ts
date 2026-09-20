@@ -41,7 +41,7 @@ function rejectPendingForDevice(deviceId: string, reason: string): void {
 }
 
 export function attachAgentGateway(server: HttpServer): void {
-  const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
+  const wss = new WebSocketServer({ noServer: true, maxPayload: 5 * 1024 * 1024 });
 
   server.on("upgrade", (req, socket, head) => {
     let pathname = "";
