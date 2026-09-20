@@ -21,7 +21,8 @@ function machineFingerprint(): string {
   return "sha256:" + crypto.createHash("sha256").update(seed).digest("hex");
 }
 function ensureStateDir(): void {
-  fs.mkdirSync(path.dirname(stateFile), { recursive: true, mode: 0o700 });
+  const dir = path.dirname(stateFile); fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  try { fs.chmodSync(dir, 0o700); } catch {}
 }
 function saveState(s: DeviceState): void {
   ensureStateDir();
@@ -40,6 +41,7 @@ async function jsonFetch(url: string, init: RequestInit): Promise<{ status: numb
   return { status: r.status, body };
 }
 async function pair(): Promise<void> {
+  if (fs.existsSync(stateFile)) throw new Error("device is already paired; remove the local state only after revoking/re-pairing intentionally");
   const start = await jsonFetch(controlPlane + "/agent/pair/start", {
     method: "POST",
     body: JSON.stringify({ hostname: os.hostname(), os: os.platform() + " " + os.release(), agent_version: version, fingerprint: machineFingerprint() }),
