@@ -95,7 +95,8 @@ chown wandora-admin:wandora-ops "$TARGETS"
 chmod 0640 "$TARGETS"
 
 systemctl daemon-reload
-systemctl enable --now wandora-ops-exec-broker.service
+systemctl enable wandora-ops-exec-broker.service >/dev/null
+systemctl restart wandora-ops-exec-broker.service
 systemctl restart wandora-ops-agent.service
 docker restart remote-ops-mcp >/dev/null
 
