@@ -40,3 +40,9 @@ services:
       - ${REMOTE_OPS_HOME:-/opt/remote-ops-mcp}/secrets:/app/secrets:ro
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=32m
+    networks:
+      - wandora-edge
+
+networks:
+  wandora-edge:
+    external: true
