@@ -5,7 +5,8 @@ import { assertIdentifier } from "../lib/quote.js";
 import { getTarget, listTargets, publicTarget, targetIds } from "../config/targets.js";
 import type { TargetConfig } from "../config/targets.js";
 import { getTransport } from "../transport.js";
-import { resolveCheckedGitRepo, resolveCheckedPath } from "../security/paths.js";
+import { assertConfiguredPath, resolveCheckedGitRepo, resolveCheckedPath, resolveCheckedProcessCwd } from "../security/paths.js";
+import { dispatchAgentOperation } from "../agent/gateway.js";
 import { redactText, redactObject } from "../security/redact.js";
 import type { ExecResult } from "../ssh/pool.js";
 import { effectiveTargetEnabled } from "../state/store.js";
@@ -29,6 +30,9 @@ export interface ToolDef {
   description: string;
   inputSchema: ZodRawShape;
   run: (args: Record<string, unknown>, ctx: ToolCtx) => Promise<unknown>;
+  mutation?: boolean;
+  destructive?: boolean;
+  idempotent?: boolean;
 }
 
 // ---------- helpers ----------
@@ -99,6 +103,21 @@ function humanBytes(n: number): string {
 
 async function tr(t: TargetConfig) {
   return getTransport(t);
+}
+
+async function agentJson(t: TargetConfig, op: string, args: Record<string, string | number | boolean> = {}, timeoutMs = 15_000): Promise<Record<string, unknown>> {
+  if (t.transport !== "agent" || !t.deviceId) throw new OpsError("INVALID_ARGUMENT", "esta capacidade exige target transport=agent");
+  const res = await dispatchAgentOperation(t.deviceId, { op, args }, { timeoutMs, maxBytes: 1024 * 1024 });
+  if (res.code !== 0) throw new OpsError("REMOTE_COMMAND_FAILED", `Agent execution broker recusou ${op}`, redactText(res.stderr).slice(0, 500));
+  try { return JSON.parse(res.stdout || "{}") as Record<string, unknown>; }
+  catch { throw new OpsError("REMOTE_COMMAND_FAILED", `resposta inválida do execution broker para ${op}`); }
+}
+
+function requireProgram(t: TargetConfig, value: unknown): string {
+  const program = String(value ?? "");
+  if (!/^[A-Za-z0-9_.+-]{1,80}$/.test(program)) throw new OpsError("INVALID_ARGUMENT", "program inválido");
+  if (!t.allowedProcessPrograms.includes(program)) throw new OpsError("INVALID_ARGUMENT", `program "${program}" não está na allowlist`, `allowlist: ${t.allowedProcessPrograms.join(", ") || "(vazia)"}`);
+  return program;
 }
 
 // ---------- tools ----------
