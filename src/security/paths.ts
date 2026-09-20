@@ -28,3 +28,22 @@ export async function resolveCheckedGitRepo(inputPath:string,target:TargetConfig
  }
  throw new OpsError("REPO_NOT_ALLOWED",`repositório "${real}" não está na allowlist do target`,`allowlist: ${target.allowedGitRepos.join(", ") || "(vazia)"}`);
 }
+export function assertConfiguredPath(inputPath:string, roots:string[], label="execução"):string{
+ const cleaned=sanitizeSegments(inputPath);
+ if(!cleaned.startsWith("/")) throw new OpsError("PATH_DENIED","caminho deve ser absoluto");
+ const segs=cleaned.split("/").filter((x)=>x.length>0&&x!==".");
+ if(segs.length===0||segs.some((x)=>x==="..")) throw new OpsError("PATH_DENIED","caminho inválido ou com traversal");
+ const normalized="/"+segs.join("/");
+ if(denySecretPath(normalized)) throw new OpsError("SECRET_PATH_DENIED","caminho nega regra de segredo");
+ if(roots.length===0) throw new OpsError("PATH_DENIED",`nenhuma raiz de ${label} configurada`);
+ const inside=roots.some((root)=>{const r=root.replace(/\/+$/,"");return normalized===r||normalized.startsWith(r+"/");});
+ if(!inside) throw new OpsError("PATH_DENIED",`caminho fora da allowlist de ${label}`,`allowlist: ${roots.join(", ")||"(vazia)"}`);
+ return normalized;
+}
+export async function resolveCheckedProcessCwd(inputPath:string,target:TargetConfig,run:RemoteRun):Promise<string>{
+ const real=await canonicalRealPath(inputPath,run);
+ if(target.allowedProcessCwds.length===0) throw new OpsError("PATH_DENIED",`target "${target.id}" não possui allowedProcessCwds configurado`);
+ const inside=target.allowedProcessCwds.some((root)=>{const r=root.replace(/\/+$/,"");return real===r||real.startsWith(r+"/");});
+ if(!inside) throw new OpsError("PATH_DENIED",`cwd fora da allowlist do target "${target.id}"`);
+ return real;
+}
