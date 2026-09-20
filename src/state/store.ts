@@ -118,7 +118,32 @@ export function initStateStore(): void {
   purgeState(false);
 }
 
-export function registerClient(client: StoredClient): void { ensureLoaded().clients[client.client_id] = client; persist(); }
+function prunePendingClients(now = Date.now()): boolean {
+  const s = ensureLoaded();
+  const ttl = env.OAUTH_PENDING_CLIENT_TTL_HOURS * 3600_000;
+  const sessionClients = new Set(Object.values(s.sessions).map((session) => session.client_id));
+  let changed = false;
+  for (const [clientId, client] of Object.entries(s.clients)) {
+    const neverActivated = !client.last_seen_at && !sessionClients.has(clientId);
+    if (neverActivated && client.created_at + ttl < now) {
+      delete s.clients[clientId];
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+export function registerClient(client: StoredClient): boolean {
+  const s = ensureLoaded();
+  const pruned = prunePendingClients();
+  if (Object.keys(s.clients).length >= env.OAUTH_MAX_CLIENTS) {
+    if (pruned) persist();
+    return false;
+  }
+  s.clients[client.client_id] = client;
+  persist();
+  return true;
+}
 export function getClient(clientId: string): StoredClient | undefined { return ensureLoaded().clients[clientId]; }
 export function listClients(): StoredClient[] { return Object.values(ensureLoaded().clients).sort((a, b) => b.created_at - a.created_at); }
 
@@ -233,7 +258,7 @@ export function activeSessionCount(clientId?: string): number {
 }
 
 export function purgeState(doPersist = true): void {
-  const s = ensureLoaded(); const now = Date.now(); let changed = false;
+  const s = ensureLoaded(); const now = Date.now(); let changed = prunePendingClients(now);
   for (const [hash, code] of Object.entries(s.auth_codes)) if (code.expires_at < now) { delete s.auth_codes[hash]; changed = true; }
   const retention = 90 * 24 * 3600_000;
   for (const [sid, session] of Object.entries(s.sessions)) {
