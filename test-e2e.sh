@@ -45,5 +45,7 @@ jar="$TMP/admin.cookie"; curl -fsS -c "$jar" -X POST http://127.0.0.1:3112/admin
 page="$(curl -fsS -b "$jar" http://127.0.0.1:3112/admin/)"; csrf="$(python3 -c 'import re,sys; m=re.search(r"name=\"csrf\" value=\"([^\"]+)\"",sys.stdin.read()); print(m.group(1) if m else "")' <<<"$page")"; [ -n "$csrf" ] || { echo 'FAIL: admin CSRF not found'; exit 1; }; ok 'admin login + CSRF'
 curl -fsS -b "$jar" -X POST http://127.0.0.1:3112/admin/revoke-all --data-urlencode "csrf=$csrf" -o /dev/null
 code="$(curl -sS -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:3112/mcp -H "Authorization: Bearer $token" -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{"jsonrpc":"2.0","id":9,"method":"tools/list","params":{}}')"; [ "$code" = 401 ] || { echo "FAIL: revoked token returned $code"; exit 1; }; ok 'admin revoke invalidates access token immediately'
+code="$(curl -sS -o /dev/null -w '%{http_code}' -G http://127.0.0.1:3112/authorize --data-urlencode 'response_type=code' --data-urlencode "client_id=$cid" --data-urlencode 'redirect_uri=http://127.0.0.1/callback' --data-urlencode "code_challenge=$challenge" --data-urlencode 'code_challenge_method=S256' --data-urlencode 'scope=mcp:read offline_access')"; [ "$code" = 400 ] || { echo "FAIL: revoked client can still authorize ($code)"; exit 1; }; ok 'revoke-all invalidates OAuth client registration'
+page="$(curl -fsS -b "$jar" http://127.0.0.1:3112/admin/)"; contains "$page" 'admin.revoke_all_clients' 'admin mutations are audited'
 
 printf '\nALL GREEN — %d checks passed\n' "$PASS"
