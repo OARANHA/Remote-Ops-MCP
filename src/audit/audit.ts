@@ -38,8 +38,10 @@ export function initAuditFile(): void {
   }
 }
 
-export function audit(e: AuditEvent): void {
-  recordToolResult({ target: e.target, tool: e.tool, result: e.result, error_code: e.error_code });
+export function audit(e: AuditEvent, options: { countUsage?: boolean } = {}): void {
+  if (options.countUsage !== false) {
+    recordToolResult({ target: e.target, tool: e.tool, result: e.result, error_code: e.error_code });
+  }
   const line = JSON.stringify(e);
   console.log(line);
   if (ready) {
