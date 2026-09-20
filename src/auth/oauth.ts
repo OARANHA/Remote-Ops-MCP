@@ -138,7 +138,7 @@ export function oauthRouter(): Router {
     try { normalizeScope(fields.scope); } catch { return void res.status(400).type("text/plain").send("Escopo OAuth inválido."); }
     if (!safeEqual(String(body.password ?? ""), env.MCP_PASSWORD!)) return void res.status(401).type("html").send(loginPage(fields, "Senha incorreta."));
     const code = randomId("code"); putAuthCode(code, { client_id: client.client_id, redirect_uri: fields.redirect_uri, challenge: fields.code_challenge, expires_at: Date.now() + CODE_TTL_S * 1000 });
-    const u = new URL(fields.redirect_uri); u.searchParams.set("code", code); if (fields.state) u.searchParams.set("state", fields.state); res.redirect(302, u.toString());
+    const u = new URL(fields.redirect_uri); u.searchParams.set("code", code); if (fields.state) u.searchParams.set("state", fields.state); res.redirect(303, u.toString());
   });
 
   r.post("/token", tokenLimiter, express.urlencoded({ extended: false, limit: "32kb" }), (req, res) => {
