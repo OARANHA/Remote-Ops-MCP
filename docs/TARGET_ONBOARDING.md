@@ -24,8 +24,9 @@ sudo install -m 600 -o ops-mcp -g ops-mcp /dev/null /home/ops-mcp/.ssh/authorize
 # cole o conteúdo da chave PÚBLICA gerada no passo 1:
 echo "ssh-ed25519 AAAA..." | sudo tee -a /home/ops-mcp/.ssh/authorized_keys >/dev/null
 
-sudo usermod -aG docker ops-mcp            # opcional: tools docker_*
-sudo usermod -aG systemd-journal ops-mcp   # opcional: tool service_logs
+# Não adicione ops-mcp ao grupo docker por padrão: esse grupo é equivalente a acesso root no host.
+# Mantenha allowedDockerContainers vazio até existir um broker/proxy Docker explicitamente read-only.
+sudo usermod -aG systemd-journal ops-mcp   # opcional; logs podem conter dados sensíveis
 
 # fingerprint do host key (vai para o targets.json):
 ssh-keyscan -t ed25519 127.0.0.1 2>/dev/null | ssh-keygen -lf -
@@ -49,8 +50,8 @@ Adicione em `/opt/remote-ops-mcp/config/targets.json`:
   "environment": "production",
   "capabilityProfile": "prod-read-mostly",
   "allowedPaths": ["/opt/medicspro"],
-  "allowedDockerContainers": ["*"],
-  "allowedServices": ["*"],
+  "allowedDockerContainers": [],
+  "allowedServices": [],
   "allowedGitRepos": ["/opt/medicspro"],
   "enabled": true,
   "transport": "ssh"
