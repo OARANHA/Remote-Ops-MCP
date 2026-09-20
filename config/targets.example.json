@@ -1,0 +1,34 @@
+{
+  "targets": [
+    {
+      "id": "wandora-prod",
+      "host": "127.0.0.1",
+      "port": 22,
+      "username": "ops-mcp",
+      "keyFile": "/app/secrets/ops-mcp",
+      "hostKeyFingerprint": "SHA256:COLE-AQUI-O-FINGERPRINT-DO-PASSO-2",
+      "environment": "production",
+      "capabilityProfile": "prod-read-mostly",
+      "allowedPaths": ["/opt/wandora"],
+      "allowedDockerContainers": [],
+      "allowedServices": [],
+      "allowedGitRepos": ["/opt/wandora"],
+      "enabled": true,
+      "transport": "ssh"
+    },
+    {
+      "id": "demo-mock",
+      "host": "mock",
+      "port": 22,
+      "username": "mock",
+      "environment": "staging",
+      "capabilityProfile": "read-only",
+      "allowedPaths": ["/opt/wandora"],
+      "allowedDockerContainers": ["*"],
+      "allowedServices": ["*"],
+      "allowedGitRepos": ["*"],
+      "enabled": true,
+      "transport": "mock"
+    }
+  ]
+}

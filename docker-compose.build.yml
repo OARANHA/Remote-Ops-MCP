@@ -1,0 +1,5 @@
+services:
+  remote-ops-mcp:
+    build:
+      context: .
+    image: remote-ops-mcp:local

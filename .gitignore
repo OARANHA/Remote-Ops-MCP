@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+data/
+secrets/
+config/targets.json
+*.log
+.DS_Store

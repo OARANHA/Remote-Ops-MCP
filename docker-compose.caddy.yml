@@ -1,0 +1,31 @@
+# Remote Ops MCP — stack opcional de HTTPS (Caddy + Let's Encrypt)
+#
+# Use APENAS se você NÃO tiver um reverse proxy na VPS (senão as portas
+# 80/443 conflitam). Suba DEPOIS da stack principal:
+#
+#   docker compose -f docker-compose.caddy.yml up -d
+#
+# No Portainer: crie uma segunda stack com este arquivo.
+# O Caddy resolve o certificado automaticamente para o domínio definido
+# na variável MCP_DOMAIN.
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: remote-ops-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - MCP_DOMAIN=${MCP_DOMAIN:-mcp.wandora.com.br}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  caddy_data:
+  caddy_config:
