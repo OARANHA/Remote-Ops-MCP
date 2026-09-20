@@ -85,10 +85,20 @@ function operationArgv(x: AgentOperation): string[] {
   }
 }
 
+function childEnvForOperation(x: AgentOperation): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { PATH: process.env.PATH ?? "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", LANG: "C.UTF-8" };
+  if (x.op.startsWith("docker.")) {
+    const dockerHost = process.env.DOCKER_HOST;
+    if (dockerHost !== "tcp://127.0.0.1:23751") throw new Error("docker_read_proxy_required");
+    env.DOCKER_HOST = dockerHost;
+  }
+  return env;
+}
+
 export async function executeAgentOperation(x: AgentOperation, opts?: ExecOptions): Promise<ExecResult> {
-  const argv=operationArgv(x), timeoutMs=opts?.timeoutMs??15000, maxBytes=opts?.maxBytes??262144, started=Date.now();
+  const argv=operationArgv(x), timeoutMs=opts?.timeoutMs??15000, maxBytes=opts?.maxBytes??262144, started=Date.now(), childEnv=childEnvForOperation(x);
   return await new Promise<ExecResult>((resolve,reject)=>{
-    const child=spawn(argv[0],argv.slice(1),{stdio:["ignore","pipe","pipe"],shell:false,env:{PATH:process.env.PATH??"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",LANG:"C.UTF-8"}});
+    const child=spawn(argv[0],argv.slice(1),{stdio:["ignore","pipe","pipe"],shell:false,env:childEnv});
     let out: Buffer<ArrayBufferLike>=Buffer.alloc(0),err: Buffer<ArrayBufferLike>=Buffer.alloc(0),truncated=false,timedOut=false;
     const append=(buf:Buffer<ArrayBufferLike>,chunk:Buffer<ArrayBufferLike>,cap:number):Buffer<ArrayBufferLike>=>{if(buf.length>=cap){truncated=true;return buf;}if(buf.length+chunk.length>cap){truncated=true;return Buffer.concat([buf,chunk.subarray(0,cap-buf.length)]);}return Buffer.concat([buf,chunk]);};
     child.stdout.on("data",(c:Buffer)=>{out=append(out,c,maxBytes);});
