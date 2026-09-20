@@ -10,8 +10,8 @@
       "environment": "production",
       "capabilityProfile": "prod-read-mostly",
       "allowedPaths": ["/opt/wandora"],
-      "allowedDockerContainers": ["*"],
-      "allowedServices": ["*"],
+      "allowedDockerContainers": [],
+      "allowedServices": [],
       "allowedGitRepos": ["/opt/wandora"],
       "enabled": true,
       "transport": "ssh"
