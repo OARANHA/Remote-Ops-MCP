@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import type { ExecOptions, ExecResult } from "../ssh/pool.js";
+import { denySecretPath } from "../security/paths.js";
 
 export interface AgentOperation {
   op: string;
@@ -9,6 +10,7 @@ export interface AgentOperation {
 function safePath(value: unknown): string {
   const s = String(value ?? "");
   if (!s.startsWith("/") || s.includes("\0") || /[\r\n]/.test(s) || s.split("/").includes("..") || s.length > 1024) throw new Error("invalid_path");
+  if (denySecretPath(s)) throw new Error("secret_path_denied");
   return s;
 }
 function safeId(value: unknown): string {
