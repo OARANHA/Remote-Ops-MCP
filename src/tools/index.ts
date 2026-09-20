@@ -113,6 +113,10 @@ async function agentJson(t: TargetConfig, op: string, args: Record<string, unkno
   catch { throw new OpsError("REMOTE_COMMAND_FAILED", `resposta inválida do execution broker para ${op}`); }
 }
 
+function requireOperator(t: TargetConfig): void {
+  if (t.capabilityProfile !== "operator") throw new OpsError("INVALID_ARGUMENT", `target "${t.id}" não está no capability profile operator`);
+}
+
 function requireProgram(t: TargetConfig, value: unknown): string {
   const program = String(value ?? "");
   if (!/^[A-Za-z0-9_.+-]{1,80}$/.test(program)) throw new OpsError("INVALID_ARGUMENT", "program inválido");
@@ -557,6 +561,7 @@ const TOOL_DEFS: ToolDef[] = [
     idempotent: true,
     run: async (args) => {
       const t = resolveTarget(args.target);
+      requireOperator(t);
       const targetPath = assertConfiguredPath(String(args.path ?? ""), t.allowedWritePaths, "escrita");
       return { target: t.id, ...(await agentJson(t, "workspace.mkdir", { path: targetPath })) };
     },
@@ -575,6 +580,7 @@ const TOOL_DEFS: ToolDef[] = [
     idempotent: false,
     run: async (args) => {
       const t = resolveTarget(args.target);
+      requireOperator(t);
       const targetPath = assertConfiguredPath(String(args.path ?? ""), t.allowedWritePaths, "escrita");
       const content = String(args.content ?? "");
       const mode = args.mode === "append" ? "append" : "rewrite";
@@ -596,6 +602,7 @@ const TOOL_DEFS: ToolDef[] = [
     idempotent: false,
     run: async (args) => {
       const t = resolveTarget(args.target);
+      requireOperator(t);
       const targetPath = assertConfiguredPath(String(args.path ?? ""), t.allowedWritePaths, "escrita");
       const oldText = String(args.old_string ?? ""), newText = String(args.new_string ?? "");
       return { target: t.id, ...(await agentJson(t, "workspace.edit", {
@@ -619,6 +626,7 @@ const TOOL_DEFS: ToolDef[] = [
     idempotent: false,
     run: async (args) => {
       const t = resolveTarget(args.target);
+      requireOperator(t);
       const source = assertConfiguredPath(String(args.source ?? ""), t.allowedWritePaths, "escrita");
       const destination = assertConfiguredPath(String(args.destination ?? ""), t.allowedWritePaths, "escrita");
       return { target: t.id, ...(await agentJson(t, "workspace.move", { source, destination })) };
@@ -638,6 +646,7 @@ const TOOL_DEFS: ToolDef[] = [
     idempotent: false,
     run: async (args) => {
       const t = resolveTarget(args.target);
+      requireOperator(t);
       const cwd = await resolveCheckedProcessCwd(String(args.cwd ?? ""), t, getTransport(t).exec);
       const program = requireProgram(t, args.program);
       const argv = Array.isArray(args.args) ? args.args.map(String) : [];
@@ -671,6 +680,7 @@ const TOOL_DEFS: ToolDef[] = [
     idempotent: false,
     run: async (args) => {
       const t = resolveTarget(args.target);
+      requireOperator(t);
       return { target:t.id, ...(await agentJson(t,"process.input",{session_id:String(args.session_id),input_b64:Buffer.from(String(args.input??""),"utf8").toString("base64")})) };
     },
   },
@@ -707,6 +717,7 @@ const TOOL_DEFS: ToolDef[] = [
     inputSchema: { target: targetField },
     run: async (args) => {
       const t = resolveTarget(args.target);
+      requireOperator(t);
       const T = await tr(t);
       const [disk, mem, up, dockerPs] = await Promise.all([
         T.exec(["df", "-hP"]).catch(() => null),
