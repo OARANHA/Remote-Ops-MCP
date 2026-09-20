@@ -57,7 +57,14 @@ export function agentRouter(): Router {
       res.status(400).json({ error: "invalid_request" });
       return;
     }
-    const pairing = createPairing(parsed.data);
+    let pairing;
+    try { pairing = createPairing(parsed.data); }
+    catch (err) {
+      const msg = err instanceof Error ? err.message : "pairing_capacity";
+      if (msg === "AGENT_PAIRING_CAPACITY") { res.status(429).json({ error: "pairing_capacity" }); return; }
+      if (msg === "AGENT_MAX_DEVICES_REACHED") { res.status(503).json({ error: "device_capacity" }); return; }
+      throw err;
+    }
     res.status(201).json({
       pairing_id: pairing.pairing_id,
       pairing_code: pairing.code,
