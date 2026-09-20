@@ -1,0 +1,38 @@
+services:
+  remote-ops-mcp:
+    image: ${REMOTE_OPS_IMAGE:-ghcr.io/oaranha/remote-ops-mcp:main}
+    container_name: remote-ops-mcp
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    ports:
+      - "127.0.0.1:${REMOTE_OPS_BIND_PORT:-3005}:3000"
+    environment:
+      PORT: "3000"
+      AUTH_MODE: ${AUTH_MODE:-oauth}
+      MCP_PASSWORD: ${MCP_PASSWORD:?defina MCP_PASSWORD no Portainer}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?defina ADMIN_PASSWORD no Portainer}
+      AUTH_SECRET: ${AUTH_SECRET:?defina AUTH_SECRET no Portainer}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://mcp.wandora.com.br}
+      TZ: ${TZ:-UTC}
+      MOCK_MODE: ${MOCK_MODE:-0}
+      MAX_OUTPUT_BYTES: ${MAX_OUTPUT_BYTES:-262144}
+      MAX_LOG_LINES: ${MAX_LOG_LINES:-500}
+      READ_FILE_MAX_BYTES: ${READ_FILE_MAX_BYTES:-65536}
+      RATE_LIMIT_PER_MIN: ${RATE_LIMIT_PER_MIN:-120}
+      PER_TARGET_CONCURRENCY: ${PER_TARGET_CONCURRENCY:-4}
+      COMMAND_TIMEOUT_MS: ${COMMAND_TIMEOUT_MS:-15000}
+      CONNECT_TIMEOUT_MS: ${CONNECT_TIMEOUT_MS:-10000}
+      AUDIT_FILE: /app/data/audit.jsonl
+      STATE_FILE: /app/data/state.json
+      TARGETS_FILE: /app/config/targets.json
+    volumes:
+      - ${REMOTE_OPS_HOME:-/opt/remote-ops-mcp}/config:/app/config:ro
+      - ${REMOTE_OPS_HOME:-/opt/remote-ops-mcp}/data:/app/data
+      - ${REMOTE_OPS_HOME:-/opt/remote-ops-mcp}/secrets:/app/secrets:ro
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m
