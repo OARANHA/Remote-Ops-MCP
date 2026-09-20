@@ -81,7 +81,7 @@ The preferred production path is:
 commit -> GitHub Actions CI -> GHCR image -> Portainer stack -> reverse proxy/TLS
 ```
 
-`docker-compose.yml` binds the service to loopback by default (`127.0.0.1:3005`) so the public surface should be provided by the existing HTTPS reverse proxy. The container is non-root, drops Linux capabilities, uses `no-new-privileges`, has a read-only root filesystem and mounts only the required config/data/secrets paths.
+`docker-compose.yml` binds a diagnostics port to loopback (`127.0.0.1:3005`) and also joins the external `wandora-edge` network so the existing Traefik instance can reverse-proxy the container directly on port 3000. The container is non-root, drops Linux capabilities, uses `no-new-privileges`, has a read-only root filesystem and mounts only the required config/data/secrets paths.
 
 For an emergency/local build, apply `docker-compose.build.yml` as an override.
 
