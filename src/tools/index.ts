@@ -5,7 +5,7 @@ import { assertIdentifier } from "../lib/quote.js";
 import { getTarget, listTargets, publicTarget, targetIds } from "../config/targets.js";
 import type { TargetConfig } from "../config/targets.js";
 import { getTransport } from "../transport.js";
-import { resolveCheckedPath } from "../security/paths.js";
+import { resolveCheckedGitRepo, resolveCheckedPath } from "../security/paths.js";
 import { redactText, redactObject } from "../security/redact.js";
 import type { ExecResult } from "../ssh/pool.js";
 import { effectiveTargetEnabled } from "../state/store.js";
@@ -70,7 +70,7 @@ function dockerAccessError(res: ExecResult): never {
     throw new OpsError(
       "DOCKER_ACCESS_DENIED",
       "sem permissão para acessar o Docker daemon",
-      "adicione o usuário ops-mcp ao grupo docker no target: sudo usermod -aG docker ops-mcp"
+      "Docker permanece negado por segurança; habilite somente por broker read-only dedicado — nunca adicione ops-mcp ao grupo docker"
     );
   }
   throw new OpsError("REMOTE_COMMAND_FAILED", `docker retornou erro (exit ${res.code})`, res.stderr.slice(0, 200));
@@ -420,8 +420,7 @@ const TOOL_DEFS: ToolDef[] = [
     },
     run: async (args) => {
       const t = resolveTarget(args.target);
-      const repo = await resolveCheckedPath(String(args.repository ?? ""), t, getTransport(t).exec);
-      checkAllow(t.allowedGitRepos, repo, "repositório", "REPO_NOT_ALLOWED");
+      const repo = await resolveCheckedGitRepo(String(args.repository ?? ""), t, getTransport(t).exec);
       const T = await tr(t);
       const head = requireExec(await T.exec(["git", "-C", repo, "rev-parse", "HEAD"]), "git");
       const log = await T.exec(["git", "-C", repo, "log", "-1", "--format=%H%n%an%n%aI%n%s"]).catch(() => null);
@@ -445,8 +444,7 @@ const TOOL_DEFS: ToolDef[] = [
     },
     run: async (args) => {
       const t = resolveTarget(args.target);
-      const repo = await resolveCheckedPath(String(args.repository ?? ""), t, getTransport(t).exec);
-      checkAllow(t.allowedGitRepos, repo, "repositório", "REPO_NOT_ALLOWED");
+      const repo = await resolveCheckedGitRepo(String(args.repository ?? ""), t, getTransport(t).exec);
       const T = await tr(t);
       const res = await T.exec(["git", "-C", repo, "-c", "core.quotepath=false", "status", "--porcelain=v1", "-b"]);
       return {
@@ -466,8 +464,7 @@ const TOOL_DEFS: ToolDef[] = [
     },
     run: async (args) => {
       const t = resolveTarget(args.target);
-      const repo = await resolveCheckedPath(String(args.repository ?? ""), t, getTransport(t).exec);
-      checkAllow(t.allowedGitRepos, repo, "repositório", "REPO_NOT_ALLOWED");
+      const repo = await resolveCheckedGitRepo(String(args.repository ?? ""), t, getTransport(t).exec);
       const T = await tr(t);
       const worktree = await T.exec(["git", "-C", repo, "diff", "--stat"]).catch(() => null);
       const staged = await T.exec(["git", "-C", repo, "diff", "--cached", "--stat"]).catch(() => null);
