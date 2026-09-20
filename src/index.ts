@@ -8,6 +8,7 @@ import { closeAllPools, startIdleSweeper } from "./ssh/pool.js";
 import { initAuditFile } from "./audit/audit.js";
 import { initStateStore } from "./state/store.js";
 import { adminRouter } from "./admin/router.js";
+import { agentRouter } from "./agent/router.js";
 
 /**
  * Remote Ops MCP — entrypoint HTTP.
@@ -28,7 +29,7 @@ try {
 initStateStore();
 initAuditFile();
 
-const VERSION = "1.1.0";
+const VERSION = "2.0.0-dev";
 const startedAt = Date.now();
 
 // ---------- app ----------
@@ -91,6 +92,7 @@ app.get("/healthz", (_req, res) => { res.json({ status: "ok", service: "remote-o
 app.get("/readyz", (_req, res) => { res.json({ status: "ready", targets: targetCount(), auth: env.AUTH_MODE, mock: env.MOCK_MODE === "1", uptime_s: Math.round((Date.now() - startedAt) / 1000) }); });
 
 if (env.AUTH_MODE === "oauth") { app.use(oauthRouter()); app.use("/admin", adminRouter()); }
+app.use("/agent", rateLimit(Math.max(30, Math.floor(env.RATE_LIMIT_PER_MIN / 2))), express.json({ limit: "64kb" }), agentRouter());
 
 const mcpMiddleware = [rateLimit(env.RATE_LIMIT_PER_MIN), ...(env.AUTH_MODE === "oauth" ? [requireBearer] : []), express.json({ limit: "1mb" })];
 app.post("/mcp", ...mcpMiddleware, (req, res) => {
