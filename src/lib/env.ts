@@ -28,6 +28,7 @@ const EnvSchema = z.object({
   OAUTH_PENDING_CLIENT_TTL_HOURS: z.coerce.number().int().min(1).max(168).default(24),
   AGENT_PAIRING_TTL_MINUTES: z.coerce.number().int().min(2).max(60).default(10),
   AGENT_MAX_DEVICES: z.coerce.number().int().min(1).max(10000).default(100),
+  AGENT_MAX_PENDING_PAIRINGS: z.coerce.number().int().min(1).max(1000).default(50),
   AGENT_HEARTBEAT_STALE_SECONDS: z.coerce.number().int().min(30).max(3600).default(120),
   PER_TARGET_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(4),
   COMMAND_TIMEOUT_MS: z.coerce.number().int().min(2000).max(120_000).default(15_000),
