@@ -160,6 +160,22 @@ export function revokeClient(clientId: string, now = Date.now()): boolean {
   persist(); return true;
 }
 
+export function revokeAllClients(now = Date.now()): number {
+  const s = ensureLoaded();
+  let count = 0;
+  for (const client of Object.values(s.clients)) {
+    if (!client.revoked_at) {
+      client.revoked_at = now;
+      count++;
+    }
+  }
+  for (const session of Object.values(s.sessions)) {
+    if (!session.revoked_at) session.revoked_at = now;
+  }
+  persist();
+  return count;
+}
+
 export function putAuthCode(rawCode: string, code: Omit<StoredAuthCode, "code_hash">): void {
   const hash = sha256(rawCode); ensureLoaded().auth_codes[hash] = { ...code, code_hash: hash }; persist();
 }
