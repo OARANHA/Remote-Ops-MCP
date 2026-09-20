@@ -10,6 +10,7 @@ const TargetSchema = z.object({
   username: z.string().min(1).default("ops-mcp"),
   credentialRef: z.string().optional(),
   keyFile: z.string().optional(),
+  deviceId: z.string().regex(/^dev_[A-Za-z0-9_-]{8,80}$/).optional(),
   hostKeyFingerprint: z.string().regex(/^SHA256:[A-Za-z0-9+/=-]+$/).optional(),
   hostKey: z.string().optional(),
   environment: z.enum(["production", "staging", "development"]).default("production"),
@@ -19,7 +20,7 @@ const TargetSchema = z.object({
   allowedServices: z.array(z.string()).default([]),
   allowedGitRepos: z.array(z.string()).default([]),
   enabled: z.boolean().default(true),
-  transport: z.enum(["ssh", "mock"]).default("ssh"),
+  transport: z.enum(["ssh", "mock", "agent"]).default("ssh"),
   commandTimeoutMs: z.number().int().min(1000).max(120_000).optional(),
   connectTimeoutMs: z.number().int().min(1000).max(60_000).optional(),
 });
@@ -44,6 +45,7 @@ export function loadRegistry(): void {
   }
   const map = new Map<string, TargetConfig>();
   for (const t of parsed.data.targets) {
+    if (t.transport === "agent" && !t.deviceId) throw new Error(`Target Registry inválido: target "${t.id}" usa transport agent sem deviceId`);
     if (map.has(t.id)) throw new Error(`Target Registry duplicado: id "${t.id}" aparece mais de uma vez`);
     map.set(t.id, t);
   }

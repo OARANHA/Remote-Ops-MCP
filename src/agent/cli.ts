@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import WebSocket from "ws";
+import { executeAgentOperation, type AgentOperation } from "./operations.js";
 
 interface DeviceState {
   control_plane: string;
@@ -95,10 +96,22 @@ async function runPersistent(): Promise<void> {
         heartbeat = setInterval(sendHeartbeat, 30_000);
       });
       ws.on("message", (data) => {
-        try {
-          const msg = JSON.parse(data.toString()) as { type?: string };
-          if (msg.type === "welcome") process.stdout.write("AGENT_CHANNEL=WELCOME\n");
-        } catch {}
+        void (async () => {
+          try {
+            const msg = JSON.parse(data.toString()) as { type?: string; request_id?: string; operation?: AgentOperation; limits?: { timeout_ms?: number; max_bytes?: number } };
+            if (msg.type === "welcome") { process.stdout.write("AGENT_CHANNEL=WELCOME\n"); return; }
+            if (msg.type === "execute_request" && typeof msg.request_id === "string" && msg.operation) {
+              const started = Date.now();
+              try {
+                const result = await executeAgentOperation(msg.operation, { timeoutMs: msg.limits?.timeout_ms, maxBytes: msg.limits?.max_bytes });
+                if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "execute_result", protocol: 1, request_id: msg.request_id, result }));
+              } catch (e) {
+                const result = { code: 1, stdout: "", stderr: e instanceof Error ? e.message : String(e), durationMs: Date.now()-started, truncated: false, timedOut: false };
+                if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "execute_result", protocol: 1, request_id: msg.request_id, result }));
+              }
+            }
+          } catch {}
+        })();
       });
       ws.on("close", (code) => {
         if (heartbeat) clearInterval(heartbeat);
