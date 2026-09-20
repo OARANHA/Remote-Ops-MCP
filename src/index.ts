@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import http from "node:http";
 import express, { type Request, type Response, type NextFunction } from "express";
 import { env, validateAuthEnv } from "./lib/env.js";
 import { loadRegistry, targetCount, targetIds } from "./config/targets.js";
@@ -9,6 +10,7 @@ import { initAuditFile } from "./audit/audit.js";
 import { initStateStore } from "./state/store.js";
 import { adminRouter } from "./admin/router.js";
 import { agentRouter } from "./agent/router.js";
+import { attachAgentGateway } from "./agent/gateway.js";
 
 /**
  * Remote Ops MCP — entrypoint HTTP.
@@ -111,7 +113,9 @@ app.use(((err: Error & { type?: string; status?: number }, _req: Request, res: R
   res.status(500).json({ error: "internal" });
 }) as express.ErrorRequestHandler);
 
-const server = app.listen(env.PORT, () => {
+const server = http.createServer(app);
+attachAgentGateway(server);
+server.listen(env.PORT, () => {
   console.log(JSON.stringify({ ts: new Date().toISOString(), level: "info", msg: "remote-ops-mcp ready", version: VERSION, port: env.PORT, auth_mode: env.AUTH_MODE, mock_mode: env.MOCK_MODE === "1", targets: targetIds(), public_base_url: env.PUBLIC_BASE_URL }));
 });
 function shutdown(signal: string): void {
