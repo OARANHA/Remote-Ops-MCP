@@ -15,8 +15,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm install --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund
       - run: npm run build
       - run: bash test-e2e.sh
+      - run: bash test-agent-pairing.sh
       - name: Build production image
         run: docker build -t remote-ops-mcp:ci .

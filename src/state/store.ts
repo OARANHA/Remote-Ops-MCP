@@ -46,6 +46,17 @@ export interface TargetActivity {
   last_error_code?: string;
 }
 
+export interface StoredPairing {
+  pairing_id: string; code_hash: string; poll_hash: string; created_at: number; expires_at: number;
+  hostname: string; os?: string; agent_version?: string; fingerprint?: string;
+  approved_at?: number; claimed_at?: number; device_id?: string;
+}
+
+export interface StoredDevice {
+  device_id: string; display_name: string; hostname: string; os?: string; agent_version?: string; fingerprint?: string;
+  credential_hash: string; created_at: number; last_seen_at?: number; capabilities?: string[]; revoked_at?: number;
+}
+
 export interface UsageBucket {
   tool_calls: number;
   ok: number;
@@ -61,10 +72,12 @@ interface PersistentState {
   target_controls: Record<string, TargetControl>;
   target_activity: Record<string, TargetActivity>;
   usage_monthly: Record<string, UsageBucket>;
+  pairings: Record<string, StoredPairing>;
+  devices: Record<string, StoredDevice>;
 }
 
 function emptyState(): PersistentState {
-  return { version: 1, clients: {}, auth_codes: {}, sessions: {}, target_controls: {}, target_activity: {}, usage_monthly: {} };
+  return { version: 1, clients: {}, auth_codes: {}, sessions: {}, target_controls: {}, target_activity: {}, usage_monthly: {}, pairings: {}, devices: {} };
 }
 
 let state: PersistentState | null = null;
@@ -91,6 +104,8 @@ function normalize(raw: unknown): PersistentState {
     target_controls: obj.target_controls && typeof obj.target_controls === "object" ? obj.target_controls : {},
     target_activity: obj.target_activity && typeof obj.target_activity === "object" ? obj.target_activity : {},
     usage_monthly: obj.usage_monthly && typeof obj.usage_monthly === "object" ? obj.usage_monthly : {},
+    pairings: obj.pairings && typeof obj.pairings === "object" ? obj.pairings : {},
+    devices: obj.devices && typeof obj.devices === "object" ? obj.devices : {},
   };
 }
 
@@ -273,9 +288,59 @@ export function activeSessionCount(clientId?: string): number {
   }).length;
 }
 
+
+const PAIR_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+function pairingCode(): string {
+  const bytes = crypto.randomBytes(8); let raw = "";
+  for (let i = 0; i < 8; i++) raw += PAIR_ALPHABET[bytes[i] % PAIR_ALPHABET.length];
+  return "WD-" + raw.slice(0,4) + "-" + raw.slice(4);
+}
+function normalizePairCode(code: string): string { return code.trim().toUpperCase().replace(/\s+/g, ""); }
+
+export function createPairing(meta: { hostname: string; os?: string; agent_version?: string; fingerprint?: string }, now = Date.now()) {
+  const st = ensureLoaded();
+  for (const [id,p] of Object.entries(st.pairings)) if (!p.claimed_at && p.expires_at + 3600_000 < now) delete st.pairings[id];
+  if (Object.values(st.devices).filter((d) => !d.revoked_at).length >= env.AGENT_MAX_DEVICES) throw new Error("AGENT_MAX_DEVICES_REACHED");
+  const activePairings = Object.values(st.pairings).filter((p) => !p.claimed_at && p.expires_at >= now).length;
+  if (activePairings >= env.AGENT_MAX_PENDING_PAIRINGS) throw new Error("AGENT_PAIRING_CAPACITY");
+  let code = pairingCode();
+  while (Object.values(st.pairings).some((p) => p.code_hash === sha256(normalizePairCode(code)) && p.expires_at > now && !p.claimed_at)) code = pairingCode();
+  const pollToken = crypto.randomBytes(32).toString("base64url"), pairingId = crypto.randomUUID();
+  const p: StoredPairing = { pairing_id: pairingId, code_hash: sha256(normalizePairCode(code)), poll_hash: sha256(pollToken), created_at: now, expires_at: now + env.AGENT_PAIRING_TTL_MINUTES * 60_000, hostname: meta.hostname, os: meta.os, agent_version: meta.agent_version, fingerprint: meta.fingerprint };
+  st.pairings[pairingId] = p; persist();
+  return { pairing_id: pairingId, code, poll_token: pollToken, expires_at: p.expires_at };
+}
+export function listPendingPairings(now = Date.now()): StoredPairing[] { return Object.values(ensureLoaded().pairings).filter((p) => !p.claimed_at && p.expires_at >= now).sort((a,b)=>b.created_at-a.created_at); }
+export function approvePairingByCode(code: string, now = Date.now()): StoredPairing | undefined {
+  const hash = sha256(normalizePairCode(code)), p = Object.values(ensureLoaded().pairings).find((x) => x.code_hash === hash && !x.claimed_at && x.expires_at >= now);
+  if (!p) return undefined; p.approved_at = now; persist(); return p;
+}
+export function claimPairing(pairingId: string, pollToken: string, now = Date.now()): { status: "pending"|"expired"|"invalid" } | { status:"paired"; device:StoredDevice; device_token:string } {
+  const st=ensureLoaded(), p=st.pairings[pairingId];
+  if(!p || p.poll_hash!==sha256(pollToken)) return {status:"invalid"};
+  if(p.expires_at<now) return {status:"expired"};
+  if(!p.approved_at) return {status:"pending"};
+  let d=p.device_id?st.devices[p.device_id]:undefined;
+  if(!d){
+    const deviceId="dev_"+crypto.randomBytes(12).toString("base64url");
+    const secret=crypto.createHmac("sha256",pollToken).update(deviceId).digest("base64url");
+    const token="wdv_"+deviceId+"."+secret;
+    d={device_id:deviceId,display_name:p.hostname,hostname:p.hostname,os:p.os,agent_version:p.agent_version,fingerprint:p.fingerprint,credential_hash:sha256(token),created_at:now};
+    st.devices[deviceId]=d;p.device_id=deviceId;p.claimed_at=now;persist();
+    return {status:"paired",device:d,device_token:token};
+  }
+  const secret=crypto.createHmac("sha256",pollToken).update(d.device_id).digest("base64url");
+  return {status:"paired",device:d,device_token:"wdv_"+d.device_id+"."+secret};
+}
+export function authenticateDeviceToken(raw:string):StoredDevice|undefined{const h=sha256(raw);return Object.values(ensureLoaded().devices).find((d)=>d.credential_hash===h&&!d.revoked_at);}
+export function touchDeviceHeartbeat(deviceId:string,input:{agent_version?:string;capabilities?:string[]},now=Date.now()):boolean{const d=ensureLoaded().devices[deviceId];if(!d||d.revoked_at)return false;d.last_seen_at=now;if(input.agent_version)d.agent_version=input.agent_version;if(input.capabilities)d.capabilities=[...new Set(input.capabilities)].slice(0,64);persist();return true;}
+export function listDevices():StoredDevice[]{return Object.values(ensureLoaded().devices).sort((a,b)=>b.created_at-a.created_at);}
+export function revokeDevice(deviceId:string,now=Date.now()):boolean{const d=ensureLoaded().devices[deviceId];if(!d)return false;if(!d.revoked_at)d.revoked_at=now;persist();return true;}
+
 export function purgeState(doPersist = true): void {
   const s = ensureLoaded(); const now = Date.now(); let changed = prunePendingClients(now);
   for (const [hash, code] of Object.entries(s.auth_codes)) if (code.expires_at < now) { delete s.auth_codes[hash]; changed = true; }
+  for (const [pid,p] of Object.entries(s.pairings)) if ((p.claimed_at ?? p.expires_at) + 24*3600_000 < now) { delete s.pairings[pid]; changed = true; }
   const retention = 90 * 24 * 3600_000;
   for (const [sid, session] of Object.entries(s.sessions)) {
     const staleSince = session.revoked_at ?? session.refresh_expires_at;
