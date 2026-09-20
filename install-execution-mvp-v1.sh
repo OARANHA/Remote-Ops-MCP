@@ -69,7 +69,7 @@ AmbientCapabilities=
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 ReadWritePaths=/opt/wandora/ops-workspace /run/wandora-ops-exec
 InaccessiblePaths=/var/lib/wandora-ops-agent /opt/wandora/stacks /root /home /etc/ssh /etc/ssl/private /var/run/docker.sock
-UMask=0077
+UMask=0027
 
 [Install]
 WantedBy=multi-user.target
