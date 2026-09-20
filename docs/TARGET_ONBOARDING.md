@@ -59,6 +59,12 @@ Adicione em `/opt/remote-ops-mcp/config/targets.json`:
 
 E monte o arquivo da chave no compose (volume `secrets` já cobre `/app/secrets`).
 
+### Target na mesma VPS que hospeda o container MCP
+
+Dentro do container, `127.0.0.1` aponta para o próprio container, não para o host Docker. Para operar a mesma VPS que hospeda o Remote Ops MCP, use `host.docker.internal` no `targets.json`. O compose canônico adiciona explicitamente `host.docker.internal:host-gateway`.
+
+Para uma VPS remota, continue usando o IP/FQDN real do target. O fingerprint fixado continua sendo o fingerprint da chave SSH do host de destino; o alias Docker não altera essa identidade.
+
 ## 4. Validação read-only (antes de liberar no dia a dia)
 
 Via ChatGPT (conectado) ou curl com token:
