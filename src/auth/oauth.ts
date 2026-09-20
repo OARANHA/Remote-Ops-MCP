@@ -20,12 +20,13 @@ const OFFLINE_SCOPE = "offline_access";
 const ACCESS_TTL_S = 3600;
 const REFRESH_TTL_S = 30 * 24 * 3600;
 const CODE_TTL_S = 600;
+const MCP_RESOURCE = `${env.PUBLIC_BASE_URL}/mcp`;
 
 function b64uJson(obj: unknown): string { return Buffer.from(JSON.stringify(obj), "utf8").toString("base64url"); }
 
-export function signAccessToken(payload: Record<string, unknown>): string {
+export function signAccessToken(payload: Record<string, unknown>, resource = MCP_RESOURCE): string {
   const header = b64uJson({ alg: "HS256", typ: "JWT" });
-  const body = b64uJson({ ...payload, iss: env.PUBLIC_BASE_URL, aud: `${env.PUBLIC_BASE_URL}/mcp`, scope: `${READ_SCOPE} ${OFFLINE_SCOPE}` });
+  const body = b64uJson({ ...payload, iss: env.PUBLIC_BASE_URL, aud: resource, scope: `${READ_SCOPE} ${OFFLINE_SCOPE}` });
   const data = `${header}.${body}`;
   const sig = crypto.createHmac("sha256", env.AUTH_SECRET!).update(data).digest("base64url");
   return `${data}.${sig}`;
@@ -43,7 +44,7 @@ export function verifyAccessToken(token: string): Record<string, unknown> | null
     const now = Math.floor(Date.now() / 1000);
     if (typeof payload.exp !== "number" || now >= payload.exp) return null;
     if (typeof payload.iat !== "number" || payload.iat > now + 60) return null;
-    if (payload.iss !== env.PUBLIC_BASE_URL || payload.aud !== `${env.PUBLIC_BASE_URL}/mcp`) return null;
+    if (payload.iss !== env.PUBLIC_BASE_URL || payload.aud !== MCP_RESOURCE) return null;
     const cid = typeof payload.cid === "string" ? payload.cid : "";
     const sid = typeof payload.sid === "string" ? payload.sid : "";
     if (!cid || !sid || !sessionIsActive(sid, cid)) return null;
@@ -67,6 +68,11 @@ function validRedirectUri(uri: string): boolean {
     if (u.protocol === "https:") return true;
     return u.protocol === "http:" && (u.hostname === "localhost" || u.hostname === "127.0.0.1" || u.hostname === "[::1]");
   } catch { return false; }
+}
+function normalizeResource(raw: unknown): string {
+  const resource = typeof raw === "string" && raw.trim() ? raw.trim() : MCP_RESOURCE;
+  if (resource !== MCP_RESOURCE) throw new Error("invalid_resource");
+  return resource;
 }
 function normalizeScope(raw: unknown): string {
   if (typeof raw !== "string" || raw.trim() === "") return `${READ_SCOPE} ${OFFLINE_SCOPE}`;
@@ -100,7 +106,7 @@ export function requireBearer(req: Request, res: Response, next: NextFunction): 
   typed.actor = `oauth:${cid}:${sid.slice(0, 12)}`; typed.oauthClientId = cid; typed.oauthSessionId = sid; next();
 }
 export function bearerUnauthorized(res: Response): void {
-  res.status(401).set("WWW-Authenticate", `Bearer realm="remote-ops-mcp", resource_metadata="${env.PUBLIC_BASE_URL}/.well-known/oauth-protected-resource"`).json({ error: "unauthorized", error_description: "token ausente, expirado, revogado ou inválido" });
+  res.status(401).set("WWW-Authenticate", `Bearer realm="remote-ops-mcp", resource_metadata="${env.PUBLIC_BASE_URL}/.well-known/oauth-protected-resource", scope="${READ_SCOPE}"`).json({ error: "unauthorized", error_description: "token ausente, expirado, revogado ou inválido" });
 }
 
 export function oauthRouter(): Router {
@@ -122,22 +128,22 @@ export function oauthRouter(): Router {
   });
 
   r.get("/authorize", (req, res) => {
-    const fields = { response_type: String(req.query.response_type ?? ""), client_id: String(req.query.client_id ?? ""), redirect_uri: String(req.query.redirect_uri ?? ""), state: String(req.query.state ?? ""), code_challenge: String(req.query.code_challenge ?? ""), code_challenge_method: String(req.query.code_challenge_method ?? ""), scope: String(req.query.scope ?? `${READ_SCOPE} ${OFFLINE_SCOPE}`) };
+    const fields = { response_type: String(req.query.response_type ?? ""), client_id: String(req.query.client_id ?? ""), redirect_uri: String(req.query.redirect_uri ?? ""), state: String(req.query.state ?? ""), code_challenge: String(req.query.code_challenge ?? ""), code_challenge_method: String(req.query.code_challenge_method ?? ""), scope: String(req.query.scope ?? `${READ_SCOPE} ${OFFLINE_SCOPE}`), resource: String(req.query.resource ?? MCP_RESOURCE) };
     const client = getClient(fields.client_id);
     if (fields.response_type !== "code" || !client || client.revoked_at || !validRedirect(client, fields.redirect_uri)) return void res.status(400).type("text/plain").send("Solicitação OAuth inválida.");
     if (fields.code_challenge_method !== "S256" || fields.code_challenge.length < 43) return void res.status(400).type("text/plain").send("PKCE S256 é obrigatório.");
-    try { normalizeScope(fields.scope); } catch { return void res.status(400).type("text/plain").send("Escopo OAuth inválido."); }
+    try { normalizeScope(fields.scope); normalizeResource(fields.resource); } catch { return void res.status(400).type("text/plain").send("Escopo ou resource OAuth inválido."); }
     res.type("html").send(loginPage(fields));
   });
 
   r.post("/authorize/submit", authorizeLimiter, express.urlencoded({ extended: false, limit: "32kb" }), (req, res) => {
     const body = req.body as Record<string, string>;
-    const fields = { response_type: String(body.response_type ?? "code"), client_id: String(body.client_id ?? ""), redirect_uri: String(body.redirect_uri ?? ""), state: String(body.state ?? ""), code_challenge: String(body.code_challenge ?? ""), code_challenge_method: String(body.code_challenge_method ?? ""), scope: String(body.scope ?? `${READ_SCOPE} ${OFFLINE_SCOPE}`) };
+    const fields = { response_type: String(body.response_type ?? "code"), client_id: String(body.client_id ?? ""), redirect_uri: String(body.redirect_uri ?? ""), state: String(body.state ?? ""), code_challenge: String(body.code_challenge ?? ""), code_challenge_method: String(body.code_challenge_method ?? ""), scope: String(body.scope ?? `${READ_SCOPE} ${OFFLINE_SCOPE}`), resource: String(body.resource ?? MCP_RESOURCE) };
     const client = getClient(fields.client_id);
     if (!client || client.revoked_at || !validRedirect(client, fields.redirect_uri) || fields.code_challenge_method !== "S256" || fields.code_challenge.length < 43) return void res.status(400).type("text/plain").send("Solicitação OAuth inválida.");
-    try { normalizeScope(fields.scope); } catch { return void res.status(400).type("text/plain").send("Escopo OAuth inválido."); }
+    try { normalizeScope(fields.scope); normalizeResource(fields.resource); } catch { return void res.status(400).type("text/plain").send("Escopo ou resource OAuth inválido."); }
     if (!safeEqual(String(body.password ?? ""), env.MCP_PASSWORD!)) return void res.status(401).type("html").send(loginPage(fields, "Senha incorreta."));
-    const code = randomId("code"); putAuthCode(code, { client_id: client.client_id, redirect_uri: fields.redirect_uri, challenge: fields.code_challenge, expires_at: Date.now() + CODE_TTL_S * 1000 });
+    const code = randomId("code"); putAuthCode(code, { client_id: client.client_id, redirect_uri: fields.redirect_uri, challenge: fields.code_challenge, resource: fields.resource, expires_at: Date.now() + CODE_TTL_S * 1000 });
     const u = new URL(fields.redirect_uri); u.searchParams.set("code", code); if (fields.state) u.searchParams.set("state", fields.state); res.redirect(303, u.toString());
   });
 
@@ -147,28 +153,33 @@ export function oauthRouter(): Router {
     if (!client || client.revoked_at) return void res.status(400).json({ error: "invalid_client" });
     if (grant === "authorization_code") {
       const code = consumeAuthCode(String(body.code ?? "")), verifier = String(body.code_verifier ?? ""), redirectUri = String(body.redirect_uri ?? "");
-      if (!code || code.client_id !== clientId || code.redirect_uri !== redirectUri || verifier.length < 43 || !safeEqual(pkceChallengeS256(verifier), code.challenge)) return void res.status(400).json({ error: "invalid_grant" });
-      issueNewSession(res, clientId); return;
+      let resource: string;
+      try { resource = normalizeResource(body.resource ?? code?.resource ?? MCP_RESOURCE); } catch { return void res.status(400).json({ error: "invalid_target" }); }
+      if (!code || code.client_id !== clientId || code.redirect_uri !== redirectUri || (code.resource ?? MCP_RESOURCE) !== resource || verifier.length < 43 || !safeEqual(pkceChallengeS256(verifier), code.challenge)) return void res.status(400).json({ error: "invalid_grant" });
+      issueNewSession(res, clientId, resource); return;
     }
     if (grant === "refresh_token") {
       const session = findSessionByRefreshToken(String(body.refresh_token ?? "")), now = Date.now();
       if (!session || session.client_id !== clientId || session.revoked_at || session.refresh_expires_at < now) return void res.status(400).json({ error: "invalid_grant" });
       const nextRefresh = randomId("rt", 32), accessExpiresAt = now + ACCESS_TTL_S * 1000, refreshExpiresAt = now + REFRESH_TTL_S * 1000;
       if (!rotateRefreshToken(session.session_id, nextRefresh, refreshExpiresAt, accessExpiresAt, now)) return void res.status(400).json({ error: "invalid_grant" });
-      res.json(tokenResponse(clientId, session.session_id, nextRefresh, accessExpiresAt)); return;
+      let resource: string;
+      try { resource = normalizeResource(body.resource ?? session.resource ?? MCP_RESOURCE); } catch { return void res.status(400).json({ error: "invalid_target" }); }
+      if ((session.resource ?? MCP_RESOURCE) !== resource) return void res.status(400).json({ error: "invalid_target" });
+      res.json(tokenResponse(clientId, session.session_id, nextRefresh, accessExpiresAt, resource)); return;
     }
     res.status(400).json({ error: "unsupported_grant_type" });
   });
   return r;
 }
 
-function tokenResponse(clientId: string, sessionId: string, refreshToken: string, accessExpiresAt: number) {
+function tokenResponse(clientId: string, sessionId: string, refreshToken: string, accessExpiresAt: number, resource = MCP_RESOURCE) {
   const nowS = Math.floor(Date.now() / 1000);
-  const accessToken = signAccessToken({ cid: clientId, sid: sessionId, sub: `mcp-session:${sessionId}`, jti: randomId("at", 16), iat: nowS, exp: Math.floor(accessExpiresAt / 1000) });
+  const accessToken = signAccessToken({ cid: clientId, sid: sessionId, sub: `mcp-session:${sessionId}`, jti: randomId("at", 16), iat: nowS, exp: Math.floor(accessExpiresAt / 1000) }, resource);
   return { access_token: accessToken, token_type: "Bearer", expires_in: ACCESS_TTL_S, refresh_token: refreshToken, scope: `${READ_SCOPE} ${OFFLINE_SCOPE}` };
 }
-function issueNewSession(res: Response, clientId: string): void {
+function issueNewSession(res: Response, clientId: string, resource = MCP_RESOURCE): void {
   const now = Date.now(), sessionId = randomId("sess", 24), refresh = randomId("rt", 32), accessExpiresAt = now + ACCESS_TTL_S * 1000;
-  createSession({ session_id: sessionId, client_id: clientId, created_at: now, last_seen_at: now, access_expires_at: accessExpiresAt, refresh_hash: sha256(refresh), refresh_expires_at: now + REFRESH_TTL_S * 1000 });
-  res.json(tokenResponse(clientId, sessionId, refresh, accessExpiresAt));
+  createSession({ session_id: sessionId, client_id: clientId, created_at: now, last_seen_at: now, access_expires_at: accessExpiresAt, refresh_hash: sha256(refresh), refresh_expires_at: now + REFRESH_TTL_S * 1000, resource });
+  res.json(tokenResponse(clientId, sessionId, refresh, accessExpiresAt, resource));
 }
