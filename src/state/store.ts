@@ -299,7 +299,9 @@ function normalizePairCode(code: string): string { return code.trim().toUpperCas
 
 export function createPairing(meta: { hostname: string; os?: string; agent_version?: string; fingerprint?: string }, now = Date.now()) {
   const st = ensureLoaded();
-  if (Object.values(st.devices).filter((d) => !d.revoked_at).length >= env.AGENT_MAX_DEVICES) throw new Error("AGENT_MAX_DEVICES reached");
+  if (Object.values(st.devices).filter((d) => !d.revoked_at).length >= env.AGENT_MAX_DEVICES) throw new Error("AGENT_MAX_DEVICES_REACHED");
+  const activePairings = Object.values(st.pairings).filter((p) => !p.claimed_at && p.expires_at >= now).length;
+  if (activePairings >= env.AGENT_MAX_PENDING_PAIRINGS) throw new Error("AGENT_PAIRING_CAPACITY");
   let code = pairingCode();
   while (Object.values(st.pairings).some((p) => p.code_hash === sha256(normalizePairCode(code)) && p.expires_at > now && !p.claimed_at)) code = pairingCode();
   const pollToken = crypto.randomBytes(32).toString("base64url"), pairingId = crypto.randomUUID();
