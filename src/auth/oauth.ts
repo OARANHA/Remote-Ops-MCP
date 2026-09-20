@@ -114,7 +114,10 @@ export function oauthRouter(): Router {
     const uris = redirectUris.map(String); if (uris.some((u) => !validRedirectUri(u))) return void res.status(400).json({ error: "invalid_redirect_uri", error_description: "use HTTPS; loopback HTTP é aceito apenas para desenvolvimento" });
     if (body.token_endpoint_auth_method && body.token_endpoint_auth_method !== "none") return void res.status(400).json({ error: "invalid_client_metadata", error_description: "somente public clients são suportados" });
     const client: StoredClient = { client_id: randomId("ro"), client_name: typeof body.client_name === "string" ? body.client_name.slice(0, 100) : undefined, redirect_uris: uris, created_at: Date.now() };
-    registerClient(client);
+    if (!registerClient(client)) {
+      res.status(429).json({ error: "temporarily_unavailable", error_description: "limite de clientes OAuth atingido; remova clientes antigos no console administrativo ou aguarde a expiração de registros pendentes" });
+      return;
+    }
     res.status(201).json({ client_id: client.client_id, client_id_issued_at: Math.floor(client.created_at / 1000), client_name: client.client_name, redirect_uris: client.redirect_uris, token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"], response_types: ["code"], scope: `${READ_SCOPE} ${OFFLINE_SCOPE}` });
   });
 
