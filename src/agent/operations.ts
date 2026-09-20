@@ -5,7 +5,7 @@ import { callExecBroker } from "./exec-broker-client.js";
 
 export interface AgentOperation {
   op: string;
-  args?: Record<string, string | number | boolean>;
+  args?: Record<string, unknown>;
 }
 
 function safePath(value: unknown): string {
