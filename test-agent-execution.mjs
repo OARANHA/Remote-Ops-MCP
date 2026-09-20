@@ -29,9 +29,9 @@ if(!logs.includes("AGENT_CHANNEL=WELCOME")) throw new Error("agent did not conne
 const host=await gateway.dispatchAgentOperation(claimed.device.device_id,{op:"host.hostname"});
 if(host.code!==0||!host.stdout.trim()) throw new Error("hostname op failed");
 console.log("AGENT_EXEC_HOSTNAME=PASS");
-const uptime=await gateway.dispatchAgentOperation(claimed.device.device_id,{op:"host.uptime_pretty"});
-if(uptime.code!==0) throw new Error("uptime op failed");
-console.log("AGENT_EXEC_UPTIME=PASS");
+const uptime=await gateway.dispatchAgentOperation(claimed.device.device_id,{op:"host.uname"});
+if(uptime.code!==0) throw new Error("uname op failed");
+console.log("AGENT_EXEC_UNAME=PASS");
 const denied=await gateway.dispatchAgentOperation(claimed.device.device_id,{op:"fs.read_head",args:{path:"../../etc/shadow",bytes:64}});
 if(denied.code===0) throw new Error("invalid path was not denied");
 console.log("AGENT_EXEC_PATH_GUARD=PASS");
