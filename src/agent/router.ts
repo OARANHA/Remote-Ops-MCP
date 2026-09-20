@@ -47,11 +47,21 @@ function requireDevice(req: Request, res: Response, next: NextFunction): void {
   next();
 }
 
+function pairStartLimiter(max = 5, windowMs = 10 * 60_000) {
+  const hits = new Map<string, number[]>();
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const key = req.ip ?? "unknown", now = Date.now();
+    const arr = (hits.get(key) ?? []).filter((t) => now - t < windowMs);
+    if (arr.length >= max) { res.status(429).json({ error: "pairing_rate_limited" }); return; }
+    arr.push(now); hits.set(key, arr); if (hits.size > 10000) hits.clear(); next();
+  };
+}
+
 export function agentRouter(): Router {
   const r = Router();
   r.use((_req, res, next) => { noStore(res); next(); });
 
-  r.post("/pair/start", (req, res) => {
+  r.post("/pair/start", pairStartLimiter(), (req, res) => {
     const parsed = StartSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: "invalid_request" });
