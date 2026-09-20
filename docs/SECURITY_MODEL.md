@@ -32,6 +32,8 @@ There is no arbitrary-shell MCP tool. Remote commands are fixed templates. User 
 
 Filesystem tools enforce path allowlists and explicit secret-path denial. Docker/service/repository tools accept only resources listed for the target.
 
+The SSH account must not be added to the host `docker` group as a convenience shortcut: Docker socket access is effectively root-equivalent. Production targets keep Docker access disabled unless a separate read-only broker/proxy is introduced and reviewed.
+
 Output is bounded by byte/line limits and passes through secret redaction. `docker inspect` environment values are removed rather than returned and then redacted.
 
 ## Persistence
