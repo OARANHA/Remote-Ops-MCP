@@ -19,6 +19,9 @@ const TargetSchema = z.object({
   allowedDockerContainers: z.array(z.string()).default([]),
   allowedServices: z.array(z.string()).default([]),
   allowedGitRepos: z.array(z.string()).default([]),
+  allowedWritePaths: z.array(z.string()).default([]),
+  allowedProcessCwds: z.array(z.string()).default([]),
+  allowedProcessPrograms: z.array(z.string()).default([]),
   enabled: z.boolean().default(true),
   transport: z.enum(["ssh", "mock", "agent"]).default("ssh"),
   commandTimeoutMs: z.number().int().min(1000).max(120_000).optional(),
@@ -58,5 +61,5 @@ export function listTargets(): TargetConfig[] { return [...ensure().targets.valu
 export function targetIds(): string[] { return [...ensure().targets.keys()]; }
 export function targetCount(): number { return ensure().targets.size; }
 export function publicTarget(t: TargetConfig) {
-  return {id:t.id,environment:t.environment,capabilityProfile:t.capabilityProfile,transport:t.transport,enabled:t.enabled,allowedPaths:t.allowedPaths,allowedDockerContainers:t.allowedDockerContainers,allowedServices:t.allowedServices,allowedGitRepos:t.allowedGitRepos};
+  return {id:t.id,environment:t.environment,capabilityProfile:t.capabilityProfile,transport:t.transport,enabled:t.enabled,allowedPaths:t.allowedPaths,allowedDockerContainers:t.allowedDockerContainers,allowedServices:t.allowedServices,allowedGitRepos:t.allowedGitRepos,allowedWritePaths:t.allowedWritePaths,allowedProcessCwds:t.allowedProcessCwds,allowedProcessPrograms:t.allowedProcessPrograms};
 }
