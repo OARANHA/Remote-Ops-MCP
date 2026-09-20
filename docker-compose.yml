@@ -9,6 +9,8 @@ services:
     security_opt:
       - no-new-privileges:true
     pids_limit: 128
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:${REMOTE_OPS_BIND_PORT:-3005}:3000"
     environment:
