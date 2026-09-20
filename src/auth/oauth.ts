@@ -112,7 +112,9 @@ export function bearerUnauthorized(res: Response): void {
 export function oauthRouter(): Router {
   const r = Router(), tokenLimiter = authLimiter(60), authorizeLimiter = authLimiter(12, 5 * 60_000);
   r.get("/.well-known/oauth-protected-resource", (_req, res) => res.json({ resource: `${env.PUBLIC_BASE_URL}/mcp`, authorization_servers: [env.PUBLIC_BASE_URL], scopes_supported: [READ_SCOPE], bearer_methods_supported: ["header"] }));
-  r.get("/.well-known/oauth-authorization-server", (_req, res) => res.json({ issuer: env.PUBLIC_BASE_URL, authorization_endpoint: `${env.PUBLIC_BASE_URL}/authorize`, token_endpoint: `${env.PUBLIC_BASE_URL}/token`, registration_endpoint: `${env.PUBLIC_BASE_URL}/register`, response_types_supported: ["code"], grant_types_supported: ["authorization_code", "refresh_token"], code_challenge_methods_supported: ["S256"], token_endpoint_auth_methods_supported: ["none"], scopes_supported: [READ_SCOPE, OFFLINE_SCOPE], service_documentation: `${env.PUBLIC_BASE_URL}/` }));
+  const authorizationMetadata = { issuer: env.PUBLIC_BASE_URL, authorization_response_iss_parameter_supported: true, authorization_endpoint: `${env.PUBLIC_BASE_URL}/authorize`, token_endpoint: `${env.PUBLIC_BASE_URL}/token`, registration_endpoint: `${env.PUBLIC_BASE_URL}/register`, response_types_supported: ["code"], grant_types_supported: ["authorization_code", "refresh_token"], code_challenge_methods_supported: ["S256"], token_endpoint_auth_methods_supported: ["none"], scopes_supported: [READ_SCOPE, OFFLINE_SCOPE], service_documentation: `${env.PUBLIC_BASE_URL}/` };
+  r.get("/.well-known/oauth-authorization-server", (_req, res) => res.json(authorizationMetadata));
+  r.get("/.well-known/openid-configuration", (_req, res) => res.json(authorizationMetadata));
 
   r.post("/register", authLimiter(30), express.json({ limit: "64kb" }), (req, res) => {
     const body = (req.body ?? {}) as Record<string, unknown>, redirectUris = body.redirect_uris;
@@ -144,7 +146,7 @@ export function oauthRouter(): Router {
     try { normalizeScope(fields.scope); normalizeResource(fields.resource); } catch { return void res.status(400).type("text/plain").send("Escopo ou resource OAuth inválido."); }
     if (!safeEqual(String(body.password ?? ""), env.MCP_PASSWORD!)) return void res.status(401).type("html").send(loginPage(fields, "Senha incorreta."));
     const code = randomId("code"); putAuthCode(code, { client_id: client.client_id, redirect_uri: fields.redirect_uri, challenge: fields.code_challenge, resource: fields.resource, expires_at: Date.now() + CODE_TTL_S * 1000 });
-    const u = new URL(fields.redirect_uri); u.searchParams.set("code", code); if (fields.state) u.searchParams.set("state", fields.state); res.redirect(303, u.toString());
+    const u = new URL(fields.redirect_uri); u.searchParams.set("code", code); u.searchParams.set("iss", env.PUBLIC_BASE_URL); if (fields.state) u.searchParams.set("state", fields.state); res.redirect(303, u.toString());
   });
 
   r.post("/token", tokenLimiter, express.urlencoded({ extended: false, limit: "32kb" }), (req, res) => {
