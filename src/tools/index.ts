@@ -109,7 +109,7 @@ async function agentJson(t: TargetConfig, op: string, args: Record<string, unkno
   if (t.transport !== "agent" || !t.deviceId) throw new OpsError("INVALID_ARGUMENT", "esta capacidade exige target transport=agent");
   const res = await dispatchAgentOperation(t.deviceId, { op, args }, { timeoutMs, maxBytes: 1024 * 1024 });
   if (res.code !== 0) throw new OpsError("REMOTE_COMMAND_FAILED", `Agent execution broker recusou ${op}`, redactText(res.stderr).slice(0, 500));
-  try { return JSON.parse(res.stdout || "{}") as Record<string, unknown>; }
+  try { return redactObject(JSON.parse(res.stdout || "{}")) as Record<string, unknown>; }
   catch { throw new OpsError("REMOTE_COMMAND_FAILED", `resposta inválida do execution broker para ${op}`); }
 }
 
