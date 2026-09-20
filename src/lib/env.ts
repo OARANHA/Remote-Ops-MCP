@@ -49,7 +49,10 @@ export function validateAuthEnv(): void {
     if (!env.ADMIN_PASSWORD || env.ADMIN_PASSWORD.length < 12) {
       throw new Error("AUTH_MODE=oauth exige ADMIN_PASSWORD com pelo menos 12 caracteres para o console administrativo");
     }
-    if (env.MCP_PASSWORD === env.ADMIN_PASSWORD) {\n      throw new Error("MCP_PASSWORD e ADMIN_PASSWORD devem ser diferentes");\n    }\n    if (env.MCP_PASSWORD.length < 12) {
+    if (env.MCP_PASSWORD === env.ADMIN_PASSWORD) {
+      throw new Error("MCP_PASSWORD e ADMIN_PASSWORD devem ser diferentes");
+    }
+    if (env.MCP_PASSWORD.length < 12) {
       console.warn(
         JSON.stringify({
           ts: new Date().toISOString(),
