@@ -78,6 +78,7 @@ found=False
 for t in x["targets"]:
     if t.get("id")=="wandora-agent":
         found=True
+        t["capabilityProfile"]="operator"
         t["allowedWritePaths"]=["/opt/wandora/ops-workspace"]
         t["allowedProcessCwds"]=["/opt/wandora/ops-workspace"]
         t["allowedProcessPrograms"]=["bash","sh","git","node","npm","npx","pnpm","python3","curl","wget","jq","grep","sed","awk","find","head","tail","cat","wc","make"]
