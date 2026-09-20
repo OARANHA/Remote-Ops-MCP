@@ -24,6 +24,8 @@ const EnvSchema = z.object({
   MAX_LOG_LINES: z.coerce.number().int().min(10).max(1000).default(500),
   READ_FILE_MAX_BYTES: z.coerce.number().int().min(1024).max(1_048_576).default(65_536),
   RATE_LIMIT_PER_MIN: z.coerce.number().int().min(10).max(10_000).default(120),
+  OAUTH_MAX_CLIENTS: z.coerce.number().int().min(1).max(10_000).default(100),
+  OAUTH_PENDING_CLIENT_TTL_HOURS: z.coerce.number().int().min(1).max(168).default(24),
   PER_TARGET_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(4),
   COMMAND_TIMEOUT_MS: z.coerce.number().int().min(2000).max(120_000).default(15_000),
   CONNECT_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60_000).default(10_000),
