@@ -19,7 +19,7 @@ echo '== noauth + mock =='
 start_server 3111 noauth "$TMP/state-noauth.json" "$TMP/audit-noauth.jsonl" "$TMP/noauth.log"
 r="$(curl -fsS http://127.0.0.1:3111/healthz)"; contains "$r" '"status":"ok"' 'health probe'
 r="$(mcp 3111 '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"e2e","version":"1"}}}')"; contains "$r" '"serverInfo"' 'MCP initialize'
-r="$(mcp 3111 '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}')"; n="$(python3 -c 'import json,sys; print(len(json.load(sys.stdin)["result"]["tools"]))' <<<"$r")"; [ "$n" = 28 ] || { echo "FAIL: expected 28 tools, got $n"; exit 1; }; ok '28 capability-scoped tools exposed'
+r="$(mcp 3111 '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}')"; n="$(python3 -c 'import json,sys; print(len(json.load(sys.stdin)["result"]["tools"]))' <<<"$r")"; [ "$n" = 31 ] || { echo "FAIL: expected 31 tools, got $n"; exit 1; }; ok '31 capability-scoped tools exposed'
 r="$(mcp 3111 '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"host_status","arguments":{"target":"demo-mock"}}}')"; contains "$r" 'wandora-prod-mock' 'mock target execution'
 r="$(mcp 3111 '{"jsonrpc":"2.0","id":30,"method":"tools/call","params":{"name":"create_directory","arguments":{"target":"demo-mock","path":"/tmp/should-not-create"}}}')"; contains "$r" 'operator' 'mutation tools require operator profile'
 r="$(mcp 3111 '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"read_file","arguments":{"target":"demo-mock","path":"/opt/wandora/.env"}}}')"; contains "$r" 'SECRET_PATH_DENIED' 'secret path denied'
