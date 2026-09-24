@@ -9,10 +9,14 @@
       "hostKeyFingerprint": "SHA256:COLE-AQUI-O-FINGERPRINT-DO-PASSO-2",
       "environment": "production",
       "capabilityProfile": "prod-read-mostly",
-      "allowedPaths": ["/opt/wandora"],
+      "allowedPaths": [
+        "/opt/wandora"
+      ],
       "allowedDockerContainers": [],
       "allowedServices": [],
-      "allowedGitRepos": ["/opt/wandora"],
+      "allowedGitRepos": [
+        "/opt/wandora"
+      ],
       "enabled": true,
       "transport": "ssh"
     },
@@ -23,12 +27,73 @@
       "username": "mock",
       "environment": "staging",
       "capabilityProfile": "read-only",
-      "allowedPaths": ["/opt/wandora"],
-      "allowedDockerContainers": ["*"],
-      "allowedServices": ["*"],
-      "allowedGitRepos": ["*"],
+      "allowedPaths": [
+        "/opt/wandora"
+      ],
+      "allowedDockerContainers": [
+        "*"
+      ],
+      "allowedServices": [
+        "*"
+      ],
+      "allowedGitRepos": [
+        "*"
+      ],
       "enabled": true,
       "transport": "mock"
+    },
+    {
+      "id": "example-agent",
+      "host": "127.0.0.1",
+      "port": 22,
+      "username": "ops-mcp",
+      "deviceId": "dev_REPLACE_ME_1234",
+      "environment": "production",
+      "capabilityProfile": "operator",
+      "allowedPaths": [
+        "/opt/app/ops-workspace"
+      ],
+      "allowedDockerContainers": [
+        "app-web",
+        "app-worker"
+      ],
+      "allowedDockerExecContainers": [
+        "app-web"
+      ],
+      "allowedDockerExecPrograms": [
+        "app-cli"
+      ],
+      "allowedDockerActions": [
+        "restart"
+      ],
+      "allowedServices": [
+        "app-agent.service"
+      ],
+      "allowedServiceActions": [
+        "restart"
+      ],
+      "allowedGitRepos": [
+        "/opt/app/source"
+      ],
+      "allowedWritePaths": [
+        "/opt/app/ops-workspace"
+      ],
+      "allowedProcessCwds": [
+        "/opt/app/ops-workspace",
+        "/opt/app/source"
+      ],
+      "allowedProcessPrograms": [
+        "bash",
+        "sh",
+        "git",
+        "node",
+        "npm",
+        "python3",
+        "curl",
+        "jq"
+      ],
+      "enabled": true,
+      "transport": "agent"
     }
   ]
 }
