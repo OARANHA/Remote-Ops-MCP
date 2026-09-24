@@ -43,7 +43,7 @@ Remote Ops MCP
 
 ## Read-only tools
 
-The server currently exposes 19 tools.
+The server currently exposes 31 capability-scoped tools. Read-only tools remain available to observation targets; mutation tools require an explicit `operator` target.
 
 | Group | Tools |
 |---|---|
@@ -54,8 +54,12 @@ The server currently exposes 19 tools.
 | Git | `git_head`, `git_status`, `git_diff_summary` |
 | Filesystem | `list_directory`, `read_file` |
 | Summary | `runtime_summary` |
+| Workspace operator | `create_directory`, `write_file`, `edit_file`, `move_file` |
+| Process operator | `start_process`, `read_process_output`, `send_process_input`, `kill_process`, `list_processes` |
+| Docker operator | `docker_exec`, `docker_action` |
+| systemd operator | `service_action` |
 
-The model never supplies an arbitrary shell command. Every remote command is generated from a fixed template and validated arguments.
+Operator tools are deny-by-default and require per-target allowlists. `docker_exec` accepts a container, program and argv rather than shell text; the Docker proxy independently enforces its own host-side allowlists. The isolated process broker can launch only configured programs from configured working directories.
 
 ## Admin console
 
@@ -125,7 +129,7 @@ The E2E suite validates both `noauth + MOCK_MODE` and the complete OAuth flow, i
 
 ## Security boundary
 
-Remote Ops MCP is intentionally **not** a general remote shell. Its first production capability set is observation/read-only. Write operations, deploys, restarts and arbitrary scripts are outside V1.1 and must not be added by widening an existing tool. They require a separate capability contract, explicit allowlist, idempotency and postcondition verification.
+Remote Ops MCP is intentionally **not** an unrestricted remote shell. Observation remains the default authority class. Operator capabilities are separate, explicit and deny-by-default: filesystem roots, process programs/CWDs, Docker exec containers/programs, Docker lifecycle actions and systemd actions are independently allowlisted per target. OS permissions and the local Docker proxy remain additional authority boundaries.
 
 The durable state file contains client metadata and **hashes** of refresh tokens/authorization codes, not their raw values. Access tokens are signed and additionally checked against current persisted session state on every MCP request.
 
@@ -137,3 +141,4 @@ The durable state file contains client metadata and **hashes** of refresh tokens
 - `docs/SECURITY_MODEL.md` — trust boundaries and threat model.
 - `docs/OPERATIONS.md` — deployment, revoke, backup and recovery.
 - `docs/ROADMAP.md` — intentionally deferred capabilities.
+- `docs/OPERATOR_CAPABILITIES.md` — portable operator profiles and cross-VPS onboarding.
