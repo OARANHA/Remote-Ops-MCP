@@ -17,7 +17,11 @@ const TargetSchema = z.object({
   capabilityProfile: z.enum(["read-only", "prod-read-mostly", "operator"]).default("prod-read-mostly"),
   allowedPaths: z.array(z.string()).default([]),
   allowedDockerContainers: z.array(z.string()).default([]),
+  allowedDockerExecContainers: z.array(z.string()).default([]),
+  allowedDockerExecPrograms: z.array(z.string()).default([]),
+  allowedDockerActions: z.array(z.enum(["start", "stop", "restart"])).default([]),
   allowedServices: z.array(z.string()).default([]),
+  allowedServiceActions: z.array(z.enum(["start", "stop", "restart", "reload"])).default([]),
   allowedGitRepos: z.array(z.string()).default([]),
   allowedWritePaths: z.array(z.string()).default([]),
   allowedProcessCwds: z.array(z.string()).default([]),
@@ -61,5 +65,5 @@ export function listTargets(): TargetConfig[] { return [...ensure().targets.valu
 export function targetIds(): string[] { return [...ensure().targets.keys()]; }
 export function targetCount(): number { return ensure().targets.size; }
 export function publicTarget(t: TargetConfig) {
-  return {id:t.id,environment:t.environment,capabilityProfile:t.capabilityProfile,transport:t.transport,enabled:t.enabled,allowedPaths:t.allowedPaths,allowedDockerContainers:t.allowedDockerContainers,allowedServices:t.allowedServices,allowedGitRepos:t.allowedGitRepos,allowedWritePaths:t.allowedWritePaths,allowedProcessCwds:t.allowedProcessCwds,allowedProcessPrograms:t.allowedProcessPrograms};
+  return {id:t.id,environment:t.environment,capabilityProfile:t.capabilityProfile,transport:t.transport,enabled:t.enabled,allowedPaths:t.allowedPaths,allowedDockerContainers:t.allowedDockerContainers,allowedDockerExecContainers:t.allowedDockerExecContainers,allowedDockerExecPrograms:t.allowedDockerExecPrograms,allowedDockerActions:t.allowedDockerActions,allowedServices:t.allowedServices,allowedServiceActions:t.allowedServiceActions,allowedGitRepos:t.allowedGitRepos,allowedWritePaths:t.allowedWritePaths,allowedProcessCwds:t.allowedProcessCwds,allowedProcessPrograms:t.allowedProcessPrograms};
 }

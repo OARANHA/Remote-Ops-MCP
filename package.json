@@ -1,7 +1,7 @@
 {
   "name": "remote-ops-mcp",
   "version": "2.0.0-dev.0",
-  "description": "Remote read-only MCP operations control plane with OAuth, Agent Mesh pairing, audit and SSH fallback.",
+  "description": "Capability-scoped remote operations MCP control plane with OAuth, Agent Mesh, audit, read-only observation and allowlisted operator actions.",
   "type": "module",
   "main": "dist/index.js",
   "engines": {

@@ -124,6 +124,17 @@ function requireProgram(t: TargetConfig, value: unknown): string {
   return program;
 }
 
+function requireNamedCapability(list: string[], value: unknown, label: string): string {
+  const item=String(value??"");
+  if(!/^[A-Za-z0-9_.+-]{1,100}$/.test(item)) throw new OpsError("INVALID_ARGUMENT", `${label} inválido`);
+  if(!list.includes("*")&&!list.includes(item)) throw new OpsError("CAPABILITY_DENIED", `${label} "${item}" não está na allowlist`, `allowlist: ${list.join(", ") || "(vazia)"}`);
+  return item;
+}
+
+function requireAgentMutationTransport(t: TargetConfig): void {
+  if(t.transport!=="agent") throw new OpsError("CAPABILITY_DENIED", `target "${t.id}" precisa usar transport=agent para mutações Docker governadas`);
+}
+
 // ---------- tools ----------
 
 const targetField = z
@@ -141,7 +152,7 @@ const TOOL_DEFS: ToolDef[] = [
     run: async () => ({
       status: "ok",
       service: "remote-ops-mcp",
-      version: "1.1.0",
+      version: "2.0.0-dev",
       authMode: env.AUTH_MODE,
       mockMode: env.MOCK_MODE === "1",
       targets: targetIds(),
@@ -365,6 +376,57 @@ const TOOL_DEFS: ToolDef[] = [
     },
   },
 
+  {
+    name: "docker_exec",
+    description: "Executa um programa allowlisted dentro de um contêiner allowlisted. Sem shell implícito, sem env/user/privileged override e com saída redigida.",
+    inputSchema: {
+      target: targetField,
+      container: z.string().min(1).max(100),
+      program: z.string().min(1).max(80),
+      args: z.array(z.string().max(16384)).max(80).optional(),
+    },
+    mutation: true,
+    destructive: true,
+    idempotent: false,
+    run: async (args) => {
+      const t=resolveTarget(args.target);
+      requireOperator(t);
+      requireAgentMutationTransport(t);
+      const container=assertIdentifier(String(args.container??""),"container");
+      checkAllow(t.allowedDockerExecContainers,container,"contêiner para exec","CONTAINER_NOT_ALLOWED");
+      const program=requireNamedCapability(t.allowedDockerExecPrograms,args.program,"programa docker exec");
+      const argv=Array.isArray(args.args)?args.args.map(String):[];
+      const T=await tr(t);
+      const res=await T.exec(["docker","exec",container,program,...argv],{timeoutMs:t.commandTimeoutMs??30_000,maxBytes:env.MAX_OUTPUT_BYTES});
+      if(res.code!==0 && /permission denied|not_allowed|denied/i.test(res.stderr)) dockerAccessError(res);
+      return {target:t.id,container,program,exit_code:res.code,timed_out:res.timedOut,truncated:res.truncated,stdout:redactText(res.stdout),stderr:redactText(res.stderr)};
+    },
+  },
+  {
+    name: "docker_action",
+    description: "Executa start/stop/restart de um contêiner allowlisted quando a ação também estiver explicitamente liberada no target.",
+    inputSchema: {
+      target: targetField,
+      container: z.string().min(1).max(100),
+      action: z.enum(["start","stop","restart"]),
+    },
+    mutation: true,
+    destructive: true,
+    idempotent: false,
+    run: async (args) => {
+      const t=resolveTarget(args.target);
+      requireOperator(t);
+      requireAgentMutationTransport(t);
+      const container=assertIdentifier(String(args.container??""),"container");
+      checkAllow(t.allowedDockerContainers,container,"contêiner","CONTAINER_NOT_ALLOWED");
+      const action=requireNamedCapability(t.allowedDockerActions,args.action,"ação docker");
+      const T=await tr(t);
+      const res=await T.exec(["docker",action,container],{timeoutMs:t.commandTimeoutMs??30_000});
+      if(res.code!==0) dockerAccessError(res);
+      return {target:t.id,container,action,status:"ok",output:redactText(res.stdout)};
+    },
+  },
+
   // ============ serviços (systemd) ============
   {
     name: "service_status",
@@ -430,6 +492,31 @@ const TOOL_DEFS: ToolDef[] = [
         note: journalAccessNote(res),
         output: redactText(res.stdout),
       };
+    },
+  },
+
+  {
+    name: "service_action",
+    description: "Executa start/stop/restart/reload de serviço systemd allowlisted quando a ação também estiver liberada. A permissão do SO continua sendo obrigatória.",
+    inputSchema: {
+      target: targetField,
+      service: z.string().min(1).max(100),
+      action: z.enum(["start","stop","restart","reload"]),
+    },
+    mutation: true,
+    destructive: true,
+    idempotent: false,
+    run: async (args) => {
+      const t=resolveTarget(args.target);
+      requireOperator(t);
+      const service=assertIdentifier(String(args.service??""),"service");
+      const unit=service.includes(".")?service:`${service}.service`;
+      checkAllow(t.allowedServices,service,"serviço","SERVICE_NOT_ALLOWED");
+      const action=requireNamedCapability(t.allowedServiceActions,args.action,"ação systemd");
+      const T=await tr(t);
+      const res=await T.exec(["systemctl",action,unit],{timeoutMs:t.commandTimeoutMs??30_000});
+      if(res.code!==0) throw new OpsError("REMOTE_COMMAND_FAILED",`systemctl ${action} falhou (exit ${res.code})`,redactText(res.stderr).slice(0,300));
+      return {target:t.id,unit,action,status:"ok",output:redactText(res.stdout)};
     },
   },
 

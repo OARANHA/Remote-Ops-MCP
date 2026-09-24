@@ -90,9 +90,9 @@ async function runPersistent(): Promise<void> {
         delay = 1000;
         process.stdout.write("AGENT_CHANNEL=CONNECTED device_id=" + s.device_id + "\n");
         const sendHeartbeat = () => {
-          if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "heartbeat", protocol: 1, agent_version: version, capabilities: ["host.status","disk.usage","memory.status","uptime","fs.read","workspace.write","process.session"] }));
+          if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "heartbeat", protocol: 1, agent_version: version, capabilities: ["host.status","disk.usage","memory.status","uptime","fs.read","workspace.write","process.session","docker.exec","docker.lifecycle","service.lifecycle"] }));
         };
-        ws.send(JSON.stringify({ type: "hello", protocol: 1, agent_version: version, hostname: os.hostname(), fingerprint: machineFingerprint(), capabilities: ["host.status","disk.usage","memory.status","uptime","fs.read","workspace.write","process.session"] }));
+        ws.send(JSON.stringify({ type: "hello", protocol: 1, agent_version: version, hostname: os.hostname(), fingerprint: machineFingerprint(), capabilities: ["host.status","disk.usage","memory.status","uptime","fs.read","workspace.write","process.session","docker.exec","docker.lifecycle","service.lifecycle"] }));
         heartbeat = setInterval(sendHeartbeat, 30_000);
       });
       ws.on("message", (data) => {
@@ -133,7 +133,7 @@ async function heartbeatOnce(): Promise<void> {
   const r = await jsonFetch(s.control_plane + "/agent/heartbeat", {
     method: "POST",
     headers: { authorization: "Bearer " + s.device_token },
-    body: JSON.stringify({ agent_version: version, capabilities: ["host.status", "disk.usage", "memory.status", "uptime", "fs.read", "workspace.write", "process.session"] }),
+    body: JSON.stringify({ agent_version: version, capabilities: ["host.status", "disk.usage", "memory.status", "uptime", "fs.read", "workspace.write", "process.session", "docker.exec", "docker.lifecycle", "service.lifecycle"] }),
   });
   if (r.status !== 200) throw new Error("heartbeat failed: HTTP " + r.status);
   process.stdout.write("HEARTBEAT=GREEN device_id=" + s.device_id + "\n");
