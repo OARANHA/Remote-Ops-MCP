@@ -25,6 +25,19 @@ function safeLines(value: unknown,max=500): number {
 function safeBytes(value: unknown,max=1048576): number {
   const n=Number(value); if(!Number.isInteger(n)||n<1||n>max) throw new Error("invalid_bytes"); return n;
 }
+function safeProgram(value: unknown): string {
+  const s=String(value??""); if(!/^[A-Za-z0-9_.+-]{1,80}$/.test(s)) throw new Error("invalid_program"); return s;
+}
+function safeArgv(value: unknown): string[] {
+  if(!Array.isArray(value)||value.length>80) throw new Error("invalid_argv");
+  return value.map((v)=>{const s=String(v??""); if(Buffer.byteLength(s,"utf8")>16384||/[\0\r\n]/.test(s)) throw new Error("invalid_argument"); return s;});
+}
+function safeDockerAction(value: unknown): "start"|"stop"|"restart" {
+  const s=String(value??""); if(!["start","stop","restart"].includes(s)) throw new Error("invalid_docker_action"); return s as "start"|"stop"|"restart";
+}
+function safeServiceAction(value: unknown): "start"|"stop"|"restart"|"reload" {
+  const s=String(value??""); if(!["start","stop","restart","reload"].includes(s)) throw new Error("invalid_service_action"); return s as "start"|"stop"|"restart"|"reload";
+}
 
 export function argvToAgentOperation(argv: string[]): AgentOperation {
   const [cmd,...a]=argv;
@@ -41,7 +54,10 @@ export function argvToAgentOperation(argv: string[]): AgentOperation {
   if(cmd==="docker"&&a[0]==="inspect"&&a[1]==="--format"&&a[2]==="{{json .State}}"&&a.length===4)return{op:"docker.health",args:{container:safeId(a[3])}};
   if(cmd==="docker"&&a[0]==="inspect"&&a.length===2)return{op:"docker.inspect",args:{container:safeId(a[1])}};
   if(cmd==="docker"&&a[0]==="logs"&&a[1]==="--tail"&&a[3]==="--timestamps"&&a.length===5)return{op:"docker.logs",args:{container:safeId(a[4]),lines:safeLines(a[2])}};
+  if(cmd==="docker"&&a[0]==="exec"&&a.length>=3)return{op:"docker.exec",args:{container:safeId(a[1]),program:safeProgram(a[2]),argv:safeArgv(a.slice(3))}};
+  if(cmd==="docker"&&["start","stop","restart"].includes(a[0])&&a.length===2)return{op:"docker.action",args:{action:safeDockerAction(a[0]),container:safeId(a[1])}};
   if(cmd==="systemctl"&&a[0]==="show"&&a.length>=2)return{op:"service.status",args:{unit:safeId(a[1])}};
+  if(cmd==="systemctl"&&["start","stop","restart","reload"].includes(a[0])&&a.length===2)return{op:"service.action",args:{action:safeServiceAction(a[0]),unit:safeId(a[1])}};
   if(cmd==="journalctl"&&a[0]==="-u"&&a[2]==="-n")return{op:"service.logs",args:{unit:safeId(a[1]),lines:safeLines(a[3])}};
   if(cmd==="git"&&a[0]==="-C"&&a[2]==="rev-parse"&&a[3]==="HEAD")return{op:"git.head",args:{repo:safePath(a[1])}};
   if(cmd==="git"&&a[0]==="-C"&&a[2]==="log")return{op:"git.log",args:{repo:safePath(a[1])}};
@@ -73,6 +89,7 @@ function operationArgv(x: AgentOperation): string[] {
     case "docker.logs": return ["docker","logs","--tail",String(safeLines(a.lines)),"--timestamps",safeId(a.container)];
     case "service.status": return ["systemctl","show",safeId(a.unit),"-p","LoadState","-p","ActiveState","-p","SubState","-p","UnitFileState","-p","ExecMainPID","-p","MemoryCurrent","-p","NRestarts","-p","FragmentPath","--no-pager"];
     case "service.logs": return ["journalctl","-u",safeId(a.unit),"-n",String(safeLines(a.lines)),"--no-pager","-o","short-iso"];
+    case "service.action": return ["systemctl",safeServiceAction(a.action),safeId(a.unit)];
     case "git.head": return ["git","-C",safePath(a.repo),"rev-parse","HEAD"];
     case "git.log": return ["git","-C",safePath(a.repo),"log","-1","--format=%H%n%an%n%aI%n%s"];
     case "git.status": return ["git","-C",safePath(a.repo),"-c","core.quotepath=false","status","--porcelain=v1","-b"];
@@ -96,7 +113,43 @@ function childEnvForOperation(x: AgentOperation): NodeJS.ProcessEnv {
   return env;
 }
 
+async function executeDockerOperatorOperation(x: AgentOperation, opts?: ExecOptions): Promise<ExecResult> {
+  const dockerHost=process.env.DOCKER_HOST;
+  if(dockerHost!=="tcp://127.0.0.1:23751") throw new Error("docker_read_proxy_required");
+  const a=x.args??{}, started=Date.now(), timeoutMs=opts?.timeoutMs??15000;
+  let pathName:string, body:Record<string,unknown>;
+  if(x.op==="docker.exec"){
+    const container=safeId(a.container), program=safeProgram(a.program), argv=safeArgv(a.argv);
+    pathName="/ops/containers/"+encodeURIComponent(container)+"/exec";
+    body={program,argv};
+  } else {
+    const container=safeId(a.container), action=safeDockerAction(a.action);
+    pathName="/ops/containers/"+encodeURIComponent(container)+"/"+action;
+    body={};
+  }
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),timeoutMs);
+  try{
+    const r=await fetch("http://127.0.0.1:23751"+pathName,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body),signal:controller.signal});
+    const raw=await r.text();
+    let parsed:Record<string,unknown>={};
+    try{parsed=JSON.parse(raw) as Record<string,unknown>;}catch{}
+    if(!r.ok) return {code:1,stdout:"",stderr:String(parsed.error??("docker_proxy_http_"+r.status)),durationMs:Date.now()-started,truncated:false,timedOut:false};
+    if(x.op==="docker.exec") return {
+      code:typeof parsed.code==="number"?parsed.code:1,
+      stdout:typeof parsed.stdout==="string"?parsed.stdout:"",
+      stderr:typeof parsed.stderr==="string"?parsed.stderr:"",
+      durationMs:Date.now()-started,truncated:parsed.truncated===true,timedOut:false,
+    };
+    return {code:0,stdout:JSON.stringify(parsed),stderr:"",durationMs:Date.now()-started,truncated:false,timedOut:false};
+  } catch(e) {
+    const timedOut=e instanceof Error&&e.name==="AbortError";
+    return {code:timedOut?null:1,stdout:"",stderr:timedOut?"docker_proxy_timeout":(e instanceof Error?e.message:String(e)),durationMs:Date.now()-started,truncated:false,timedOut};
+  } finally { clearTimeout(timer); }
+}
+
 export async function executeAgentOperation(x: AgentOperation, opts?: ExecOptions): Promise<ExecResult> {
+  if (x.op === "docker.exec" || x.op === "docker.action") return executeDockerOperatorOperation(x, opts);
   if (x.op.startsWith("workspace.") || x.op.startsWith("process.")) {
     const started = Date.now();
     try {
