@@ -131,6 +131,10 @@ function requireNamedCapability(list: string[], value: unknown, label: string): 
   return item;
 }
 
+function requireAgentMutationTransport(t: TargetConfig): void {
+  if(t.transport!=="agent") throw new OpsError("CAPABILITY_DENIED", `target "${t.id}" precisa usar transport=agent para mutações Docker governadas`);
+}
+
 // ---------- tools ----------
 
 const targetField = z
@@ -387,6 +391,7 @@ const TOOL_DEFS: ToolDef[] = [
     run: async (args) => {
       const t=resolveTarget(args.target);
       requireOperator(t);
+      requireAgentMutationTransport(t);
       const container=assertIdentifier(String(args.container??""),"container");
       checkAllow(t.allowedDockerExecContainers,container,"contêiner para exec","CONTAINER_NOT_ALLOWED");
       const program=requireNamedCapability(t.allowedDockerExecPrograms,args.program,"programa docker exec");
@@ -411,6 +416,7 @@ const TOOL_DEFS: ToolDef[] = [
     run: async (args) => {
       const t=resolveTarget(args.target);
       requireOperator(t);
+      requireAgentMutationTransport(t);
       const container=assertIdentifier(String(args.container??""),"container");
       checkAllow(t.allowedDockerContainers,container,"contêiner","CONTAINER_NOT_ALLOWED");
       const action=requireNamedCapability(t.allowedDockerActions,args.action,"ação docker");
