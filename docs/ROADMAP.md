@@ -22,17 +22,18 @@
 - Prometheus/OpenTelemetry metrics;
 - signed export of audit evidence and configurable retention.
 
-## Write capability gate — intentionally deferred
+## Operator capability plane
 
-Any mutating operational tool (`service_restart`, `docker_restart`, deployment, configuration write, etc.) is a new authority class. It should not be implemented as a small extension of an existing read-only tool.
+V2 introduces a separate `operator` authority class rather than widening read-only tools. Filesystem writes, brokered process execution, bounded Docker exec/lifecycle operations and systemd lifecycle actions are each controlled by explicit per-target allowlists.
 
-Before any write plane is accepted, require:
+The Docker socket remains behind a local proxy with an independent host-side allowlist. Docker mutations require Agent Mesh transport. Empty operator allowlists fail closed.
 
-1. explicit capability definition and threat model;
-2. per-target allowlist;
-3. idempotency key and replay rules;
-4. precondition and postcondition verification;
-5. bounded rollback strategy;
-6. complete audit evidence;
-7. human approval policy where consequences warrant it;
-8. separate adversarial review.
+Still intentionally deferred or requiring a separate contract:
+
+1. unrestricted shell/root authority;
+2. arbitrary Docker API forwarding;
+3. privileged containers, mounts or environment injection through Docker exec;
+4. generic package/system configuration mutation outside allowlisted workspaces;
+5. deployment primitives without explicit pre/postcondition and rollback semantics;
+6. cross-target shared credentials;
+7. automatic privilege escalation.
