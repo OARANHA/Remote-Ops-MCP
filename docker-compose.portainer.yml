@@ -67,6 +67,9 @@ services:
       DOCKER_SOCKET_PATH: /var/run/docker.sock
       MAX_PROXY_BYTES: ${MAX_PROXY_BYTES:-2097152}
       ALLOWED_DOCKER_CONTAINERS: ${ALLOWED_DOCKER_CONTAINERS:-remote-ops-mcp,wandora-traefik,wandora-paperclip,wandora-core,wandora-web,wandora-messaging-gateway}
+      ALLOWED_DOCKER_EXEC_CONTAINERS: ${ALLOWED_DOCKER_EXEC_CONTAINERS:-}
+      ALLOWED_DOCKER_EXEC_PROGRAMS: ${ALLOWED_DOCKER_EXEC_PROGRAMS:-}
+      ALLOWED_DOCKER_ACTIONS: ${ALLOWED_DOCKER_ACTIONS:-}
     ports:
       - "127.0.0.1:${DOCKER_READ_PROXY_BIND_PORT:-23751}:2375"
     volumes:
