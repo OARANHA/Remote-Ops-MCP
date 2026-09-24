@@ -152,7 +152,7 @@ const TOOL_DEFS: ToolDef[] = [
     run: async () => ({
       status: "ok",
       service: "remote-ops-mcp",
-      version: "1.1.0",
+      version: "2.0.0-dev",
       authMode: env.AUTH_MODE,
       mockMode: env.MOCK_MODE === "1",
       targets: targetIds(),
