@@ -1,0 +1,85 @@
+services:
+  remote-ops-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: wandora/remote-ops-mcp:portainer
+    container_name: remote-ops-mcp
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:${REMOTE_OPS_BIND_PORT:-3005}:3000"
+    environment:
+      PORT: "3000"
+      AUTH_MODE: ${AUTH_MODE:-oauth}
+      MCP_PASSWORD: ${MCP_PASSWORD:?defina MCP_PASSWORD no Portainer}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?defina ADMIN_PASSWORD no Portainer}
+      AUTH_SECRET: ${AUTH_SECRET:?defina AUTH_SECRET no Portainer}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://mcp.wandora.com.br}
+      TZ: ${TZ:-UTC}
+      MOCK_MODE: ${MOCK_MODE:-0}
+      MAX_OUTPUT_BYTES: ${MAX_OUTPUT_BYTES:-262144}
+      MAX_LOG_LINES: ${MAX_LOG_LINES:-500}
+      READ_FILE_MAX_BYTES: ${READ_FILE_MAX_BYTES:-65536}
+      RATE_LIMIT_PER_MIN: ${RATE_LIMIT_PER_MIN:-120}
+      OAUTH_MAX_CLIENTS: ${OAUTH_MAX_CLIENTS:-100}
+      OAUTH_PENDING_CLIENT_TTL_HOURS: ${OAUTH_PENDING_CLIENT_TTL_HOURS:-24}
+      PER_TARGET_CONCURRENCY: ${PER_TARGET_CONCURRENCY:-4}
+      COMMAND_TIMEOUT_MS: ${COMMAND_TIMEOUT_MS:-15000}
+      CONNECT_TIMEOUT_MS: ${CONNECT_TIMEOUT_MS:-10000}
+      AUDIT_FILE: /app/data/audit.jsonl
+      STATE_FILE: /app/data/state.json
+      TARGETS_FILE: /app/config/targets.json
+    volumes:
+      - ${REMOTE_OPS_HOME:-/opt/wandora/stacks/remote-ops-mcp/runtime}/config:/app/config:ro
+      - ${REMOTE_OPS_HOME:-/opt/wandora/stacks/remote-ops-mcp/runtime}/data:/app/data
+      - ${REMOTE_OPS_HOME:-/opt/wandora/stacks/remote-ops-mcp/runtime}/secrets:/app/secrets:ro
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m
+    networks:
+      - wandora-edge
+
+  docker-read-proxy:
+    image: wandora/remote-ops-mcp:portainer
+    container_name: remote-ops-docker-read-proxy
+    restart: unless-stopped
+    init: true
+    user: "${REMOTE_OPS_UID:-1001}:${REMOTE_OPS_GID:-987}"
+    group_add:
+      - "${DOCKER_GID:-988}"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    command: ["node", "dist/docker/read-proxy.js"]
+    environment:
+      PORT: "2375"
+      DOCKER_SOCKET_PATH: /var/run/docker.sock
+      MAX_PROXY_BYTES: ${MAX_PROXY_BYTES:-2097152}
+      ALLOWED_DOCKER_CONTAINERS: ${ALLOWED_DOCKER_CONTAINERS:-remote-ops-mcp,wandora-traefik,wandora-paperclip,wandora-core,wandora-web,wandora-messaging-gateway}
+    ports:
+      - "127.0.0.1:${DOCKER_READ_PROXY_BIND_PORT:-23751}:2375"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:2375/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 3s
+      retries: 3
+
+networks:
+  wandora-edge:
+    external: true
