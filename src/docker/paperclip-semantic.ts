@@ -184,9 +184,11 @@ if (op === "task-drain-status") {
     .map((row) => safeString(row.createdAt, 80))
     .filter((value) => value != null)
     .sort();
-  const matchingRunCount = objectRows.filter((row) => row.runId === input.runId).length;
+  const matchingRunRows = objectRows.filter((row) => row.runId === input.runId);
+  const matchingRunCount = matchingRunRows.length;
   const matchingToolCount = objectRows.filter((row) => row.toolName === input.toolName).length;
-  const matchingRunToolCount = objectRows.filter((row) => row.runId === input.runId && row.toolName === input.toolName).length;
+  const matchingRunToolCount = matchingRunRows.filter((row) => row.toolName === input.toolName).length;
+  const matchingRunToolNames = [...new Set(matchingRunRows.map((row) => safeString(row.toolName, 240)).filter((value) => value != null))].sort();
   const events = objectRows
     .filter((row) => input.runId == null || row.runId === input.runId)
     .filter((row) => input.toolName == null || row.toolName === input.toolName)
@@ -213,6 +215,7 @@ if (op === "task-drain-status") {
       matchingRunCount,
       matchingToolCount,
       matchingRunToolCount,
+      matchingRunToolNames,
     },
   };
 } else if (op === "tool-policy-test") {
