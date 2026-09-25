@@ -521,7 +521,7 @@ const TOOL_DEFS: ToolDef[] = [
       target: targetField,
       company_id: paperclipGuid.describe("Company ID Paperclip (UUID)"),
       connection_id: paperclipGuid.describe("Tool Connection ID Paperclip (UUID)"),
-      limit: z.number().int().min(1).max(50).default(20),
+      limit: z.number().int().min(1).max(100).default(20),
       run_id: paperclipGuid.describe("Heartbeat run ID Paperclip (UUID)"),
       tool_name: z.string().trim().min(1).max(240).regex(/^[A-Za-z0-9_.:-]+$/),
     },
