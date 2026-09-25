@@ -46,6 +46,7 @@ assert.equal(cmd.join(" ").includes("board-token"), false);
 assert.equal(cmd.join(" ").includes("/paperclip/operator-cli/activation-v1/auth.json"), true);
 assert.equal(cmd.join(" ").includes("oldestCreatedAt"), true);
 assert.equal(cmd.join(" ").includes("matchingRunToolCount"), true);
+assert.equal(cmd.join(" ").includes("data?.structuredContent?.error"), true);
 
 console.log("PAPERCLIP_SEMANTIC_TEST_OK");
 
