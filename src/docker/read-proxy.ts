@@ -20,7 +20,7 @@ const candidateContainerPorts = csvNumberSet(process.env.ALLOWED_DOCKER_CANDIDAT
 
 if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) throw new Error("invalid PORT");
 if (allowed.size === 0) throw new Error("ALLOWED_DOCKER_CONTAINERS must not be empty");
-for (const action of allowedActions) if (!["start","stop","restart"].includes(action)) throw new Error("invalid ALLOWED_DOCKER_ACTIONS");
+for (const action of allowedActions) if (!["start","stop","restart","load_image","candidate_run","candidate_remove"].includes(action)) throw new Error("invalid ALLOWED_DOCKER_ACTIONS");
 
 function csvSet(raw = ""): Set<string> { return new Set(raw.split(",").map((x) => x.trim()).filter(Boolean)); }
 function csvNumberSet(raw = ""): Set<number> {
