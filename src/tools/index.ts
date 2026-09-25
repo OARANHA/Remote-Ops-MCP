@@ -135,6 +135,18 @@ function requireAgentMutationTransport(t: TargetConfig): void {
   if(t.transport!=="agent") throw new OpsError("CAPABILITY_DENIED", `target "${t.id}" precisa usar transport=agent para mutações Docker governadas`);
 }
 
+function requirePaperclipSemantic(t: TargetConfig): void {
+  requireOperator(t);
+  requireAgentMutationTransport(t);
+  checkAllow(t.allowedDockerExecContainers, "wandora-paperclip", "contêiner Paperclip semântico", "CONTAINER_NOT_ALLOWED");
+}
+
+function unwrapPaperclipResult(t: TargetConfig, value: Record<string, unknown>): Record<string, unknown> {
+  const result = value.result;
+  if (result && typeof result === "object" && !Array.isArray(result)) return { target: t.id, ...(result as Record<string, unknown>) };
+  return { target: t.id, result: result ?? null };
+}
+
 // ---------- tools ----------
 
 const targetField = z
@@ -142,6 +154,49 @@ const targetField = z
   .min(1)
   .max(64)
   .describe("ID do target no Target Registry (ex.: wandora-prod). Use targets_list para ver os IDs.");
+
+const paperclipGuid = z.string().uuid();
+const paperclipActor = z.object({
+  actorType: z.enum(["agent","user","system","plugin"]),
+  actorId: z.string().trim().min(1).max(240),
+  agentId: paperclipGuid.optional().nullable(),
+}).strict();
+const paperclipRunContext = z.object({
+  heartbeatRunId: paperclipGuid.optional().nullable(),
+  issueId: paperclipGuid.optional().nullable(),
+  projectId: paperclipGuid.optional().nullable(),
+  routineId: paperclipGuid.optional().nullable(),
+  gatewayId: paperclipGuid.optional().nullable(),
+  gatewayPublicId: z.string().trim().min(1).max(120).regex(/^[A-Za-z0-9_.:-]+$/).optional().nullable(),
+  gatewayTokenId: paperclipGuid.optional().nullable(),
+  clientSubjectType: z.enum(["gateway_client","heartbeat_run","board_user","agent"]).optional().nullable(),
+  clientSubjectId: z.string().trim().min(1).max(240).optional().nullable(),
+  clientName: z.string().trim().min(1).max(160).optional().nullable(),
+  externalClient: z.boolean().optional().nullable(),
+}).strict();
+const paperclipPolicyRequest = z.object({
+  applicationId: paperclipGuid.optional().nullable(),
+  connectionId: paperclipGuid.optional().nullable(),
+  catalogEntryId: paperclipGuid.optional().nullable(),
+  toolName: z.string().trim().min(1).max(240),
+  arguments: z.unknown().optional(),
+  idempotencyKey: z.string().trim().min(1).max(512).optional().nullable(),
+  sideEffecting: z.boolean().optional(),
+}).strict();
+
+const paperclipPolicySelectors = z.object({
+  agentId: paperclipGuid.optional(),
+  connectionId: paperclipGuid.optional(),
+  catalogEntryId: paperclipGuid.optional(),
+  toolName: z.string().trim().min(1).max(240).regex(/^[A-Za-z0-9_.:-]+$/).optional(),
+  toolNames: z.array(z.string().trim().min(1).max(240).regex(/^[A-Za-z0-9_.:-]+$/)).min(1).max(32).optional(),
+}).strict().refine((value) => Object.keys(value).length > 0, { message: "at least one selector is required" });
+
+const paperclipRateLimitConfig = z.object({
+  limit: z.number().int().min(1).max(1000),
+  windowSeconds: z.number().int().min(1).max(86400),
+  keyBy: z.array(z.enum(["agent","tool","connection"])).min(1).max(4),
+}).strict();
 
 const TOOL_DEFS: ToolDef[] = [
   // ============ servidor ============
@@ -424,6 +479,150 @@ const TOOL_DEFS: ToolDef[] = [
       const res=await T.exec(["docker",action,container],{timeoutMs:t.commandTimeoutMs??30_000});
       if(res.code!==0) dockerAccessError(res);
       return {target:t.id,container,action,status:"ok",output:redactText(res.stdout)};
+    },
+  },
+
+  // ============ Paperclip semantic operator capabilities ============
+  {
+    name: "paperclip_task_drain_status",
+    description: "Lê o status oficial do Task Drain do Paperclip via GET /api/instance/task-drain usando a credencial Board protegida dentro de wandora-paperclip. Não expõe token nem auth store.",
+    inputSchema: { target: targetField },
+    mutation: false,
+    destructive: false,
+    idempotent: true,
+    run: async (args) => {
+      const t=resolveTarget(args.target);
+      requirePaperclipSemantic(t);
+      const value=await agentJson(t,"paperclip.task_drain_status",{},20_000);
+      return unwrapPaperclipResult(t,value);
+    },
+  },
+  {
+    name: "paperclip_tool_policies_list",
+    description: "Lista as Tool Policies oficiais de uma company Paperclip via GET /api/companies/:companyId/tools/policies, preservando a credencial Board dentro do container.",
+    inputSchema: {
+      target: targetField,
+      company_id: paperclipGuid.describe("Company ID Paperclip (UUID)"),
+    },
+    mutation: false,
+    destructive: false,
+    idempotent: true,
+    run: async (args) => {
+      const t=resolveTarget(args.target);
+      requirePaperclipSemantic(t);
+      const value=await agentJson(t,"paperclip.tool_policies_list",{companyId:String(args.company_id)},20_000);
+      return unwrapPaperclipResult(t,value);
+    },
+  },
+  {
+    name: "paperclip_tool_policy_test",
+    description: "Qualifica uma decisão de Tool Policy oficial do Paperclip sem consumir rate limit e sem escrever audit event. A capability força consumeRateLimit=false e writeAuditEvent=false; o caller não pode sobrescrever esses flags.",
+    inputSchema: {
+      target: targetField,
+      company_id: paperclipGuid.describe("Company ID Paperclip (UUID)"),
+      actor: paperclipActor,
+      run_context: paperclipRunContext.optional().nullable(),
+      request: paperclipPolicyRequest,
+    },
+    mutation: false,
+    destructive: false,
+    idempotent: true,
+    run: async (args) => {
+      const t=resolveTarget(args.target);
+      requirePaperclipSemantic(t);
+      const value=await agentJson(t,"paperclip.tool_policy_test",{
+        companyId:String(args.company_id),
+        actor:args.actor as Record<string,unknown>,
+        runContext:(args.run_context??null) as Record<string,unknown>|null,
+        request:args.request as Record<string,unknown>,
+      },20_000);
+      return unwrapPaperclipResult(t,value);
+    },
+  },
+
+  {
+    name: "paperclip_task_drain_start",
+    description: "Inicia o Task Drain oficial do Paperclip com TTL explícito e limitado a 24h, usando a credencial Board protegida dentro de wandora-paperclip.",
+    inputSchema: {
+      target: targetField,
+      ttl_ms: z.number().int().positive().max(86_400_000),
+    },
+    mutation: true,
+    destructive: false,
+    idempotent: false,
+    run: async (args) => {
+      const t=resolveTarget(args.target);
+      requirePaperclipSemantic(t);
+      const value=await agentJson(t,"paperclip.task_drain_start",{ttlMs:Number(args.ttl_ms)},20_000);
+      return unwrapPaperclipResult(t,value);
+    },
+  },
+  {
+    name: "paperclip_task_drain_stop",
+    description: "Encerra o Task Drain oficial do Paperclip. Não expõe nem copia a credencial Board.",
+    inputSchema: { target: targetField },
+    mutation: true,
+    destructive: false,
+    idempotent: true,
+    run: async (args) => {
+      const t=resolveTarget(args.target);
+      requirePaperclipSemantic(t);
+      const value=await agentJson(t,"paperclip.task_drain_stop",{},20_000);
+      return unwrapPaperclipResult(t,value);
+    },
+  },
+  {
+    name: "paperclip_tool_policy_create",
+    description: "Cria policy Paperclip governada limitada a block ou rate_limit, com selectors allowlisted. Não aceita conditions arbitrárias.",
+    inputSchema: {
+      target: targetField,
+      company_id: paperclipGuid,
+      name: z.string().trim().min(1).max(160),
+      description: z.string().max(4000).optional().nullable(),
+      policy_type: z.enum(["block","rate_limit"]),
+      priority: z.number().int().min(0).max(10000).default(100),
+      selectors: paperclipPolicySelectors,
+      config: paperclipRateLimitConfig.optional().nullable(),
+    },
+    mutation: true,
+    destructive: false,
+    idempotent: false,
+    run: async (args) => {
+      const t=resolveTarget(args.target);
+      requirePaperclipSemantic(t);
+      const value=await agentJson(t,"paperclip.tool_policy_create",{
+        companyId:String(args.company_id),
+        name:String(args.name),
+        description:args.description??null,
+        policyType:String(args.policy_type),
+        priority:Number(args.priority??100),
+        selectors:args.selectors as Record<string,unknown>,
+        config:(args.config??null) as Record<string,unknown>|null,
+      },20_000);
+      return unwrapPaperclipResult(t,value);
+    },
+  },
+  {
+    name: "paperclip_tool_policy_delete",
+    description: "Remove uma policy Paperclip somente quando o ID e o nome esperado conferem, evitando exclusão acidental de policy diferente.",
+    inputSchema: {
+      target: targetField,
+      company_id: paperclipGuid,
+      policy_id: paperclipGuid,
+      expected_name: z.string().trim().min(1).max(160),
+    },
+    mutation: true,
+    destructive: true,
+    idempotent: false,
+    run: async (args) => {
+      const t=resolveTarget(args.target);
+      requirePaperclipSemantic(t);
+      const value=await agentJson(t,"paperclip.tool_policy_delete",{
+        companyId:String(args.company_id),
+        policyId:String(args.policy_id),
+        expectedName:String(args.expected_name),
+      },20_000);
+      return unwrapPaperclipResult(t,value);
     },
   },
 

@@ -1,4 +1,5 @@
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
+import { PAPERCLIP_SEMANTIC_CONTAINER, normalizePaperclipSemanticPayload, paperclipSemanticExecCommand, type PaperclipSemanticOperation } from "./paperclip-semantic.js";
 
 const PORT = Number(process.env.PORT ?? 2375);
 const SOCKET = process.env.DOCKER_SOCKET_PATH ?? "/var/run/docker.sock";
@@ -98,6 +99,36 @@ function demuxDockerStream(body:Buffer):{stdout:string;stderr:string;truncated:b
   if(frames===0) stdout=body.toString("utf8");
   return {stdout,stderr,truncated:false};
 }
+async function handlePaperclipSemantic(req:IncomingMessage,res:ServerResponse,path:string):Promise<boolean>{
+  const m=/^\/ops\/paperclip\/(task-drain-status|task-drain-start|task-drain-stop|tool-policies-list|tool-policy-test|tool-policy-create|tool-policy-delete)$/.exec(path);
+  if(!m) return false;
+  if(req.method!=="POST"){jsonError(res,405,"method_not_allowed");return true;}
+  if(!allowed.has(PAPERCLIP_SEMANTIC_CONTAINER)||!execContainers.has(PAPERCLIP_SEMANTIC_CONTAINER)){
+    jsonError(res,403,"paperclip_semantic_container_not_allowed");return true;
+  }
+  let raw:Record<string,unknown>={};
+  try{raw=JSON.parse((await readBody(req)).toString("utf8")||"{}") as Record<string,unknown>;}catch{jsonError(res,400,"invalid_json");return true;}
+  const op=m[1] as PaperclipSemanticOperation;
+  let payload:Record<string,unknown>;
+  try{payload=normalizePaperclipSemanticPayload(op,raw);}catch(e){
+    const code=e instanceof Error?e.message:"invalid_payload"; jsonError(res,400,code); return true;
+  }
+  const cmd=paperclipSemanticExecCommand(op,payload);
+  const createBody=Buffer.from(JSON.stringify({AttachStdout:true,AttachStderr:true,AttachStdin:false,Tty:false,Cmd:cmd}));
+  const created=await dockerRequest("POST","/containers/"+encodeURIComponent(PAPERCLIP_SEMANTIC_CONTAINER)+"/exec",createBody);
+  if(created.status!==201){send(res,created.status,created.body);return true;}
+  let execId="";
+  try{execId=String((JSON.parse(created.body.toString("utf8")) as {Id?:unknown}).Id??"");}catch{}
+  if(!/^[a-f0-9]{12,64}$/i.test(execId)){jsonError(res,502,"invalid_exec_id");return true;}
+  const started=await dockerRequest("POST","/exec/"+execId+"/start",Buffer.from(JSON.stringify({Detach:false,Tty:false})));
+  if(started.status!==200){send(res,started.status,started.body,String(started.headers["content-type"]??"application/json"));return true;}
+  const inspected=await dockerRequest("GET","/exec/"+execId+"/json");
+  let code=1;
+  if(inspected.status===200){try{const x=JSON.parse(inspected.body.toString("utf8")) as {ExitCode?:unknown}; if(typeof x.ExitCode==="number")code=x.ExitCode;}catch{}}
+  const out=demuxDockerStream(started.body);
+  send(res,200,JSON.stringify({code,...out}));
+  return true;
+}
 async function handleOperator(req:IncomingMessage,res:ServerResponse,path:string):Promise<boolean>{
   const execMatch=/^\/ops\/containers\/([^/]+)\/exec$/.exec(path);
   if(execMatch){
@@ -143,6 +174,7 @@ async function handleOperator(req:IncomingMessage,res:ServerResponse,path:string
 async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const raw = new URL(req.url ?? "/", "http://localhost");
   const path = stripApiVersion(raw.pathname);
+  if(await handlePaperclipSemantic(req,res,path)) return;
   if(await handleOperator(req,res,path)) return;
   if (req.method !== "GET") return jsonError(res, 405, "method_not_allowed");
   if (path === "/healthz") return send(res, 200, JSON.stringify({ status: "ok", allowed_containers: allowed.size, exec_containers:execContainers.size, exec_programs:execPrograms.size, docker_actions:[...allowedActions] }));
