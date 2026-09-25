@@ -35,6 +35,12 @@ function safeArgv(value: unknown): string[] {
 function safeDockerAction(value: unknown): "start"|"stop"|"restart" {
   const s=String(value??""); if(!["start","stop","restart"].includes(s)) throw new Error("invalid_docker_action"); return s as "start"|"stop"|"restart";
 }
+function safeImageRef(value: unknown): string {
+  const s=String(value??""); if(!/^[A-Za-z0-9][A-Za-z0-9_./:@+-]{0,199}$/.test(s)) throw new Error("invalid_image_ref"); return s;
+}
+function safePort(value: unknown): number {
+  const n=Number(value); if(!Number.isInteger(n)||n<1||n>65535) throw new Error("invalid_port"); return n;
+}
 function safeServiceAction(value: unknown): "start"|"stop"|"restart"|"reload" {
   const s=String(value??""); if(!["start","stop","restart","reload"].includes(s)) throw new Error("invalid_service_action"); return s as "start"|"stop"|"restart"|"reload";
 }
@@ -122,10 +128,21 @@ async function executeDockerOperatorOperation(x: AgentOperation, opts?: ExecOpti
     const container=safeId(a.container), program=safeProgram(a.program), argv=safeArgv(a.argv);
     pathName="/ops/containers/"+encodeURIComponent(container)+"/exec";
     body={program,argv};
-  } else {
+  } else if(x.op==="docker.action") {
     const container=safeId(a.container), action=safeDockerAction(a.action);
     pathName="/ops/containers/"+encodeURIComponent(container)+"/"+action;
     body={};
+  } else if(x.op==="docker.image_load") {
+    pathName="/ops/images/load";
+    body={path:safePath(a.path)};
+  } else if(x.op==="docker.candidate_run") {
+    pathName="/ops/candidates/run";
+    body={name:safeId(a.name),image:safeImageRef(a.image),network:safeId(a.network),hostPort:safePort(a.hostPort),containerPort:safePort(a.containerPort)};
+  } else if(x.op==="docker.candidate_remove") {
+    pathName="/ops/candidates/"+encodeURIComponent(safeId(a.name))+"/remove";
+    body={};
+  } else {
+    throw new Error("unsupported_docker_operator_operation");
   }
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),timeoutMs);
@@ -187,7 +204,7 @@ async function executePaperclipSemanticOperation(x: AgentOperation, opts?: ExecO
 }
 export async function executeAgentOperation(x: AgentOperation, opts?: ExecOptions): Promise<ExecResult> {
   if (x.op.startsWith("paperclip.")) return executePaperclipSemanticOperation(x, opts);
-  if (x.op === "docker.exec" || x.op === "docker.action") return executeDockerOperatorOperation(x, opts);
+  if (["docker.exec","docker.action","docker.image_load","docker.candidate_run","docker.candidate_remove"].includes(x.op)) return executeDockerOperatorOperation(x, opts);
   if (x.op.startsWith("workspace.") || x.op.startsWith("process.")) {
     const started = Date.now();
     try {
