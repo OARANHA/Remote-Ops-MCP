@@ -483,11 +483,17 @@ const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "docker_action",
-    description: "Executa start/stop/restart de um contêiner allowlisted quando a ação também estiver explicitamente liberada no target.",
+    description: "Executa ação Docker explicitamente allowlisted. Além de start/stop/restart, pode carregar imagem .tar ou gerir candidate descartável quando as allowlists específicas estiverem configuradas.",
     inputSchema: {
       target: targetField,
-      container: z.string().min(1).max(100),
-      action: z.enum(["start","stop","restart"]),
+      action: z.enum(["start","stop","restart","load_image","candidate_run","candidate_remove"]),
+      container: z.string().min(1).max(100).optional(),
+      path: z.string().min(1).max(1024).optional(),
+      name: z.string().min(1).max(100).optional(),
+      image: z.string().min(1).max(200).optional(),
+      network: z.string().min(1).max(100).optional(),
+      host_port: z.number().int().min(1024).max(65535).optional(),
+      container_port: z.number().int().min(1).max(65535).optional(),
     },
     mutation: true,
     destructive: true,
@@ -496,80 +502,36 @@ const TOOL_DEFS: ToolDef[] = [
       const t=resolveTarget(args.target);
       requireOperator(t);
       requireAgentMutationTransport(t);
-      const container=assertIdentifier(String(args.container??""),"container");
-      checkAllow(t.allowedDockerContainers,container,"contêiner","CONTAINER_NOT_ALLOWED");
       const action=requireNamedCapability(t.allowedDockerActions,args.action,"ação docker");
-      const T=await tr(t);
-      const res=await T.exec(["docker",action,container],{timeoutMs:t.commandTimeoutMs??30_000});
-      if(res.code!==0) dockerAccessError(res);
-      return {target:t.id,container,action,status:"ok",output:redactText(res.stdout)};
-    },
-  },
-
-  {
-    name: "docker_image_load",
-    description: "Carrega uma imagem Docker a partir de um .tar existente em raiz allowlisted. Não aceita upload arbitrário nem registry pull.",
-    inputSchema: {
-      target: targetField,
-      path: z.string().min(1).max(1024),
-    },
-    mutation: true,
-    destructive: false,
-    idempotent: true,
-    run: async (args) => {
-      const t=resolveTarget(args.target);
-      requireOperator(t);
-      requireAgentMutationTransport(t);
-      const path=assertConfiguredPath(String(args.path??""),t.allowedDockerImageLoadRoots,"Docker image load");
-      if(!path.endsWith(".tar")) throw new OpsError("INVALID_ARGUMENT","docker_image_load aceita somente arquivo .tar");
-      const value=await agentJson(t,"docker.image_load",{path},120_000);
-      return {target:t.id,...value};
-    },
-  },
-  {
-    name: "docker_candidate_run",
-    description: "Cria e inicia um candidate descartável sem mounts/env/privileged, em rede e portas explicitamente allowlisted, com bind somente em 127.0.0.1.",
-    inputSchema: {
-      target: targetField,
-      name: z.string().min(1).max(100),
-      image: z.string().min(1).max(200),
-      network: z.string().min(1).max(100),
-      host_port: z.number().int().min(1024).max(65535),
-      container_port: z.number().int().min(1).max(65535),
-    },
-    mutation: true,
-    destructive: true,
-    idempotent: false,
-    run: async (args) => {
-      const t=resolveTarget(args.target);
-      requireOperator(t);
-      requireAgentMutationTransport(t);
-      const name=requireCandidateName(t.allowedDockerCandidateNamePrefixes,args.name);
-      const image=requirePrefixCapability(t.allowedDockerCandidateImagePrefixes,args.image,"imagem candidate");
-      const network=requireNamedCapability(t.allowedDockerCandidateNetworks,args.network,"rede candidate");
-      const hostPort=requireAllowedPort(t.allowedDockerCandidateHostPorts,args.host_port,"porta host candidate");
-      const containerPort=requireAllowedPort(t.allowedDockerCandidateContainerPorts,args.container_port,"porta container candidate");
-      const value=await agentJson(t,"docker.candidate_run",{name,image,network,hostPort,containerPort},60_000);
-      return {target:t.id,...value};
-    },
-  },
-  {
-    name: "docker_candidate_remove",
-    description: "Remove somente um candidate cujo nome corresponda aos prefixos explicitamente allowlisted do target.",
-    inputSchema: {
-      target: targetField,
-      name: z.string().min(1).max(100),
-    },
-    mutation: true,
-    destructive: true,
-    idempotent: true,
-    run: async (args) => {
-      const t=resolveTarget(args.target);
-      requireOperator(t);
-      requireAgentMutationTransport(t);
-      const name=requireCandidateName(t.allowedDockerCandidateNamePrefixes,args.name);
-      const value=await agentJson(t,"docker.candidate_remove",{name},30_000);
-      return {target:t.id,...value};
+      if(["start","stop","restart"].includes(action)){
+        const container=assertIdentifier(String(args.container??""),"container");
+        checkAllow(t.allowedDockerContainers,container,"contêiner","CONTAINER_NOT_ALLOWED");
+        const T=await tr(t);
+        const res=await T.exec(["docker",action,container],{timeoutMs:t.commandTimeoutMs??30_000});
+        if(res.code!==0) dockerAccessError(res);
+        return {target:t.id,container,action,status:"ok",output:redactText(res.stdout)};
+      }
+      if(action==="load_image"){
+        const path=assertConfiguredPath(String(args.path??""),t.allowedDockerImageLoadRoots,"Docker image load");
+        if(!path.endsWith(".tar")) throw new OpsError("INVALID_ARGUMENT","load_image aceita somente arquivo .tar");
+        const value=await agentJson(t,"docker.image_load",{path},120_000);
+        return {target:t.id,action,...value};
+      }
+      if(action==="candidate_run"){
+        const name=requireCandidateName(t.allowedDockerCandidateNamePrefixes,args.name);
+        const image=requirePrefixCapability(t.allowedDockerCandidateImagePrefixes,args.image,"imagem candidate");
+        const network=requireNamedCapability(t.allowedDockerCandidateNetworks,args.network,"rede candidate");
+        const hostPort=requireAllowedPort(t.allowedDockerCandidateHostPorts,args.host_port,"porta host candidate");
+        const containerPort=requireAllowedPort(t.allowedDockerCandidateContainerPorts,args.container_port,"porta container candidate");
+        const value=await agentJson(t,"docker.candidate_run",{name,image,network,hostPort,containerPort},60_000);
+        return {target:t.id,action,...value};
+      }
+      if(action==="candidate_remove"){
+        const name=requireCandidateName(t.allowedDockerCandidateNamePrefixes,args.name);
+        const value=await agentJson(t,"docker.candidate_remove",{name},30_000);
+        return {target:t.id,action,...value};
+      }
+      throw new OpsError("INVALID_ARGUMENT","ação docker não suportada");
     },
   },
 
