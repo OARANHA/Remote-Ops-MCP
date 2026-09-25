@@ -100,7 +100,7 @@ function demuxDockerStream(body:Buffer):{stdout:string;stderr:string;truncated:b
   return {stdout,stderr,truncated:false};
 }
 async function handlePaperclipSemantic(req:IncomingMessage,res:ServerResponse,path:string):Promise<boolean>{
-  const m=/^\/ops\/paperclip\/(task-drain-status|task-drain-start|task-drain-stop|tool-policies-list|tool-policy-test|tool-policy-create|tool-policy-delete)$/.exec(path);
+  const m=/^\/ops\/paperclip\/(task-drain-status|task-drain-start|task-drain-stop|tool-policies-list|tool-connection-activity-safe|tool-policy-test|tool-policy-create|tool-policy-delete)$/.exec(path);
   if(!m) return false;
   if(req.method!=="POST"){jsonError(res,405,"method_not_allowed");return true;}
   if(!allowed.has(PAPERCLIP_SEMANTIC_CONTAINER)||!execContainers.has(PAPERCLIP_SEMANTIC_CONTAINER)){

@@ -3,6 +3,7 @@ export type PaperclipSemanticOperation =
   | "task-drain-start"
   | "task-drain-stop"
   | "tool-policies-list"
+  | "tool-connection-activity-safe"
   | "tool-policy-test"
   | "tool-policy-create"
   | "tool-policy-delete";
@@ -52,6 +53,15 @@ export function normalizePaperclipSemanticPayload(op: PaperclipSemanticOperation
     const ttlMs = Number(payload.ttlMs);
     if (!Number.isInteger(ttlMs) || ttlMs <= 0 || ttlMs > 86_400_000) throw new Error("invalid_ttl_ms");
     return { ttlMs };
+  }
+  if (op === "tool-connection-activity-safe") {
+    const companyId = requireGuid(payload.companyId, "company_id");
+    const connectionId = requireGuid(payload.connectionId, "connection_id");
+    const limit = Number(payload.limit ?? 20);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 50) throw new Error("invalid_activity_limit");
+    const runId = requireGuid(payload.runId, "run_id");
+    const toolName = requireToolName(payload.toolName, "tool_name");
+    return { companyId, connectionId, limit, runId, toolName };
   }
   const companyId = requireGuid(payload.companyId, "company_id");
   if (op === "tool-policies-list") return { companyId };
@@ -129,6 +139,63 @@ if (op === "task-drain-status") {
 } else if (op === "tool-policies-list") {
   const companyId = encodeURIComponent(String(input.companyId ?? ""));
   result = await ctx.api.get("/api/companies/" + companyId + "/tools/policies");
+} else if (op === "tool-connection-activity-safe") {
+  const connectionId = encodeURIComponent(String(input.connectionId ?? ""));
+  const limit = Number(input.limit ?? 20);
+  const connection = await ctx.api.get("/api/tool-connections/" + connectionId);
+  if (!connection || connection.companyId !== input.companyId) throw new Error("connection_company_mismatch");
+  const raw = await ctx.api.get("/api/tool-connections/" + connectionId + "/activity?limit=" + encodeURIComponent(String(limit)));
+  const rows = Array.isArray(raw?.events) ? raw.events : [];
+  const safeString = (value, max = 240) => typeof value === "string" && value.length > 0 && value.length <= max ? value : null;
+  const safeInt = (value) => Number.isInteger(value) ? value : null;
+  const extractDiagnostic = (value) => {
+    const summary = value && typeof value === "object" && !Array.isArray(value) ? value.summary : value;
+    if (typeof summary !== "string" || summary.length < 2 || summary.length > 65536) return { code: null, reason: null, shape: null };
+    let parsed;
+    try { parsed = JSON.parse(summary); } catch { return { code: null, reason: null, shape: null }; }
+    const candidate = parsed?.structuredContent?.error ?? parsed?.error ?? null;
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return { code: null, reason: null, shape: null };
+    const codes = new Set(["invalid-provider-response"]);
+    const reasons = new Set(["product-list-shape","product-name-missing"]);
+    const shapes = new Set([
+      "null","string","number","boolean","array-non-object",
+      "object-data-array","object-Data-array","object-items-array","object-Items-array",
+      "object-produtos-array","object-Produtos-array","object-result-array","object-Result-array",
+      "object-results-array","object-Results-array","object-value-array","object-Value-array",
+      "object-response-array","object-Response-array","object-error","object-Error",
+      "object-errors","object-Errors","object-message","object-Message","object-other",
+    ]);
+    return {
+      code: codes.has(candidate.code) ? candidate.code : null,
+      reason: reasons.has(candidate.reason) ? candidate.reason : null,
+      shape: shapes.has(candidate.shape) ? candidate.shape : null,
+    };
+  };
+  const safeRateLimit = (value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const limit = safeInt(value.limit);
+    const remaining = safeInt(value.remaining);
+    const windowSeconds = safeInt(value.windowSeconds);
+    if (limit == null && remaining == null && windowSeconds == null) return null;
+    return { limit, remaining, windowSeconds };
+  };
+  const events = rows
+    .filter((row) => row && typeof row === "object")
+    .filter((row) => input.runId == null || row.runId === input.runId)
+    .filter((row) => input.toolName == null || row.toolName === input.toolName)
+    .map((row) => ({
+      eventType: safeString(row.eventType, 120),
+      runId: safeString(row.runId, 80),
+      toolName: safeString(row.toolName, 240),
+      decision: safeString(row.decision, 80),
+      reasonCode: safeString(row.reasonCode, 160),
+      outcome: safeString(row.outcome, 120),
+      errorCode: safeString(row.errorCode, 160),
+      createdAt: safeString(row.createdAt, 80),
+      rateLimitState: safeRateLimit(row.rateLimitState),
+      diagnostic: extractDiagnostic(row.resultSummary),
+    }));
+  result = { connectionId: input.connectionId, count: events.length, events };
 } else if (op === "tool-policy-test") {
   const companyId = encodeURIComponent(String(input.companyId ?? ""));
   const body = {
