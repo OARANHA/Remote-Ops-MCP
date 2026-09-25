@@ -153,7 +153,7 @@ if (op === "task-drain-status") {
     if (typeof summary !== "string" || summary.length < 2 || summary.length > 65536) return { code: null, reason: null, shape: null };
     let parsed;
     try { parsed = JSON.parse(summary); } catch { return { code: null, reason: null, shape: null }; }
-    const candidate = parsed?.structuredContent?.error ?? parsed?.error ?? null;
+    const candidate = parsed?.data?.structuredContent?.error ?? parsed?.structuredContent?.error ?? parsed?.error ?? null;
     if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return { code: null, reason: null, shape: null };
     const codes = new Set(["invalid-provider-response"]);
     const reasons = new Set(["product-list-shape","product-name-missing"]);
