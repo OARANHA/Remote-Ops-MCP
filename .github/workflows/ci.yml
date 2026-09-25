@@ -17,6 +17,7 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: npm run build
+      - run: node test-paperclip-semantic.mjs
       - run: bash test-e2e.sh
       - run: bash test-agent-pairing.sh
       - name: Build production image
