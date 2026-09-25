@@ -19,7 +19,7 @@ const TargetSchema = z.object({
   allowedDockerContainers: z.array(z.string()).default([]),
   allowedDockerExecContainers: z.array(z.string()).default([]),
   allowedDockerExecPrograms: z.array(z.string()).default([]),
-  allowedDockerActions: z.array(z.enum(["start", "stop", "restart"])).default([]),
+  allowedDockerActions: z.array(z.enum(["start", "stop", "restart", "load_image", "candidate_run", "candidate_remove"])).default([]),
   allowedDockerImageLoadRoots: z.array(z.string()).default([]),
   allowedDockerCandidateImagePrefixes: z.array(z.string()).default([]),
   allowedDockerCandidateNetworks: z.array(z.string()).default([]),
