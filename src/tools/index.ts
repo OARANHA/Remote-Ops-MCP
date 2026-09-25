@@ -515,6 +515,33 @@ const TOOL_DEFS: ToolDef[] = [
     },
   },
   {
+    name: "paperclip_tool_connection_activity_safe",
+    description: "Lê evidência governada recente de uma Tool Connection Paperclip e devolve somente uma projeção allowlisted: eventType, runId, toolName, decisão/outcome, rate-limit numérico e diagnóstico code/reason/shape. Não expõe argumentos, metadata, summaries brutos nem credencial Board.",
+    inputSchema: {
+      target: targetField,
+      company_id: paperclipGuid.describe("Company ID Paperclip (UUID)"),
+      connection_id: paperclipGuid.describe("Tool Connection ID Paperclip (UUID)"),
+      limit: z.number().int().min(1).max(50).default(20),
+      run_id: paperclipGuid.describe("Heartbeat run ID Paperclip (UUID)"),
+      tool_name: z.string().trim().min(1).max(240).regex(/^[A-Za-z0-9_.:-]+$/),
+    },
+    mutation: false,
+    destructive: false,
+    idempotent: true,
+    run: async (args) => {
+      const t=resolveTarget(args.target);
+      requirePaperclipSemantic(t);
+      const value=await agentJson(t,"paperclip.tool_connection_activity_safe",{
+        companyId:String(args.company_id),
+        connectionId:String(args.connection_id),
+        limit:Number(args.limit??20),
+        runId:String(args.run_id),
+        toolName:String(args.tool_name),
+      },20_000);
+      return unwrapPaperclipResult(t,value);
+    },
+  },
+  {
     name: "paperclip_tool_policy_test",
     description: "Qualifica uma decisão de Tool Policy oficial do Paperclip sem consumir rate limit e sem escrever audit event. A capability força consumeRateLimit=false e writeAuditEvent=false; o caller não pode sobrescrever esses flags.",
     inputSchema: {
