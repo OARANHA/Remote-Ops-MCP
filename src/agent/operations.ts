@@ -157,6 +157,7 @@ async function executePaperclipSemanticOperation(x: AgentOperation, opts?: ExecO
     "paperclip.task_drain_start":"/ops/paperclip/task-drain-start",
     "paperclip.task_drain_stop":"/ops/paperclip/task-drain-stop",
     "paperclip.tool_policies_list":"/ops/paperclip/tool-policies-list",
+    "paperclip.tool_connection_activity_safe":"/ops/paperclip/tool-connection-activity-safe",
     "paperclip.tool_policy_test":"/ops/paperclip/tool-policy-test",
     "paperclip.tool_policy_create":"/ops/paperclip/tool-policy-create",
     "paperclip.tool_policy_delete":"/ops/paperclip/tool-policy-delete",
