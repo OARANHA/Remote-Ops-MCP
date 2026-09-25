@@ -19,6 +19,7 @@ jobs:
       - run: npm run build
       - run: node test-paperclip-semantic.mjs
       - run: node test-docker-candidate-contract.mjs
+      - run: node test-docker-proxy-candidate-startup.mjs
       - run: bash test-e2e.sh
       - run: bash test-agent-pairing.sh
       - name: Build production image
