@@ -20,6 +20,12 @@ const TargetSchema = z.object({
   allowedDockerExecContainers: z.array(z.string()).default([]),
   allowedDockerExecPrograms: z.array(z.string()).default([]),
   allowedDockerActions: z.array(z.enum(["start", "stop", "restart"])).default([]),
+  allowedDockerImageLoadRoots: z.array(z.string()).default([]),
+  allowedDockerCandidateImagePrefixes: z.array(z.string()).default([]),
+  allowedDockerCandidateNetworks: z.array(z.string()).default([]),
+  allowedDockerCandidateNamePrefixes: z.array(z.string()).default([]),
+  allowedDockerCandidateHostPorts: z.array(z.number().int().min(1024).max(65535)).default([]),
+  allowedDockerCandidateContainerPorts: z.array(z.number().int().min(1).max(65535)).default([]),
   allowedServices: z.array(z.string()).default([]),
   allowedServiceActions: z.array(z.enum(["start", "stop", "restart", "reload"])).default([]),
   allowedGitRepos: z.array(z.string()).default([]),
@@ -65,5 +71,5 @@ export function listTargets(): TargetConfig[] { return [...ensure().targets.valu
 export function targetIds(): string[] { return [...ensure().targets.keys()]; }
 export function targetCount(): number { return ensure().targets.size; }
 export function publicTarget(t: TargetConfig) {
-  return {id:t.id,environment:t.environment,capabilityProfile:t.capabilityProfile,transport:t.transport,enabled:t.enabled,allowedPaths:t.allowedPaths,allowedDockerContainers:t.allowedDockerContainers,allowedDockerExecContainers:t.allowedDockerExecContainers,allowedDockerExecPrograms:t.allowedDockerExecPrograms,allowedDockerActions:t.allowedDockerActions,allowedServices:t.allowedServices,allowedServiceActions:t.allowedServiceActions,allowedGitRepos:t.allowedGitRepos,allowedWritePaths:t.allowedWritePaths,allowedProcessCwds:t.allowedProcessCwds,allowedProcessPrograms:t.allowedProcessPrograms};
+  return {id:t.id,environment:t.environment,capabilityProfile:t.capabilityProfile,transport:t.transport,enabled:t.enabled,allowedPaths:t.allowedPaths,allowedDockerContainers:t.allowedDockerContainers,allowedDockerExecContainers:t.allowedDockerExecContainers,allowedDockerExecPrograms:t.allowedDockerExecPrograms,allowedDockerActions:t.allowedDockerActions,allowedDockerImageLoadRoots:t.allowedDockerImageLoadRoots,allowedDockerCandidateImagePrefixes:t.allowedDockerCandidateImagePrefixes,allowedDockerCandidateNetworks:t.allowedDockerCandidateNetworks,allowedDockerCandidateNamePrefixes:t.allowedDockerCandidateNamePrefixes,allowedDockerCandidateHostPorts:t.allowedDockerCandidateHostPorts,allowedDockerCandidateContainerPorts:t.allowedDockerCandidateContainerPorts,allowedServices:t.allowedServices,allowedServiceActions:t.allowedServiceActions,allowedGitRepos:t.allowedGitRepos,allowedWritePaths:t.allowedWritePaths,allowedProcessCwds:t.allowedProcessCwds,allowedProcessPrograms:t.allowedProcessPrograms};
 }
