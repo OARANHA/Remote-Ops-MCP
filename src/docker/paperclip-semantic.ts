@@ -179,8 +179,15 @@ if (op === "task-drain-status") {
     if (limit == null && remaining == null && windowSeconds == null) return null;
     return { limit, remaining, windowSeconds };
   };
-  const events = rows
-    .filter((row) => row && typeof row === "object")
+  const objectRows = rows.filter((row) => row && typeof row === "object");
+  const createdAtValues = objectRows
+    .map((row) => safeString(row.createdAt, 80))
+    .filter((value) => value != null)
+    .sort();
+  const matchingRunCount = objectRows.filter((row) => row.runId === input.runId).length;
+  const matchingToolCount = objectRows.filter((row) => row.toolName === input.toolName).length;
+  const matchingRunToolCount = objectRows.filter((row) => row.runId === input.runId && row.toolName === input.toolName).length;
+  const events = objectRows
     .filter((row) => input.runId == null || row.runId === input.runId)
     .filter((row) => input.toolName == null || row.toolName === input.toolName)
     .map((row) => ({
@@ -195,7 +202,19 @@ if (op === "task-drain-status") {
       rateLimitState: safeRateLimit(row.rateLimitState),
       diagnostic: extractDiagnostic(row.resultSummary),
     }));
-  result = { connectionId: input.connectionId, count: events.length, events };
+  result = {
+    connectionId: input.connectionId,
+    count: events.length,
+    events,
+    window: {
+      totalRows: objectRows.length,
+      oldestCreatedAt: createdAtValues[0] ?? null,
+      newestCreatedAt: createdAtValues.at(-1) ?? null,
+      matchingRunCount,
+      matchingToolCount,
+      matchingRunToolCount,
+    },
+  };
 } else if (op === "tool-policy-test") {
   const companyId = encodeURIComponent(String(input.companyId ?? ""));
   const body = {
