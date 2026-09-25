@@ -64,7 +64,28 @@
         "app-cli"
       ],
       "allowedDockerActions": [
-        "restart"
+        "restart",
+        "load_image",
+        "candidate_run",
+        "candidate_remove"
+      ],
+      "allowedDockerImageLoadRoots": [
+        "/opt/app/ops-workspace"
+      ],
+      "allowedDockerCandidateImagePrefixes": [
+        "app/web:candidate-"
+      ],
+      "allowedDockerCandidateNetworks": [
+        "app-core"
+      ],
+      "allowedDockerCandidateNamePrefixes": [
+        "app-web-candidate-"
+      ],
+      "allowedDockerCandidateHostPorts": [
+        18090
+      ],
+      "allowedDockerCandidateContainerPorts": [
+        8080
       ],
       "allowedServices": [
         "app-agent.service"
