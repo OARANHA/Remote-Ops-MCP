@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
-import path from "node:path";
+import nodePath from "node:path";
 import { denySecretPath } from "../security/paths.js";
 import { PAPERCLIP_SEMANTIC_CONTAINER, normalizePaperclipSemanticPayload, paperclipSemanticExecCommand, type PaperclipSemanticOperation } from "./paperclip-semantic.js";
 
@@ -188,7 +188,7 @@ async function handleOperator(req:IncomingMessage,res:ServerResponse,path:string
     if(!filePath||imageLoadRoots.size===0){jsonError(res,403,"image_load_path_not_allowed");return true;}
     const u=await dockerFileRequest("/images/load?quiet=1",filePath);
     if(u.status!==200)return send(res,u.status,u.body,String(u.headers["content-type"]??"application/json")),true;
-    send(res,200,JSON.stringify({status:"ok",path:path.basename(filePath),docker_output:u.body.toString("utf8").slice(0,MAX_BYTES)}));
+    send(res,200,JSON.stringify({status:"ok",path:nodePath.basename(filePath),docker_output:u.body.toString("utf8").slice(0,MAX_BYTES)}));
     return true;
   }
   if(path==="/ops/candidates/run"){
