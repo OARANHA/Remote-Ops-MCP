@@ -1,4 +1,7 @@
+import fs from "node:fs";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
+import path from "node:path";
+import { denySecretPath } from "../security/paths.js";
 import { PAPERCLIP_SEMANTIC_CONTAINER, normalizePaperclipSemanticPayload, paperclipSemanticExecCommand, type PaperclipSemanticOperation } from "./paperclip-semantic.js";
 
 const PORT = Number(process.env.PORT ?? 2375);
@@ -8,12 +11,45 @@ const allowed = csvSet(process.env.ALLOWED_DOCKER_CONTAINERS);
 const execContainers = csvSet(process.env.ALLOWED_DOCKER_EXEC_CONTAINERS);
 const execPrograms = csvSet(process.env.ALLOWED_DOCKER_EXEC_PROGRAMS);
 const allowedActions = csvSet(process.env.ALLOWED_DOCKER_ACTIONS);
+const imageLoadRoots = csvSet(process.env.ALLOWED_DOCKER_IMAGE_LOAD_ROOTS);
+const candidateImagePrefixes = csvSet(process.env.ALLOWED_DOCKER_CANDIDATE_IMAGE_PREFIXES);
+const candidateNetworks = csvSet(process.env.ALLOWED_DOCKER_CANDIDATE_NETWORKS);
+const candidateNamePrefixes = csvSet(process.env.ALLOWED_DOCKER_CANDIDATE_NAME_PREFIXES);
+const candidateHostPorts = csvNumberSet(process.env.ALLOWED_DOCKER_CANDIDATE_HOST_PORTS);
+const candidateContainerPorts = csvNumberSet(process.env.ALLOWED_DOCKER_CANDIDATE_CONTAINER_PORTS);
 
 if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) throw new Error("invalid PORT");
 if (allowed.size === 0) throw new Error("ALLOWED_DOCKER_CONTAINERS must not be empty");
 for (const action of allowedActions) if (!["start","stop","restart"].includes(action)) throw new Error("invalid ALLOWED_DOCKER_ACTIONS");
 
 function csvSet(raw = ""): Set<string> { return new Set(raw.split(",").map((x) => x.trim()).filter(Boolean)); }
+function csvNumberSet(raw = ""): Set<number> {
+  const out=new Set<number>();
+  for(const item of raw.split(",").map((x)=>x.trim()).filter(Boolean)){
+    const n=Number(item); if(!Number.isInteger(n)||n<1||n>65535) throw new Error("invalid numeric Docker allowlist");
+    out.add(n);
+  }
+  return out;
+}
+function allowedPrefix(set:Set<string>,value:string):boolean{return [...set].some((prefix)=>prefix==="*"||value.startsWith(prefix));}
+function cleanImageRef(value:unknown):string|null{
+  const s=String(value??""); return /^[A-Za-z0-9][A-Za-z0-9_./:@+-]{0,199}$/.test(s)?s:null;
+}
+function cleanPort(value:unknown):number|null{
+  const n=Number(value); return Number.isInteger(n)&&n>=1&&n<=65535?n:null;
+}
+function cleanAllowedLoadPath(value:unknown):string|null{
+  const raw=String(value??"");
+  if(!raw.startsWith("/")||raw.includes("\0")||/[\r\n]/.test(raw)||raw.split("/").includes("..")||denySecretPath(raw)||!raw.endsWith(".tar")) return null;
+  let real:string;
+  try{real=fs.realpathSync(raw);}catch{return null;}
+  if(denySecretPath(real)||!real.endsWith(".tar"))return null;
+  for(const rootRaw of imageLoadRoots){
+    let root:string; try{root=fs.realpathSync(rootRaw).replace(/\/+$/,"");}catch{continue;}
+    if(real===root||real.startsWith(root+"/"))return real;
+  }
+  return null;
+}
 function send(res: ServerResponse, status: number, body: string | Buffer, type = "application/json"): void {
   res.writeHead(status, { "content-type": type, "cache-control": "no-store", "content-length": typeof body === "string" ? Buffer.byteLength(body) : body.length });
   res.end(body);
@@ -63,6 +99,21 @@ function dockerRequest(method: string, reqPath: string, body?: Buffer, contentTy
     r.on("error", reject);
     if(body) r.write(body);
     r.end();
+  });
+}
+function dockerFileRequest(reqPath:string,filePath:string):Promise<{status:number;headers:http.IncomingHttpHeaders;body:Buffer}>{
+  return new Promise((resolve,reject)=>{
+    let stat:fs.Stats; try{stat=fs.statSync(filePath);}catch(e){reject(e);return;}
+    if(!stat.isFile()){reject(new Error("image_load_path_not_file"));return;}
+    const headers:Record<string,string|number>={host:"docker","content-type":"application/x-tar","content-length":stat.size};
+    const r=http.request({socketPath:SOCKET,path:reqPath,method:"POST",headers},(u)=>{
+      const chunks:Buffer[]=[];let total=0;
+      u.on("data",(chunk:Buffer)=>{total+=chunk.length;if(total>MAX_BYTES){r.destroy(new Error("upstream_response_too_large"));return;}chunks.push(chunk);});
+      u.on("end",()=>resolve({status:u.statusCode??502,headers:u.headers,body:Buffer.concat(chunks)}));
+    });
+    r.setTimeout(120000,()=>r.destroy(new Error("upstream_timeout")));
+    r.on("error",reject);
+    const stream=fs.createReadStream(filePath); stream.on("error",(e)=>r.destroy(e)); stream.pipe(r);
   });
 }
 async function resolveAllowedContainerRef(rawRef: string, scope: Set<string> = allowed): Promise<string | null> {
@@ -130,6 +181,58 @@ async function handlePaperclipSemantic(req:IncomingMessage,res:ServerResponse,pa
   return true;
 }
 async function handleOperator(req:IncomingMessage,res:ServerResponse,path:string):Promise<boolean>{
+  if(path==="/ops/images/load"){
+    if(req.method!=="POST"){jsonError(res,405,"method_not_allowed");return true;}
+    let payload:Record<string,unknown>; try{payload=JSON.parse((await readBody(req)).toString("utf8")||"{}") as Record<string,unknown>;}catch{jsonError(res,400,"invalid_json");return true;}
+    const filePath=cleanAllowedLoadPath(payload.path);
+    if(!filePath||imageLoadRoots.size===0){jsonError(res,403,"image_load_path_not_allowed");return true;}
+    const u=await dockerFileRequest("/images/load?quiet=1",filePath);
+    if(u.status!==200)return send(res,u.status,u.body,String(u.headers["content-type"]??"application/json")),true;
+    send(res,200,JSON.stringify({status:"ok",path:path.basename(filePath),docker_output:u.body.toString("utf8").slice(0,MAX_BYTES)}));
+    return true;
+  }
+  if(path==="/ops/candidates/run"){
+    if(req.method!=="POST"){jsonError(res,405,"method_not_allowed");return true;}
+    let payload:Record<string,unknown>; try{payload=JSON.parse((await readBody(req)).toString("utf8")||"{}") as Record<string,unknown>;}catch{jsonError(res,400,"invalid_json");return true;}
+    const name=cleanContainerRef(String(payload.name??"")), image=cleanImageRef(payload.image), network=cleanContainerRef(String(payload.network??"")), hostPort=cleanPort(payload.hostPort), containerPort=cleanPort(payload.containerPort);
+    if(!name||!allowedPrefix(candidateNamePrefixes,name)){jsonError(res,403,"candidate_name_not_allowed");return true;}
+    if(!image||!allowedPrefix(candidateImagePrefixes,image)){jsonError(res,403,"candidate_image_not_allowed");return true;}
+    if(!network||!candidateNetworks.has(network)){jsonError(res,403,"candidate_network_not_allowed");return true;}
+    if(hostPort===null||!candidateHostPorts.has(hostPort)){jsonError(res,403,"candidate_host_port_not_allowed");return true;}
+    if(containerPort===null||!candidateContainerPorts.has(containerPort)){jsonError(res,403,"candidate_container_port_not_allowed");return true;}
+    const portKey=String(containerPort)+"/tcp";
+    const createBody=Buffer.from(JSON.stringify({
+      Image:image,
+      ExposedPorts:{[portKey]:{}},
+      HostConfig:{
+        NetworkMode:network,
+        PortBindings:{[portKey]:[{HostIp:"127.0.0.1",HostPort:String(hostPort)}]},
+        RestartPolicy:{Name:"no",MaximumRetryCount:0},
+        Privileged:false,
+        ReadonlyRootfs:false,
+      },
+    }));
+    const created=await dockerRequest("POST","/containers/create?name="+encodeURIComponent(name),createBody);
+    if(created.status!==201)return send(res,created.status,created.body),true;
+    let id=""; try{id=String((JSON.parse(created.body.toString("utf8")) as {Id?:unknown}).Id??"");}catch{}
+    if(!/^[a-f0-9]{12,64}$/i.test(id)){jsonError(res,502,"invalid_container_id");return true;}
+    const started=await dockerRequest("POST","/containers/"+id+"/start",Buffer.alloc(0));
+    if(started.status!==204){await dockerRequest("DELETE","/containers/"+id+"?force=1&v=1").catch(()=>null);return send(res,started.status,started.body),true;}
+    send(res,200,JSON.stringify({status:"started",id,name,image,network,hostIp:"127.0.0.1",hostPort,containerPort}));
+    return true;
+  }
+  const candidateRemove=/^\/ops\/candidates\/([^/]+)\/remove$/.exec(path);
+  if(candidateRemove){
+    if(req.method!=="POST"){jsonError(res,405,"method_not_allowed");return true;}
+    const name=cleanContainerRef(candidateRemove[1]);
+    if(!name||!allowedPrefix(candidateNamePrefixes,name)){jsonError(res,403,"candidate_name_not_allowed");return true;}
+    await readBody(req).catch(()=>Buffer.alloc(0));
+    const u=await dockerRequest("DELETE","/containers/"+encodeURIComponent(name)+"?force=1&v=1");
+    if(u.status===404){send(res,200,JSON.stringify({status:"absent",name,removed:false}));return true;}
+    if(u.status!==204)return send(res,u.status,u.body),true;
+    send(res,200,JSON.stringify({status:"removed",name,removed:true}));
+    return true;
+  }
   const execMatch=/^\/ops\/containers\/([^/]+)\/exec$/.exec(path);
   if(execMatch){
     if(req.method!=="POST"){jsonError(res,405,"method_not_allowed");return true;}
@@ -177,7 +280,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   if(await handlePaperclipSemantic(req,res,path)) return;
   if(await handleOperator(req,res,path)) return;
   if (req.method !== "GET") return jsonError(res, 405, "method_not_allowed");
-  if (path === "/healthz") return send(res, 200, JSON.stringify({ status: "ok", allowed_containers: allowed.size, exec_containers:execContainers.size, exec_programs:execPrograms.size, docker_actions:[...allowedActions] }));
+  if (path === "/healthz") return send(res, 200, JSON.stringify({ status: "ok", allowed_containers: allowed.size, exec_containers:execContainers.size, exec_programs:execPrograms.size, docker_actions:[...allowedActions], image_load_roots:imageLoadRoots.size, candidate_image_prefixes:candidateImagePrefixes.size, candidate_networks:[...candidateNetworks], candidate_name_prefixes:[...candidateNamePrefixes], candidate_host_ports:[...candidateHostPorts], candidate_container_ports:[...candidateContainerPorts] }));
   if (path === "/_ping") {
     if (raw.search) return jsonError(res, 400, "query_not_allowed");
     const u = await dockerRequest("GET","/_ping");
@@ -234,5 +337,5 @@ const server = http.createServer((req, res) => {
   });
 });
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(JSON.stringify({ ts: new Date().toISOString(), level: "info", msg: "docker-proxy ready", port: PORT, allowed_containers: [...allowed], exec_containers:[...execContainers], exec_programs:[...execPrograms], actions:[...allowedActions] }));
+  console.log(JSON.stringify({ ts: new Date().toISOString(), level: "info", msg: "docker-proxy ready", port: PORT, allowed_containers: [...allowed], exec_containers:[...execContainers], exec_programs:[...execPrograms], actions:[...allowedActions], image_load_roots:[...imageLoadRoots], candidate_image_prefixes:[...candidateImagePrefixes], candidate_networks:[...candidateNetworks], candidate_name_prefixes:[...candidateNamePrefixes], candidate_host_ports:[...candidateHostPorts], candidate_container_ports:[...candidateContainerPorts] }));
 });
