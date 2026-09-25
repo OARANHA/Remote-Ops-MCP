@@ -15,6 +15,27 @@ assert.equal(payload.companyId, companyId);
 
 const list = normalizePaperclipSemanticPayload("tool-policies-list", { companyId, extra: "ignored" });
 assert.deepEqual(list, { companyId });
+const activity = normalizePaperclipSemanticPayload("tool-connection-activity-safe", {
+  companyId,
+  connectionId: "8e2c23f4-73f5-444a-8647-71428819ea91",
+  limit: 20,
+  runId: "d6ec458f-31ce-43f6-a2ae-60da58ac1c32",
+  toolName: "vendaerp_search_products",
+});
+assert.deepEqual(activity, {
+  companyId,
+  connectionId: "8e2c23f4-73f5-444a-8647-71428819ea91",
+  limit: 20,
+  runId: "d6ec458f-31ce-43f6-a2ae-60da58ac1c32",
+  toolName: "vendaerp_search_products",
+});
+assert.throws(() => normalizePaperclipSemanticPayload("tool-connection-activity-safe", {
+  companyId,
+  connectionId: "8e2c23f4-73f5-444a-8647-71428819ea91",
+  limit: 51,
+  runId: "d6ec458f-31ce-43f6-a2ae-60da58ac1c32",
+  toolName: "vendaerp_search_products",
+}), /invalid_activity_limit/);
 assert.deepEqual(normalizePaperclipSemanticPayload("task-drain-status", { anything: "ignored" }), {});
 
 const cmd = paperclipSemanticExecCommand("tool-policy-test", payload);
