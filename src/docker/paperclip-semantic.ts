@@ -58,7 +58,7 @@ export function normalizePaperclipSemanticPayload(op: PaperclipSemanticOperation
     const companyId = requireGuid(payload.companyId, "company_id");
     const connectionId = requireGuid(payload.connectionId, "connection_id");
     const limit = Number(payload.limit ?? 20);
-    if (!Number.isInteger(limit) || limit < 1 || limit > 50) throw new Error("invalid_activity_limit");
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("invalid_activity_limit");
     const runId = requireGuid(payload.runId, "run_id");
     const toolName = requireToolName(payload.toolName, "tool_name");
     return { companyId, connectionId, limit, runId, toolName };
