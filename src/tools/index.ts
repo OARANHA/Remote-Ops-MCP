@@ -3,6 +3,7 @@ import { env } from "../lib/env.js";
 import { OpsError } from "../lib/errors.js";
 import { assertIdentifier } from "../lib/quote.js";
 import { getTarget, listTargets, publicTarget, targetIds } from "../config/targets.js";
+import { prepareAgentTarget, applyAgentTargetApproval } from "../config/target-approvals.js";
 import type { TargetConfig } from "../config/targets.js";
 import { getTransport } from "../transport.js";
 import { assertConfiguredPath, resolveCheckedGitRepo, resolveCheckedPath, resolveCheckedProcessCwd } from "../security/paths.js";
@@ -259,6 +260,42 @@ const TOOL_DEFS: ToolDef[] = [
       const t = resolveTarget(args.target);
       return publicTarget(t);
     },
+  },
+  {
+    name: "target_agent_prepare",
+    description: "Prepara, sem aplicar, a criação/atualização de um target Agent Mesh dinâmico. Retorna um código adm_... que deve ser explicitamente confirmado pelo usuário no chat como 'APPROVE adm_...'. Não altera targets estáticos nem reinicia o control plane.",
+    inputSchema: {
+      target_id: z.string().regex(/^[a-z0-9][a-z0-9-]{1,39}$/),
+      device_id: z.string().regex(/^dev_[A-Za-z0-9_-]{8,80}$/),
+      environment: z.enum(["production","staging","development"]).default("production"),
+      preset: z.enum(["operator-workspace","read-only"]).default("operator-workspace"),
+    },
+    mutation: true,
+    destructive: false,
+    idempotent: false,
+    run: async (args, ctx) => prepareAgentTarget({
+      actor: ctx.actor,
+      targetId: String(args.target_id),
+      deviceId: String(args.device_id),
+      environment: (args.environment ?? "production") as "production"|"staging"|"development",
+      preset: (args.preset ?? "operator-workspace") as "operator-workspace"|"read-only",
+    }),
+  },
+  {
+    name: "target_agent_apply",
+    description: "Aplica uma aprovação preparada por target_agent_prepare. Só use depois que o usuário tiver ecoado explicitamente no chat a confirmação exata 'APPROVE adm_...'. Grava apenas o overlay dinâmico em /app/data e recarrega o registry em memória, sem restart e sem modificar targets estáticos.",
+    inputSchema: {
+      approval_id: z.string().regex(/^adm_[a-f0-9]{24}$/),
+      confirmation: z.string().min(1).max(80),
+    },
+    mutation: true,
+    destructive: false,
+    idempotent: false,
+    run: async (args, ctx) => applyAgentTargetApproval({
+      actor: ctx.actor,
+      approvalId: String(args.approval_id),
+      confirmation: String(args.confirmation),
+    }),
   },
 
   // ============ host ============
