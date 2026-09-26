@@ -16,13 +16,16 @@ O instalador:
 2. garante Node.js 22 em `/usr/bin/node`;
 3. cria o usuário restrito `ops-mcp`;
 4. baixa e compila o Remote-Ops-MCP;
-5. instala `wandora-ops-agent.service` com hardening systemd;
-6. solicita pairing no control plane;
-7. mostra o código de uso único `WD-XXXX-XXXX`;
-8. mostra um link clicável para `https://mcp.wandora.com.br/admin`;
-9. espera aprovação em **Agent Mesh Devices → Approve pairing**;
-10. valida a credencial com heartbeat;
-11. habilita/inicia o serviço persistente.
+5. cria o usuário isolado `wandora-exec`;
+6. cria `/opt/wandora/ops-workspace`;
+7. instala `wandora-ops-exec-broker.service` com socket Unix isolado;
+8. instala `wandora-ops-agent.service` ligado ao broker;
+9. solicita pairing no control plane;
+10. mostra o código de uso único `WD-XXXX-XXXX`;
+11. mostra um link clicável para `https://mcp.wandora.com.br/admin`;
+12. espera aprovação em **Agent Mesh Devices → Approve pairing**;
+13. valida a credencial com heartbeat;
+14. habilita/inicia broker + agent.
 
 O pairing **não é autoaprovado** pelo instalador.
 
@@ -35,7 +38,9 @@ Wandora Ops Agent Installer
 ✓ Node.js v22.x ready
 ✓ Restricted service user ready
 ✓ Agent installed
-✓ systemd unit installed
+✓ Isolated execution user/workspace ready
+✓ Execution broker is active
+✓ systemd units installed
 
 ============================================================
   WANDORA AGENT MESH — DEVICE PAIRING
@@ -65,6 +70,8 @@ HEARTBEAT=GREEN
 WANDORA_AGENT=READY
 device_id=dev_...
 service=wandora-ops-agent.service
+broker=wandora-ops-exec-broker.service
+workspace=/opt/wandora/ops-workspace
 ```
 
 ## Abrir o Admin
@@ -102,6 +109,8 @@ O instalador deliberadamente:
 
 - não adiciona `ops-mcp` aos grupos `sudo` ou `docker`;
 - não instala nem exige Docker;
+- instala execution broker local isolado, sem acesso ao Docker socket;
+- restringe execução a `/opt/wandora/ops-workspace` e a uma allowlist de programas;
 - não autoaprova pairing;
 - não cria target automaticamente;
 - mantém o token do device em `/var/lib/wandora-ops-agent/device.json` com acesso restrito;
@@ -134,7 +143,9 @@ Para produção madura, prefira um `--ref` imutável de release/tag em vez de `m
 ## Operação
 
 ```bash
+systemctl status wandora-ops-exec-broker.service
 systemctl status wandora-ops-agent.service
+journalctl -u wandora-ops-exec-broker.service -n 100 --no-pager
 journalctl -u wandora-ops-agent.service -n 100 --no-pager
 ```
 
