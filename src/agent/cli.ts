@@ -39,6 +39,21 @@ async function jsonFetch(url: string, init: RequestInit): Promise<{ status: numb
   return { status: r.status, body };
 }
 
+function terminalLink(url: string): string {
+  if (process.stdout.isTTY && process.env.TERM !== "dumb") {
+    return "\u001b]8;;" + url + "\u0007" + url + "\u001b]8;;\u0007";
+  }
+  return url;
+}
+
+function printPairingCode(code: string): void {
+  const inner = "   " + code + "   ";
+  const border = "+" + "-".repeat(inner.length) + "+";
+  process.stdout.write(border + "\n");
+  process.stdout.write("|" + inner + "|\n");
+  process.stdout.write(border + "\n");
+}
+
 async function pair(): Promise<void> {
   const start = await jsonFetch(controlPlane + "/agent/pair/start", {
     method: "POST",
@@ -47,11 +62,16 @@ async function pair(): Promise<void> {
   if (start.status !== 201) throw new Error("pair start failed: HTTP " + start.status);
   const { pairing_id, pairing_code, poll_token, verification_uri, expires_at } = start.body;
   if (!pairing_id || !pairing_code || !poll_token) throw new Error("pair start returned incomplete data");
+  const approveAt = typeof verification_uri === "string" && verification_uri.length > 0
+    ? verification_uri
+    : controlPlane + "/admin";
   process.stdout.write("\nWandora Ops Agent pairing\n\n");
-  process.stdout.write("Pairing code: " + pairing_code + "\n");
-  process.stdout.write("Approve at:   " + verification_uri + "\n");
-  process.stdout.write("Expires at:   " + expires_at + "\n\n");
-  process.stdout.write("Waiting for approval");
+  process.stdout.write("Approve this device in Agent Mesh Devices:\n");
+  process.stdout.write("  " + terminalLink(approveAt) + "\n\n");
+  process.stdout.write("One-time pairing code:\n\n");
+  printPairingCode(String(pairing_code));
+  process.stdout.write("\nExpires at: " + expires_at + "\n");
+  process.stdout.write("Waiting for administrator approval");
   const deadline = Date.parse(expires_at);
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 3000));

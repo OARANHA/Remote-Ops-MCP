@@ -2,7 +2,7 @@
 
 Remote Ops MCP is a **remote, read-only Model Context Protocol gateway** for operating Linux servers from MCP clients such as ChatGPT, without exposing SSH credentials, arbitrary shell access, or raw infrastructure details to the client.
 
-The service is designed to run as a small control plane in Docker/Portainer. A client addresses logical targets such as `wandora-prod`; the gateway resolves the SSH host, key and capability allowlists on the server side.
+The service is designed to run as a small control plane in Docker/Portainer. A client addresses logical targets such as `wandora-prod`. New VPSs should normally use **Agent Mesh**: the managed host runs `wandora-ops-agent` and establishes an outbound authenticated channel to the control plane. SSH remains available for compatibility/bootstrap/break-glass.
 
 ## V1.1 control plane
 
@@ -31,15 +31,30 @@ Remote Ops MCP
   |-- /mcp                 MCP endpoint
   |-- /admin               private operations console
   |-- durable state        clients/sessions/revocation/usage
-  |-- target registry      logical id -> SSH/capability profile
+  |-- target registry      logical id -> transport/capability profile
   |-- audit JSONL          append-only operational evidence
   |
-  `-- SSH read-only profile + pinned host key
+  +-- Agent Mesh (preferred)
+  |     `-- outbound WSS from wandora-ops-agent
+  |
+  `-- SSH (compatibility / bootstrap / break-glass)
         |
         +-- wandora-prod
         +-- medicspro-prod
         `-- other explicitly onboarded VPSs
 ```
+
+## One-command Agent Mesh onboarding
+
+On a new Debian/Ubuntu VPS:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/OARANHA/Remote-Ops-MCP/main/install-agent.sh | sudo bash
+```
+
+The installer builds the agent, creates the restricted `ops-mcp` service user, prints a one-time `WD-XXXX-XXXX` code and waits while an administrator approves it in **Admin → Agent Mesh Devices**. It then validates the device credential and starts `wandora-ops-agent.service`.
+
+Pairing creates a device identity; it does **not** automatically create a Target Registry entry or grant Docker/sudo/operator authority. See [`docs/AGENT_ONBOARDING.md`](docs/AGENT_ONBOARDING.md).
 
 ## Read-only tools
 
@@ -137,7 +152,8 @@ The durable state file contains client metadata and **hashes** of refresh tokens
 
 - `docs/ADR-0001-CONTROL-PLANE.md` — V1.1 architectural decision.
 - `docs/CHATGPT_CONNECTION.md` — connector setup and OAuth flow.
-- `docs/TARGET_ONBOARDING.md` — adding a VPS safely.
+- `docs/TARGET_ONBOARDING.md` — adding a target safely.
+- `docs/AGENT_ONBOARDING.md` — one-command Agent Mesh device installation and pairing.
 - `docs/SECURITY_MODEL.md` — trust boundaries and threat model.
 - `docs/OPERATIONS.md` — deployment, revoke, backup and recovery.
 - `docs/ROADMAP.md` — intentionally deferred capabilities.
