@@ -10,6 +10,9 @@ STATE_DIR="${WANDORA_AGENT_STATE_DIR:-/var/lib/wandora-ops-agent}"
 STATE_FILE="${WANDORA_AGENT_STATE:-$STATE_DIR/device.json}"
 SERVICE_NAME="wandora-ops-agent.service"
 SERVICE_FILE="/etc/systemd/system/$SERVICE_NAME"
+BROKER_SERVICE_NAME="wandora-ops-exec-broker.service"
+WORKSPACE="${WANDORA_AGENT_WORKSPACE:-$BASE_DIR/ops-workspace}"
+EXEC_SOCKET="${WANDORA_EXEC_BROKER_SOCKET:-/run/wandora-ops-exec/exec.sock}"
 AGENT_USER="ops-mcp"
 AGENT_GROUP="ops-mcp"
 ADMIN_URL=""
@@ -165,6 +168,9 @@ install_agent_code() {
 
   test -f "$stage/dist/agent/cli.js" || die "agent build missing dist/agent/cli.js"
   test -f "$stage/dist/agent/operations.js" || die "agent build missing dist/agent/operations.js"
+  test -f "$stage/dist/agent/exec-broker-client.js" || die "agent build missing dist/agent/exec-broker-client.js"
+  test -f "$stage/dist/exec/broker.js" || die "agent build missing dist/exec/broker.js"
+  test -f "$stage/install-agent-exec-broker.sh" || die "agent source missing install-agent-exec-broker.sh"
 
   if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
     systemctl stop "$SERVICE_NAME"
@@ -186,8 +192,8 @@ install_systemd_unit() {
   cat >"$SERVICE_FILE" <<UNIT
 [Unit]
 Description=Wandora Ops Agent
-After=network-online.target
-Wants=network-online.target
+After=network-online.target $BROKER_SERVICE_NAME
+Wants=network-online.target $BROKER_SERVICE_NAME
 
 [Service]
 Type=simple
@@ -197,6 +203,7 @@ WorkingDirectory=$INSTALL_DIR
 Environment=NODE_ENV=production
 Environment=WANDORA_CONTROL_PLANE=$CONTROL_PLANE
 Environment=WANDORA_AGENT_STATE=$STATE_FILE
+Environment=WANDORA_EXEC_BROKER_SOCKET=$EXEC_SOCKET
 ExecStart=/usr/bin/node $INSTALL_DIR/dist/agent/cli.js run
 Restart=always
 RestartSec=5
@@ -291,6 +298,10 @@ pair_if_needed() {
   ok "Device credential validated"
 }
 
+install_exec_broker() {
+  WANDORA_AGENT_DIR="$INSTALL_DIR"   WANDORA_AGENT_STATE_DIR="$STATE_DIR"   WANDORA_AGENT_WORKSPACE="$WORKSPACE"   WANDORA_EXEC_BROKER_SOCKET="$EXEC_SOCKET"   bash "$INSTALL_DIR/install-agent-exec-broker.sh"
+}
+
 start_agent() {
   systemctl enable "$SERVICE_NAME" >/dev/null
   systemctl restart "$SERVICE_NAME"
@@ -315,6 +326,8 @@ start_agent() {
   printf 'device_id=%s\n' "$device_id"
   printf 'admin=%s\n' "$ADMIN_URL"
   printf 'service=%s\n' "$SERVICE_NAME"
+  printf 'broker=%s\n' "$BROKER_SERVICE_NAME"
+  printf 'workspace=%s\n' "$WORKSPACE"
   printf 'state=%s\n' "$STATE_FILE"
   printf '\nNext: create/associate a Target Registry entry with deviceId=%s and transport=agent.\n' "$device_id"
 }
@@ -329,6 +342,7 @@ main() {
   ensure_agent_user
   install_agent_code
   install_systemd_unit
+  install_exec_broker
   pair_if_needed
   start_agent
 }
