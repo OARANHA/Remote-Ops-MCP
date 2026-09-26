@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 import { z } from "zod";
 import { env } from "../lib/env.js";
 import { OpsError } from "../lib/errors.js";
@@ -39,32 +40,80 @@ const TargetSchema = z.object({
 });
 
 const RegistrySchema = z.object({ targets: z.array(TargetSchema).min(1) });
+const DynamicRegistrySchema = z.object({ targets: z.array(TargetSchema) });
 export type TargetConfig = z.infer<typeof TargetSchema>;
 interface Registry { targets: Map<string, TargetConfig>; }
 let registry: Registry | null = null;
 
-export function loadRegistry(): void {
-  const file = env.TARGETS_FILE;
+function dynamicTargetsFile(): string {
+  return path.join(path.dirname(env.STATE_FILE), "dynamic-targets.json");
+}
+
+function parseRegistryFile(file: string, requireOne: boolean): TargetConfig[] {
   let raw: string;
   try { raw = fs.readFileSync(file, "utf8"); }
-  catch { throw new Error(`Target Registry não encontrado em "${file}". Copie config/targets.example.json para config/targets.json e edite.`); }
+  catch (e) {
+    const err = e as NodeJS.ErrnoException;
+    if (!requireOne && err.code === "ENOENT") return [];
+    throw new Error(`Target Registry não encontrado em "${file}".`);
+  }
   let json: unknown;
   try { json = JSON.parse(raw); }
   catch (e) { throw new Error(`Target Registry inválido (JSON malformado) em "${file}": ${(e as Error).message}`); }
-  const parsed = RegistrySchema.safeParse(json);
+  const parsed = (requireOne ? RegistrySchema : DynamicRegistrySchema).safeParse(json);
   if (!parsed.success) {
     const detail = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
     throw new Error(`Target Registry inválido em "${file}": ${detail}`);
   }
+  return parsed.data.targets;
+}
+
+function validateAgentTarget(t: TargetConfig, source: string): void {
+  if (t.transport === "agent" && !t.deviceId) throw new Error(`${source}: target "${t.id}" usa transport agent sem deviceId`);
+}
+
+export function loadRegistry(): void {
+  const staticTargets = parseRegistryFile(env.TARGETS_FILE, true);
+  const dynamicFile = dynamicTargetsFile();
+  const dynamicTargets = parseRegistryFile(dynamicFile, false);
   const map = new Map<string, TargetConfig>();
-  for (const t of parsed.data.targets) {
-    if (t.transport === "agent" && !t.deviceId) throw new Error(`Target Registry inválido: target "${t.id}" usa transport agent sem deviceId`);
+  for (const t of staticTargets) {
+    validateAgentTarget(t, "Target Registry estático inválido");
     if (map.has(t.id)) throw new Error(`Target Registry duplicado: id "${t.id}" aparece mais de uma vez`);
+    map.set(t.id, t);
+  }
+  for (const t of dynamicTargets) {
+    validateAgentTarget(t, "Target Registry dinâmico inválido");
+    if (map.has(t.id)) throw new Error(`Target Registry dinâmico não pode sobrescrever target estático "${t.id}"`);
     map.set(t.id, t);
   }
   registry = { targets: map };
   console.log(JSON.stringify({ts:new Date().toISOString(),level:"info",msg:"target registry carregado",targets:[...map.keys()]}));
 }
+export function upsertDynamicAgentTarget(input: unknown): TargetConfig {
+  const parsed = TargetSchema.parse(input);
+  if (parsed.transport !== "agent" || !parsed.deviceId) {
+    throw new OpsError("INVALID_ARGUMENT", "target dinâmico deve usar transport=agent com deviceId");
+  }
+
+  const staticTargets = parseRegistryFile(env.TARGETS_FILE, true);
+  if (staticTargets.some((t) => t.id === parsed.id)) {
+    throw new OpsError("CAPABILITY_DENIED", `target estático "${parsed.id}" não pode ser alterado pela administração dinâmica`);
+  }
+
+  const file = dynamicTargetsFile();
+  const current = parseRegistryFile(file, false);
+  const next = [...current.filter((t) => t.id !== parsed.id), parsed].sort((a,b) => a.id.localeCompare(b.id));
+  const dir = path.dirname(file);
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify({ targets: next }, null, 2) + "\n", { encoding: "utf8", mode: 0o600 });
+  fs.renameSync(tmp, file);
+  try { fs.chmodSync(file, 0o600); } catch { /* mounted filesystems may reject chmod */ }
+  loadRegistry();
+  return getTarget(parsed.id)!;
+}
+
 function ensure(): Registry { if (!registry) throw new OpsError("INTERNAL", "registry não carregado"); return registry; }
 export function getTarget(id: string): TargetConfig | undefined { return ensure().targets.get(id); }
 export function listTargets(): TargetConfig[] { return [...ensure().targets.values()]; }
