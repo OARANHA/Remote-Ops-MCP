@@ -52,7 +52,7 @@ On a new Debian/Ubuntu VPS:
 curl -fsSL https://raw.githubusercontent.com/OARANHA/Remote-Ops-MCP/main/install-agent.sh | sudo bash
 ```
 
-The installer builds the agent, creates the restricted `ops-mcp` service user, prints a one-time `WD-XXXX-XXXX` code and waits while an administrator approves it in **Admin → Agent Mesh Devices**. It then validates the device credential and starts `wandora-ops-agent.service`.
+The installer builds the agent, creates the restricted `ops-mcp` service user plus the isolated `wandora-exec` execution user, creates `/opt/wandora/ops-workspace`, installs `wandora-ops-exec-broker.service`, prints a one-time `WD-XXXX-XXXX` code and waits while an administrator approves it in **Admin → Agent Mesh Devices**. It then validates the device credential and starts broker + `wandora-ops-agent.service`.
 
 Pairing creates a device identity; it does **not** automatically create a Target Registry entry or grant Docker/sudo/operator authority. See [`docs/AGENT_ONBOARDING.md`](docs/AGENT_ONBOARDING.md).
 
