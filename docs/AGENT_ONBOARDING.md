@@ -88,20 +88,35 @@ Pairing cria um **Agent Mesh Device** e emite:
 device_id=dev_...
 ```
 
-Para as tools MCP usarem o device, ainda é necessário um Target Registry apontando para esse device:
+Para as tools MCP usarem o device, ainda é necessário um Target Registry apontando para esse device. O caminho preferido agora é fazer isso pelo próprio MCP com aprovação humana explícita:
 
-```json
-{
-  "id": "medicspro-prod",
-  "deviceId": "dev_...",
-  "environment": "production",
-  "capabilityProfile": "read-only",
-  "transport": "agent",
-  "enabled": true
-}
+```text
+target_agent_prepare(
+  target_id=medicspro-agent,
+  device_id=dev_...,
+  preset=operator-workspace
+)
+
+→ approval_id=adm_...
+→ required_confirmation="APPROVE adm_..."
+
+Usuário no chat:
+APPROVE adm_...
+
+target_agent_apply(...)
+→ target aplicado sem restart
 ```
 
-O target deve começar com o menor perfil necessário. Aprovar pairing não concede implicitamente Docker, sudo ou operador amplo.
+O target dinâmico é persistido em `/app/data/dynamic-targets.json` e sobreposto ao registry estático em memória. Targets estáticos não podem ser sobrescritos por esse mecanismo.
+
+O preset `operator-workspace` libera apenas:
+
+- escrita/processos em `/opt/wandora/ops-workspace`;
+- programa allowlist conhecido;
+- restart de `wandora-ops-agent.service` e `wandora-ops-exec-broker.service`;
+- **nenhum acesso Docker**.
+
+Aprovar pairing não concede implicitamente target, Docker ou sudo. Criar/alterar target é uma segunda decisão explícita.
 
 ## Segurança do instalador
 
