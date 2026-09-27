@@ -29,7 +29,13 @@ grep -q -- '--managed-admin' install-agent.sh
 grep -q 'install-agent-managed-admin-broker.sh' install-agent.sh
 grep -q 'wandora-ops-admin-broker.service' install-agent-managed-admin-broker.sh
 grep -q 'managed-admin-public-key' install-agent-managed-admin-broker.sh
-grep -q 'chgrp ops-mcp' install-agent-managed-admin-broker.sh
+grep -q '^Group=ops-mcp$' install-agent-managed-admin-broker.sh
+grep -q '^RuntimeDirectory=wandora-ops-admin$' install-agent-managed-admin-broker.sh
+grep -q '^RuntimeDirectoryMode=0750$' install-agent-managed-admin-broker.sh
+if grep -Eq '^ExecStart(Pre|Post)=/usr/bin/(chgrp|chmod).*wandora-ops-admin' install-agent-managed-admin-broker.sh; then
+  echo 'managed-admin runtime directory ownership must come from systemd Group=ops-mcp, not ExecStart hooks' >&2
+  exit 1
+fi
 grep -q 'wandora-ops-admin-broker.service' uninstall-agent-managed-admin-broker.sh
 grep -q 'pairing_preserved=true' uninstall-agent-managed-admin-broker.sh
 grep -q 'WANDORA_EXEC_ROOTS' install-agent-exec-broker.sh
