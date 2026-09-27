@@ -26,6 +26,8 @@ jobs:
       - run: bash test-agent-postgres-readback-runtime.sh
       - run: bash -n install-agent-managed-admin-broker.sh
       - run: bash -n uninstall-agent-managed-admin-broker.sh
+      - run: node test-multi-vps-capability-baseline.mjs
+      - run: node test-operator-minimal-disclosure.mjs
       - run: node test-target-agent-approvals.mjs
       - run: node test-managed-admin-noauth.mjs
       - run: node test-managed-admin-ticket.mjs

@@ -2,6 +2,35 @@
 
 Remote Ops MCP operator targets are portable across VPSs. Operator authority is opt-in and fail-closed: every write or lifecycle capability must be enabled both in the target registry and, for Docker mutations, in the local Docker proxy.
 
+## Multi-VPS Capability Baseline V1
+
+The central Remote Ops control plane may govern Wandora, MedicsPro/28server and future VPSs through the same target contract. The baseline is deliberately **product agnostic**:
+
+- one device identity per VPS;
+- one logical target per authority boundary;
+- capability authority remains the existing Target Registry plus host-local brokers/proxies;
+- presets are reusable templates, not a second capability registry;
+- a preset never inherits another target's application/container allowlists;
+- `operator-workspace` grants only the standard agent workspace/process boundary and agent-service restart; Docker authority remains empty;
+- `read-only` removes write/process/service mutation authority;
+- `postgres-readback` grants only `postgres.pinned_readback`;
+- `managed-admin` remains explicit, broker-backed and approval-gated.
+
+`validateAgentTargetAgainstPreset(...)` is a code-only attestation helper. It does not mutate the registry and does not replace per-host OS/Docker policy.
+
+Product-specific capabilities may be added later only through an explicit reviewed target change. They are not part of the portable baseline.
+
+## Operator Chat Minimal Disclosure V1
+
+Operator chat is a human control plane, not the raw evidence store.
+
+- `targets_list` stays concise.
+- `target_status` returns a decision-relevant capability summary by default.
+- Use `target_status(detail="full")` when exact allowlists are explicitly requested or materially required for a human decision.
+- Apply/prepare responses should report logical authority and bounded capability summaries rather than dumping full allowlists.
+- Detailed evidence remains available from the authoritative repository/runtime and explicit full diagnostic views; the audit retains its existing redacted event contract. This policy does not weaken those sources.
+- Minimal disclosure never changes authorization. If exact detail is required to validate a guardrail, request the full view and decide from that evidence.
+
 ## Target registry
 
 An `operator` target may declare:

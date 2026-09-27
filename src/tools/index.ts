@@ -4,6 +4,7 @@ import { OpsError } from "../lib/errors.js";
 import { assertIdentifier } from "../lib/quote.js";
 import { getTarget, listTargets, publicTarget, targetIds } from "../config/targets.js";
 import { prepareAgentTarget, applyAgentTargetApproval } from "../config/target-approvals.js";
+import { describeTargetCapabilityBaseline } from "../config/capability-baseline.js";
 import { prepareManagedAdminAction, consumeManagedAdminApproval } from "../config/managed-admin-approvals.js";
 import type { TargetConfig } from "../config/targets.js";
 import { getTransport } from "../transport.js";
@@ -55,6 +56,17 @@ function resolveTarget(id: unknown): TargetConfig {
     throw new OpsError("TARGET_DISABLED", `target "${id}" está desabilitado`);
   }
   return t;
+}
+
+function targetCapabilitySummary(t: TargetConfig) {
+  return {
+    id: t.id,
+    environment: t.environment,
+    capabilityProfile: t.capabilityProfile,
+    transport: t.transport,
+    enabled: effectiveTargetEnabled(t.id, t.enabled),
+    capabilityBaseline: describeTargetCapabilityBaseline(t),
+  };
 }
 
 function checkAllow(list: string[], value: string, kind: string, code: "CONTAINER_NOT_ALLOWED" | "SERVICE_NOT_ALLOWED" | "REPO_NOT_ALLOWED"): void {
@@ -260,11 +272,14 @@ const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "target_status",
-    description: "Detalhes de configuração de um target do registry (perfil de capability, allowlists). Não conecta na VPS.",
-    inputSchema: { target: targetField },
+    description: "Resumo governado do target por padrão. Use detail=full somente quando allowlists exatas forem explicitamente necessárias para diagnóstico/decisão. Não conecta na VPS.",
+    inputSchema: {
+      target: targetField,
+      detail: z.enum(["summary","full"]).optional().describe("summary (padrão) ou full para allowlists exatas"),
+    },
     run: async (args) => {
       const t = resolveTarget(args.target);
-      return publicTarget(t);
+      return args.detail === "full" ? publicTarget(t) : targetCapabilitySummary(t);
     },
   },
   {
@@ -297,11 +312,22 @@ const TOOL_DEFS: ToolDef[] = [
     mutation: true,
     destructive: false,
     idempotent: false,
-    run: async (args, ctx) => applyAgentTargetApproval({
-      actor: ctx.actor,
-      approvalId: String(args.approval_id),
-      confirmation: String(args.confirmation),
-    }),
+    run: async (args, ctx) => {
+      const applied = applyAgentTargetApproval({
+        actor: ctx.actor,
+        approvalId: String(args.approval_id),
+        confirmation: String(args.confirmation),
+      });
+      const targetId = String((applied.target as { id?: unknown }).id ?? "");
+      const target = resolveTarget(targetId);
+      return {
+        approval_id: applied.approval_id,
+        applied: applied.applied,
+        target: targetCapabilitySummary(target),
+        summary: applied.summary,
+        detail_hint: "Use target_status com detail=full se uma decisão exigir allowlists exatas.",
+      };
+    },
   },
 
   {

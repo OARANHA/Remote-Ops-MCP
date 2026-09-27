@@ -1,10 +1,9 @@
 import { env } from "../lib/env.js";
 import { OpsError } from "../lib/errors.js";
-import { MANAGED_ADMIN_CAPABILITY, MANAGED_ADMIN_DEFAULT_CWDS, MANAGED_ADMIN_DEFAULT_PROGRAMS } from "../privileged/managed-admin-policy.js";
+import { MANAGED_ADMIN_CAPABILITY } from "../privileged/managed-admin-policy.js";
+import { buildAgentTargetFromPreset, describeTargetCapabilityBaseline, type AgentTargetPreset } from "./capability-baseline.js";
 import { APPROVAL_TTL_MS, newApprovalId, requireApprovalConfirmation, requireLiveDevice } from "./approval-utils.js";
 import { publicTarget, upsertDynamicAgentTarget, type TargetConfig } from "./targets.js";
-
-type AgentTargetPreset = "operator-workspace" | "read-only" | "postgres-readback" | "managed-admin";
 
 interface PendingApproval {
   id: string;
@@ -16,106 +15,10 @@ interface PendingApproval {
 }
 
 const approvals = new Map<string, PendingApproval>();
-const WORKSPACE = "/opt/wandora/ops-workspace";
-const OPERATOR_PROGRAMS = [
-  "bash","sh","git","node","npm","npx","pnpm","python3",
-  "curl","wget","jq","grep","sed","awk","find","head","tail","cat","wc","make"
-];
-
 function purge(now = Date.now()): void {
   for (const [id, approval] of approvals) {
     if (approval.expiresAt < now) approvals.delete(id);
   }
-}
-
-function buildTarget(input: {
-  targetId: string;
-  deviceId: string;
-  environment: "production" | "staging" | "development";
-  preset: AgentTargetPreset;
-}): TargetConfig {
-  const base = {
-    id: input.targetId,
-    deviceId: input.deviceId,
-    environment: input.environment,
-    transport: "agent" as const,
-    enabled: true,
-    host: "127.0.0.1",
-    port: 22,
-    username: "ops-mcp",
-    credentialRef: undefined,
-    keyFile: undefined,
-    hostKeyFingerprint: undefined,
-    hostKey: undefined,
-    allowedDockerContainers: [] as string[],
-    allowedDockerExecContainers: [] as string[],
-    allowedDockerExecPrograms: [] as string[],
-    allowedDockerActions: [] as Array<"start"|"stop"|"restart"|"load_image"|"candidate_run"|"candidate_remove">,
-    allowedDockerImageLoadRoots: [] as string[],
-    allowedDockerCandidateImagePrefixes: [] as string[],
-    allowedDockerCandidateNetworks: [] as string[],
-    allowedDockerCandidateNamePrefixes: [] as string[],
-    allowedDockerCandidateHostPorts: [] as number[],
-    allowedDockerCandidateContainerPorts: [] as number[],
-    allowedGitRepos: [] as string[],
-    allowedSemanticCapabilities: [] as string[],
-    allowedAdminPrograms: [] as string[],
-    allowedAdminCwds: [] as string[],
-  };
-
-  if (input.preset === "managed-admin") {
-    return {
-      ...base,
-      capabilityProfile: "operator",
-      allowedPaths: [WORKSPACE],
-      allowedServices: ["wandora-ops-agent.service", "wandora-ops-exec-broker.service", "wandora-ops-admin-broker.service"],
-      allowedServiceActions: ["restart"],
-      allowedWritePaths: [WORKSPACE],
-      allowedProcessCwds: [WORKSPACE],
-      allowedProcessPrograms: [...OPERATOR_PROGRAMS],
-      allowedSemanticCapabilities: [MANAGED_ADMIN_CAPABILITY],
-      allowedAdminPrograms: [...MANAGED_ADMIN_DEFAULT_PROGRAMS],
-      allowedAdminCwds: [...MANAGED_ADMIN_DEFAULT_CWDS],
-    };
-  }
-
-  if (input.preset === "postgres-readback") {
-    return {
-      ...base,
-      capabilityProfile: "read-only",
-      allowedPaths: [],
-      allowedServices: [],
-      allowedServiceActions: [],
-      allowedWritePaths: [],
-      allowedProcessCwds: [],
-      allowedProcessPrograms: [],
-      allowedSemanticCapabilities: ["postgres.pinned_readback"],
-    };
-  }
-
-  if (input.preset === "read-only") {
-    return {
-      ...base,
-      capabilityProfile: "read-only",
-      allowedPaths: [WORKSPACE],
-      allowedServices: ["wandora-ops-agent.service", "wandora-ops-exec-broker.service"],
-      allowedServiceActions: [],
-      allowedWritePaths: [],
-      allowedProcessCwds: [],
-      allowedProcessPrograms: [],
-    };
-  }
-
-  return {
-    ...base,
-    capabilityProfile: "operator",
-    allowedPaths: [WORKSPACE],
-    allowedServices: ["wandora-ops-agent.service", "wandora-ops-exec-broker.service"],
-    allowedServiceActions: ["restart"],
-    allowedWritePaths: [WORKSPACE],
-    allowedProcessCwds: [WORKSPACE],
-    allowedProcessPrograms: [...OPERATOR_PROGRAMS],
-  };
 }
 
 export function prepareAgentTarget(input: {
@@ -130,7 +33,7 @@ export function prepareAgentTarget(input: {
     throw new OpsError("CAPABILITY_DENIED", "managed-admin exige AUTH_MODE=oauth e AUTH_SECRET forte");
   }
   const device = requireLiveDevice(input.deviceId);
-  const target = buildTarget(input);
+  const target = buildAgentTargetFromPreset(input);
   if (input.preset === "managed-admin" && !device.capabilities?.includes(MANAGED_ADMIN_CAPABILITY)) {
     throw new OpsError("CAPABILITY_DENIED", `Agent Mesh device "${input.deviceId}" não anunciou ${MANAGED_ADMIN_CAPABILITY}; instale/ative o broker managed-admin primeiro`);
   }
@@ -163,6 +66,7 @@ export function prepareAgentTarget(input: {
     device_name: device.display_name,
     preset: input.preset,
     summary,
+    capability_baseline: describeTargetCapabilityBaseline(target),
     required_confirmation: `APPROVE ${id}`,
     applied: false,
   };
@@ -192,6 +96,7 @@ export function applyAgentTargetApproval(input: {
     approval_id: approval.id,
     applied: true,
     target: publicTarget(result),
+    capability_baseline: describeTargetCapabilityBaseline(result),
     summary: approval.summary,
   };
 }
