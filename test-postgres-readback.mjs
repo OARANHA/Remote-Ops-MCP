@@ -5,9 +5,10 @@ import {
   normalizePostgresPinnedReadbackPayload,
   parsePostgresVerifierAllowlist,
   postgresVerifierSha256,
+  postgresSqlAfterApprovedMetaCommands,
 } from "./dist/docker/postgres-readback.js";
 
-const sql = "DO $$ BEGIN IF 1 <> 1 THEN RAISE EXCEPTION 'bad'; END IF; END $$;\nSELECT 'VERIFY OK' AS result;";
+const sql = "\\set ON_ERROR_STOP on\n\\pset pager off\nDO $ BEGIN IF 1 <> 1 THEN RAISE EXCEPTION 'bad'; END IF; END $;\nSELECT 'VERIFY OK' AS result;";
 const sha = postgresVerifierSha256(sql);
 const verifiers = parsePostgresVerifierAllowlist(`commercial-crm-core=${sha}`);
 
@@ -37,6 +38,9 @@ assert.equal(spec.cmd.includes("sh"), false);
 assert.equal(spec.cmd.includes("bash"), false);
 assert.equal(spec.cmd.join(" ").includes("BEGIN TRANSACTION READ ONLY"), true);
 assert.equal(spec.cmd.join(" ").includes("ROLLBACK"), true);
+assert.equal(spec.cmd.join(" ").includes("\\set ON_ERROR_STOP on"), false);
+assert.equal(spec.cmd.join(" ").includes("\\pset pager off"), false);
+assert.equal(postgresSqlAfterApprovedMetaCommands(sql).includes("VERIFY OK"), true);
 assert.equal(spec.env.some((x) => x.includes("default_transaction_read_only=on")), true);
 assert.equal(spec.env.some((x) => /password/i.test(x)), false);
 
@@ -55,5 +59,17 @@ assert.throws(() => buildPostgresPinnedReadbackExec({
   dbName: "postgres",
   verifiers,
 }, { verifierId: "not-approved", sql }), /postgres_verifier_not_allowed/);
+
+for (const unsafeMeta of ["\\\\! id", "\\\\copy public.contacts to '/tmp/x'", "\\\\include /tmp/x.sql"]) {
+  const unsafeSql = unsafeMeta + "\nSELECT 1;";
+  const unsafeHash = postgresVerifierSha256(unsafeSql);
+  assert.throws(() => buildPostgresPinnedReadbackExec({
+    container: "supabase-db",
+    execUser: "postgres",
+    dbUser: "postgres",
+    dbName: "postgres",
+    verifiers: new Map([["unsafe-verifier", unsafeHash]]),
+  }, { verifierId: "unsafe-verifier", sql: unsafeSql }), /unsupported_postgres_meta_command/);
+}
 
 console.log("POSTGRES_PINNED_READBACK_TEST=GREEN");
