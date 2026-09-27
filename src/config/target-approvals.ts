@@ -1,10 +1,10 @@
-import crypto from "node:crypto";
 import { env } from "../lib/env.js";
 import { OpsError } from "../lib/errors.js";
-import { listDevices } from "../state/store.js";
+import { MANAGED_ADMIN_CAPABILITY, MANAGED_ADMIN_DEFAULT_CWDS, MANAGED_ADMIN_DEFAULT_PROGRAMS } from "../privileged/managed-admin-policy.js";
+import { APPROVAL_TTL_MS, newApprovalId, requireApprovalConfirmation, requireLiveDevice } from "./approval-utils.js";
 import { publicTarget, upsertDynamicAgentTarget, type TargetConfig } from "./targets.js";
 
-type AgentTargetPreset = "operator-workspace" | "read-only" | "postgres-readback";
+type AgentTargetPreset = "operator-workspace" | "read-only" | "postgres-readback" | "managed-admin";
 
 interface PendingApproval {
   id: string;
@@ -16,7 +16,6 @@ interface PendingApproval {
 }
 
 const approvals = new Map<string, PendingApproval>();
-const APPROVAL_TTL_MS = 10 * 60_000;
 const WORKSPACE = "/opt/wandora/ops-workspace";
 const OPERATOR_PROGRAMS = [
   "bash","sh","git","node","npm","npx","pnpm","python3",
@@ -27,22 +26,6 @@ function purge(now = Date.now()): void {
   for (const [id, approval] of approvals) {
     if (approval.expiresAt < now) approvals.delete(id);
   }
-}
-
-function approvalId(): string {
-  return "adm_" + crypto.randomBytes(12).toString("hex");
-}
-
-function requireLiveDevice(deviceId: string, now = Date.now()) {
-  const device = listDevices().find((d) => d.device_id === deviceId);
-  if (!device || device.revoked_at) {
-    throw new OpsError("INVALID_ARGUMENT", `Agent Mesh device "${deviceId}" não existe ou está revogado`);
-  }
-  const staleMs = env.AGENT_HEARTBEAT_STALE_SECONDS * 2 * 1000;
-  if (!device.last_seen_at || now - device.last_seen_at > staleMs) {
-    throw new OpsError("REMOTE_COMMAND_FAILED", `Agent Mesh device "${deviceId}" não está online/recentemente ativo`);
-  }
-  return device;
 }
 
 function buildTarget(input: {
@@ -76,7 +59,25 @@ function buildTarget(input: {
     allowedDockerCandidateContainerPorts: [] as number[],
     allowedGitRepos: [] as string[],
     allowedSemanticCapabilities: [] as string[],
+    allowedAdminPrograms: [] as string[],
+    allowedAdminCwds: [] as string[],
   };
+
+  if (input.preset === "managed-admin") {
+    return {
+      ...base,
+      capabilityProfile: "operator",
+      allowedPaths: [WORKSPACE],
+      allowedServices: ["wandora-ops-agent.service", "wandora-ops-exec-broker.service", "wandora-ops-admin-broker.service"],
+      allowedServiceActions: ["restart"],
+      allowedWritePaths: [WORKSPACE],
+      allowedProcessCwds: [WORKSPACE],
+      allowedProcessPrograms: [...OPERATOR_PROGRAMS],
+      allowedSemanticCapabilities: [MANAGED_ADMIN_CAPABILITY],
+      allowedAdminPrograms: [...MANAGED_ADMIN_DEFAULT_PROGRAMS],
+      allowedAdminCwds: [...MANAGED_ADMIN_DEFAULT_CWDS],
+    };
+  }
 
   if (input.preset === "postgres-readback") {
     return {
@@ -125,14 +126,22 @@ export function prepareAgentTarget(input: {
   preset: AgentTargetPreset;
 }) {
   purge();
+  if (input.preset === "managed-admin" && (env.AUTH_MODE !== "oauth" || !env.AUTH_SECRET || env.AUTH_SECRET.length < 32)) {
+    throw new OpsError("CAPABILITY_DENIED", "managed-admin exige AUTH_MODE=oauth e AUTH_SECRET forte");
+  }
   const device = requireLiveDevice(input.deviceId);
   const target = buildTarget(input);
-  const id = approvalId();
+  if (input.preset === "managed-admin" && !device.capabilities?.includes(MANAGED_ADMIN_CAPABILITY)) {
+    throw new OpsError("CAPABILITY_DENIED", `Agent Mesh device "${input.deviceId}" não anunciou ${MANAGED_ADMIN_CAPABILITY}; instale/ative o broker managed-admin primeiro`);
+  }
+  const id = newApprovalId();
   const now = Date.now();
   const authority =
     input.preset === "postgres-readback"
       ? "pinned PostgreSQL readback only; generic Docker/process/write access remains disabled"
-      : "static targets are not modified; Docker access remains disabled";
+      : input.preset === "managed-admin"
+        ? "workspace operator + signed managed-admin root broker; no generic sudo/docker group and no break-glass shell"
+        : "static targets are not modified; Docker access remains disabled";
   const summary =
     `create/update dynamic target ${target.id} -> ${input.deviceId} (${input.environment}, ${input.preset}); ` +
     authority;
@@ -170,11 +179,12 @@ export function applyAgentTargetApproval(input: {
   if (approval.actor !== input.actor) {
     throw new OpsError("CAPABILITY_DENIED", "aprovação pertence a outro ator MCP");
   }
-  if (input.confirmation.trim() !== `APPROVE ${approval.id}`) {
-    throw new OpsError("CAPABILITY_DENIED", `confirmação inválida; esperado: APPROVE ${approval.id}`);
-  }
+  requireApprovalConfirmation(approval.id, input.confirmation);
 
-  requireLiveDevice(approval.target.deviceId!);
+  const liveDevice = requireLiveDevice(approval.target.deviceId!);
+  if (approval.target.allowedSemanticCapabilities.includes(MANAGED_ADMIN_CAPABILITY) && !liveDevice.capabilities?.includes(MANAGED_ADMIN_CAPABILITY)) {
+    throw new OpsError("CAPABILITY_DENIED", `Agent Mesh device "${approval.target.deviceId}" deixou de anunciar ${MANAGED_ADMIN_CAPABILITY}`);
+  }
   const result = upsertDynamicAgentTarget(approval.target);
   approvals.delete(approval.id);
 

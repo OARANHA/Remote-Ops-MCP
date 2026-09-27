@@ -11,7 +11,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "dev": "tsc -p tsconfig.json && node dist/index.js",
-    "check": "npm run build && bash test-e2e.sh && bash test-agent-pairing.sh && bash test-agent-installer.sh && node test-target-agent-approvals.mjs && node test-postgres-readback.mjs && node test-postgres-readback-proxy.mjs",
+    "check": "npm run build && bash test-e2e.sh && bash test-agent-pairing.sh && bash test-agent-installer.sh && bash -n install-agent-managed-admin-broker.sh && bash -n uninstall-agent-managed-admin-broker.sh && node test-target-agent-approvals.mjs && node test-managed-admin-noauth.mjs && node test-managed-admin-ticket.mjs && node test-managed-admin-approvals.mjs && node test-managed-admin-broker.mjs && node test-managed-admin-agent-proxy.mjs && node test-managed-admin-control-plane-e2e.mjs && node test-postgres-readback.mjs && node test-postgres-readback-proxy.mjs",
     "agent": "node dist/agent/cli.js"
   },
   "license": "MIT",

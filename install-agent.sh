@@ -18,6 +18,7 @@ AGENT_GROUP="ops-mcp"
 ADMIN_URL=""
 REPAIR=0
 SKIP_NODE_INSTALL=0
+MANAGED_ADMIN=0
 
 usage() {
   cat <<'EOF'
@@ -31,6 +32,7 @@ Options:
   --ref REF             Git branch/tag to install (default: main)
   --re-pair             Revoke local pairing state and request a new WD code
   --skip-node-install   Do not install Node.js automatically
+  --managed-admin       Install signed managed-admin root broker after pairing (explicit opt-in)
   -h, --help            Show help
 
 Environment overrides:
@@ -61,6 +63,8 @@ while (($#)); do
       REPAIR=1; shift ;;
     --skip-node-install)
       SKIP_NODE_INSTALL=1; shift ;;
+    --managed-admin)
+      MANAGED_ADMIN=1; shift ;;
     -h|--help)
       usage; exit 0 ;;
     *)
@@ -171,6 +175,10 @@ install_agent_code() {
   test -f "$stage/dist/agent/exec-broker-client.js" || die "agent build missing dist/agent/exec-broker-client.js"
   test -f "$stage/dist/exec/broker.js" || die "agent build missing dist/exec/broker.js"
   test -f "$stage/install-agent-exec-broker.sh" || die "agent source missing install-agent-exec-broker.sh"
+  if (( MANAGED_ADMIN )); then
+    test -f "$stage/dist/privileged/managed-admin-broker.js" || die "managed-admin build missing dist/privileged/managed-admin-broker.js"
+    test -f "$stage/install-agent-managed-admin-broker.sh" || die "agent source missing install-agent-managed-admin-broker.sh"
+  fi
 
   if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
     systemctl stop "$SERVICE_NAME"
@@ -302,6 +310,16 @@ install_exec_broker() {
   WANDORA_AGENT_DIR="$INSTALL_DIR"   WANDORA_AGENT_STATE_DIR="$STATE_DIR"   WANDORA_AGENT_WORKSPACE="$WORKSPACE"   WANDORA_EXEC_BROKER_SOCKET="$EXEC_SOCKET"   bash "$INSTALL_DIR/install-agent-exec-broker.sh"
 }
 
+install_managed_admin() {
+  (( MANAGED_ADMIN )) || return 0
+  test -f "$INSTALL_DIR/install-agent-managed-admin-broker.sh" || die "agent source missing install-agent-managed-admin-broker.sh"
+  log "Installing managed-admin broker (explicit opt-in)..."
+  WANDORA_CONTROL_PLANE="$CONTROL_PLANE" \
+  WANDORA_AGENT_DIR="$INSTALL_DIR" \
+  WANDORA_AGENT_STATE="$STATE_FILE" \
+  bash "$INSTALL_DIR/install-agent-managed-admin-broker.sh"
+}
+
 start_agent() {
   systemctl enable "$SERVICE_NAME" >/dev/null
   systemctl restart "$SERVICE_NAME"
@@ -345,6 +363,7 @@ main() {
   install_exec_broker
   pair_if_needed
   start_agent
+  install_managed_admin
 }
 
 main "$@"

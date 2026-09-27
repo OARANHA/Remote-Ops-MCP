@@ -1,6 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { z } from "zod";
 import { env } from "../lib/env.js";
+import { deriveManagedAdminPublicKeyPem } from "../privileged/managed-admin-ticket.js";
 import {
   claimPairing,
   createPairing,
@@ -60,6 +61,14 @@ function pairStartLimiter(max = 5, windowMs = 10 * 60_000) {
 export function agentRouter(): Router {
   const r = Router();
   r.use((_req, res, next) => { noStore(res); next(); });
+
+  r.get("/managed-admin-public-key", (_req, res) => {
+    if (env.AUTH_MODE !== "oauth" || !env.AUTH_SECRET || env.AUTH_SECRET.length < 32) {
+      res.status(404).type("text/plain").send("managed-admin unavailable");
+      return;
+    }
+    res.type("text/plain").send(deriveManagedAdminPublicKeyPem(env.AUTH_SECRET));
+  });
 
   r.post("/pair/start", pairStartLimiter(), (req, res) => {
     const parsed = StartSchema.safeParse(req.body);

@@ -2,6 +2,8 @@ import { spawn } from "node:child_process";
 import type { ExecOptions, ExecResult } from "../ssh/pool.js";
 import { denySecretPath } from "../security/paths.js";
 import { callExecBroker } from "./exec-broker-client.js";
+import { callManagedAdminBroker } from "./managed-admin-broker-client.js";
+import { normalizeManagedAdminTicket } from "../privileged/managed-admin-ticket.js";
 
 export interface AgentOperation {
   op: string;
@@ -117,6 +119,43 @@ function childEnvForOperation(x: AgentOperation): NodeJS.ProcessEnv {
     env.DOCKER_HOST = dockerHost;
   }
   return env;
+}
+
+async function executeManagedAdminOperation(x:AgentOperation,opts?:ExecOptions):Promise<ExecResult>{
+  const started=Date.now();
+  const raw=x.args??{};
+  let ticket;
+  try{ticket=normalizeManagedAdminTicket(raw.ticket);}
+  catch(e){return{code:1,stdout:"",stderr:e instanceof Error?e.message:String(e),durationMs:Date.now()-started,truncated:false,timedOut:false};}
+  const signature=String(raw.signature??"");
+  if(!/^[A-Za-z0-9_-]{40,200}$/.test(signature)) {
+    return{code:1,stdout:"",stderr:"managed_admin_signature_invalid",durationMs:Date.now()-started,truncated:false,timedOut:false};
+  }
+  try{
+    const response=await callManagedAdminBroker({ticket:ticket as unknown as Record<string,unknown>,signature},opts?.timeoutMs??ticket.timeout_ms+5_000);
+    if(!response.ok){
+      return{code:1,stdout:"",stderr:(response.error?.code??"MANAGED_ADMIN_DENIED")+": "+(response.error?.message??"managed admin denied"),durationMs:Date.now()-started,truncated:false,timedOut:false};
+    }
+    const r=response.result??{};
+    return{
+      code:0,
+      stdout:JSON.stringify({
+        exit_code:typeof r.code==="number"||r.code===null?r.code:null,
+        stdout:typeof r.stdout==="string"?r.stdout:"",
+        stderr:typeof r.stderr==="string"?r.stderr:"",
+        duration_ms:typeof r.duration_ms==="number"?r.duration_ms:Date.now()-started,
+        truncated:r.truncated===true,
+        timed_out:r.timed_out===true,
+        program:typeof r.program==="string"?r.program:ticket.program,
+      }),
+      stderr:"",
+      durationMs:Date.now()-started,
+      truncated:r.truncated===true,
+      timedOut:false,
+    };
+  }catch(e){
+    return{code:1,stdout:"",stderr:e instanceof Error?e.message:String(e),durationMs:Date.now()-started,truncated:false,timedOut:false};
+  }
 }
 
 async function executeDockerOperatorOperation(x: AgentOperation, opts?: ExecOptions): Promise<ExecResult> {
@@ -243,6 +282,7 @@ async function executePaperclipSemanticOperation(x: AgentOperation, opts?: ExecO
   } finally { clearTimeout(timer); }
 }
 export async function executeAgentOperation(x: AgentOperation, opts?: ExecOptions): Promise<ExecResult> {
+  if (x.op === "host.managed_admin") return executeManagedAdminOperation(x, opts);
   if (x.op === "postgres.pinned_readback") return executePostgresPinnedReadbackOperation(x, opts);
   if (x.op.startsWith("paperclip.")) return executePaperclipSemanticOperation(x, opts);
   if (["docker.exec","docker.action","docker.image_load","docker.candidate_run","docker.candidate_remove"].includes(x.op)) return executeDockerOperatorOperation(x, opts);

@@ -118,6 +118,68 @@ O preset `operator-workspace` libera apenas:
 
 Aprovar pairing não concede implicitamente target, Docker ou sudo. Criar/alterar target é uma segunda decisão explícita.
 
+## Managed-admin opcional
+
+Para uma VPS em que o objetivo seja permitir administração remota ampla sem voltar ao SSH para tarefas rotineiras, use o bootstrap explícito:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/OARANHA/Remote-Ops-MCP/main/install-agent.sh \
+  | sudo bash -s -- --managed-admin
+```
+
+Além do Agent Mesh e do execution broker normal, esse modo instala `wandora-ops-admin-broker.service` como root. O agente `ops-mcp` continua fora de `sudo` e do grupo Docker.
+
+O broker administrativo só aceita tickets Ed25519 emitidos pelo control plane. Cada ticket:
+
+- nasce de `host_admin_prepare`;
+- depende do usuário confirmar exatamente `APPROVE adm_...`;
+- é ligado ao target e ao `device_id`;
+- descreve programa, argv, cwd e timeout exatos;
+- expira em no máximo 2 minutos;
+- possui nonce de uso único com proteção de replay persistida no host;
+- é verificado novamente contra allowlists locais antes da execução.
+
+O device só anuncia `host.managed_admin` quando o socket do broker existe. Por isso o target `preset=managed-admin` falha fechado se o broker não estiver instalado/ativo.
+
+Exemplo de target:
+
+```text
+target_agent_prepare(
+  target_id=medicspro-admin,
+  device_id=dev_...,
+  preset=managed-admin
+)
+
+→ APPROVE adm_...
+→ target_agent_apply(...)
+```
+
+Depois, cada comando root é uma decisão separada:
+
+```text
+host_admin_prepare(
+  target=medicspro-admin,
+  program=docker,
+  args=["compose","-f","/opt/wandora/stacks/app/compose.yaml","pull"],
+  cwd=/opt/wandora
+)
+
+→ APPROVE adm_...
+→ host_admin_apply(...)
+```
+
+O preset não inclui shell, interpretadores, `sudo`, `su` ou `pkexec`. Ele cobre administração rotineira por programas administrativos explicitamente allowlisted. Um eventual modo break-glass root shell é outra capability e não faz parte deste bootstrap.
+
+### Rollback / remoção do managed-admin
+
+Para retirar somente a autoridade root e preservar Agent Mesh, pairing, workspace e execution broker normal:
+
+```bash
+sudo bash /opt/wandora/remote-ops-agent/uninstall-agent-managed-admin-broker.sh
+```
+
+O script desabilita/remove `wandora-ops-admin-broker.service`, remove a chave pública local e o replay state, mas não toca em `/var/lib/wandora-ops-agent/device.json`, `/opt/wandora/ops-workspace` nem `wandora-ops-exec-broker.service`. Depois, revogue ou desabilite o target `managed-admin` correspondente no control plane. Sem o socket do broker, o device deixa de anunciar `host.managed_admin` e novas ações falham fechadas.
+
 ## Segurança do instalador
 
 O instalador deliberadamente:
@@ -160,6 +222,7 @@ Para produção madura, prefira um `--ref` imutável de release/tag em vez de `m
 ```bash
 systemctl status wandora-ops-exec-broker.service
 systemctl status wandora-ops-agent.service
+systemctl status wandora-ops-admin-broker.service   # somente com --managed-admin
 journalctl -u wandora-ops-exec-broker.service -n 100 --no-pager
 journalctl -u wandora-ops-agent.service -n 100 --no-pager
 ```

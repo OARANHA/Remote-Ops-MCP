@@ -8,7 +8,8 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "remote-ops-target-approval-")
 process.env.STATE_FILE = path.join(tmp, "state.json");
 process.env.AUDIT_FILE = path.join(tmp, "audit.jsonl");
 process.env.TARGETS_FILE = path.join(tmp, "targets.json");
-process.env.AUTH_MODE = "noauth";
+process.env.AUTH_MODE = "oauth";
+process.env.AUTH_SECRET = "managed-admin-target-test-secret-".padEnd(64, "x");
 
 fs.writeFileSync(process.env.TARGETS_FILE, JSON.stringify({
   targets: [{
@@ -129,6 +130,44 @@ try {
   assert.deepEqual(postgresTarget.allowedDockerExecContainers, []);
   assert.deepEqual(postgresTarget.allowedProcessPrograms, []);
   assert.deepEqual(postgresTarget.allowedWritePaths, []);
+
+  assert.throws(
+    () => approvals.prepareAgentTarget({
+      actor: "test-actor",
+      targetId: "medicspro-admin",
+      deviceId,
+      environment: "production",
+      preset: "managed-admin",
+    }),
+    /não anunciou host\.managed_admin/
+  );
+
+  assert.equal(state.touchDeviceHeartbeat(deviceId, {
+    agent_version: "test",
+    capabilities: ["host","workspace","process","host.managed_admin"],
+  }), true);
+
+  const preparedAdmin = approvals.prepareAgentTarget({
+    actor: "test-actor",
+    targetId: "medicspro-admin",
+    deviceId,
+    environment: "production",
+    preset: "managed-admin",
+  });
+  const appliedAdmin = approvals.applyAgentTargetApproval({
+    actor: "test-actor",
+    approvalId: preparedAdmin.approval_id,
+    confirmation: `APPROVE ${preparedAdmin.approval_id}`,
+  });
+  assert.equal(appliedAdmin.applied, true);
+  const adminTarget = targets.getTarget("medicspro-admin");
+  assert.ok(adminTarget);
+  assert.equal(adminTarget.capabilityProfile, "operator");
+  assert.deepEqual(adminTarget.allowedSemanticCapabilities, ["host.managed_admin"]);
+  assert.ok(adminTarget.allowedAdminPrograms.includes("docker"));
+  assert.equal(adminTarget.allowedAdminPrograms.includes("bash"), false);
+  assert.deepEqual(adminTarget.allowedAdminCwds, ["/opt/wandora/ops-workspace","/opt/wandora"]);
+  assert.deepEqual(adminTarget.allowedDockerActions, []);
 
   const staticAttempt = approvals.prepareAgentTarget({
     actor: "test-actor",

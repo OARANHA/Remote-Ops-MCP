@@ -16,6 +16,18 @@ interface DeviceState {
 const controlPlane = (process.env.WANDORA_CONTROL_PLANE ?? "https://mcp.wandora.com.br").replace(/\/+$/, "");
 const stateFile = process.env.WANDORA_AGENT_STATE ?? "/var/lib/wandora-ops-agent/device.json";
 const version = "2.0.0-dev";
+const adminBrokerSocket = process.env.WANDORA_ADMIN_BROKER_SOCKET ?? "/run/wandora-ops-admin/admin.sock";
+
+function agentCapabilities(): string[] {
+  const capabilities = ["host.status","disk.usage","memory.status","uptime","fs.read","workspace.write","process.session","docker.exec","docker.lifecycle","service.lifecycle"];
+  try {
+    if (fs.statSync(adminBrokerSocket).isSocket()) {
+      fs.accessSync(adminBrokerSocket, fs.constants.R_OK | fs.constants.W_OK);
+      capabilities.push("host.managed_admin");
+    }
+  } catch {}
+  return capabilities;
+}
 
 function machineFingerprint(): string {
   let seed = os.hostname();
@@ -110,9 +122,9 @@ async function runPersistent(): Promise<void> {
         delay = 1000;
         process.stdout.write("AGENT_CHANNEL=CONNECTED device_id=" + s.device_id + "\n");
         const sendHeartbeat = () => {
-          if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "heartbeat", protocol: 1, agent_version: version, capabilities: ["host.status","disk.usage","memory.status","uptime","fs.read","workspace.write","process.session","docker.exec","docker.lifecycle","service.lifecycle"] }));
+          if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "heartbeat", protocol: 1, agent_version: version, capabilities: agentCapabilities() }));
         };
-        ws.send(JSON.stringify({ type: "hello", protocol: 1, agent_version: version, hostname: os.hostname(), fingerprint: machineFingerprint(), capabilities: ["host.status","disk.usage","memory.status","uptime","fs.read","workspace.write","process.session","docker.exec","docker.lifecycle","service.lifecycle"] }));
+        ws.send(JSON.stringify({ type: "hello", protocol: 1, agent_version: version, hostname: os.hostname(), fingerprint: machineFingerprint(), capabilities: agentCapabilities() }));
         heartbeat = setInterval(sendHeartbeat, 30_000);
       });
       ws.on("message", (data) => {
@@ -153,7 +165,7 @@ async function heartbeatOnce(): Promise<void> {
   const r = await jsonFetch(s.control_plane + "/agent/heartbeat", {
     method: "POST",
     headers: { authorization: "Bearer " + s.device_token },
-    body: JSON.stringify({ agent_version: version, capabilities: ["host.status", "disk.usage", "memory.status", "uptime", "fs.read", "workspace.write", "process.session", "docker.exec", "docker.lifecycle", "service.lifecycle"] }),
+    body: JSON.stringify({ agent_version: version, capabilities: agentCapabilities() }),
   });
   if (r.status !== 200) throw new Error("heartbeat failed: HTTP " + r.status);
   process.stdout.write("HEARTBEAT=GREEN device_id=" + s.device_id + "\n");
