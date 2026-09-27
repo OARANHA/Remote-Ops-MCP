@@ -72,9 +72,12 @@ The server currently exposes 31 capability-scoped tools. Read-only tools remain 
 | Workspace operator | `create_directory`, `write_file`, `edit_file`, `move_file` |
 | Process operator | `start_process`, `read_process_output`, `send_process_input`, `kill_process`, `list_processes` |
 | Docker operator | `docker_exec`, `docker_action` |
+| PostgreSQL semantic readback | `postgres_pinned_verifier_readback` |
 | systemd operator | `service_action` |
 
 Operator tools are deny-by-default and require per-target allowlists. `docker_exec` accepts a container, program and argv rather than shell text; the Docker proxy independently enforces its own host-side allowlists. The isolated process broker can launch only configured programs from configured working directories.
+
+`postgres_pinned_verifier_readback` is intentionally narrower than `docker_exec`: a separate read-only target grants only the semantic capability, while the host-local proxy pins the PostgreSQL container and an id→SHA-256 verifier allowlist. The caller supplies SQL only to prove it matches an already approved hash; execution is forced through PostgreSQL read-only session/transaction settings. No generic `psql`, container selection, credentials or write path are exposed.
 
 ## Admin console
 
