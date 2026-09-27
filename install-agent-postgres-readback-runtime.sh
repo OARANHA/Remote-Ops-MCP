@@ -56,6 +56,9 @@ done
 printf '%s\n' "$SOURCE_REVISION" >"$BACKUP_DIR/source-revision.txt"
 
 rollback(){
+  local rc=$?
+  (( rc != 0 )) || rc=1
+  trap - ERR INT TERM
   set +e
   log "patch failed; restoring previous agent artifacts"
   for rel in "${FILES[@]}"; do
@@ -67,6 +70,7 @@ rollback(){
     fi
   done
   "$SYSTEMCTL_BIN" restart "$SERVICE_NAME" >/dev/null 2>&1 || true
+  exit "$rc"
 }
 trap rollback ERR INT TERM
 
