@@ -17,7 +17,7 @@ The goal is smaller, safer and more legible operator conversations without weake
 3. Exact allowlists remain available through explicit `target_status(detail="full")`.
 4. `targets_list` remains concise and does not expose raw allowlists.
 5. The target-apply chat response returns the applied logical target plus capability summary, not the full raw authority payload.
-6. Raw evidence is not deleted or hidden from the authoritative runtime/audit/repository. It is surfaced when:
+6. Detailed evidence is not deleted or hidden from the authoritative runtime/repository or explicit full diagnostic views. The audit keeps its existing redacted event contract. Detail is surfaced when:
    - the user explicitly asks for it; or
    - a human decision requires exact operational detail.
 7. Minimal disclosure is a presentation contract only. It does not change authorization, registry persistence, audit, redaction, host enforcement or capability semantics.
