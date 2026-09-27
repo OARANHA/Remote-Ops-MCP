@@ -9,7 +9,7 @@ import { postgresVerifierSha256 } from "./dist/docker/postgres-readback.js";
 
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),"remote-ops-postgres-proxy-"));
 const socketPath=path.join(tmp,"docker.sock");
-const sql="\\set ON_ERROR_STOP on\n\\pset pager off\nDO $ BEGIN IF to_regclass('public.contacts') IS NULL THEN RAISE EXCEPTION 'missing'; END IF; END $;\nSELECT 'VERIFY OK' AS result;";
+const sql="\\set ON_ERROR_STOP on\n\\pset pager off\nDO $$ BEGIN IF to_regclass('public.contacts') IS NULL THEN RAISE EXCEPTION 'missing'; END IF; END $$;\nSELECT 'VERIFY OK' AS result;";
 const sha=postgresVerifierSha256(sql);
 const execId="a".repeat(64);
 const seen=[];
