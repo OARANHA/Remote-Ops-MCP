@@ -129,6 +129,8 @@ curl -fsSL https://raw.githubusercontent.com/OARANHA/Remote-Ops-MCP/main/install
 
 Além do Agent Mesh e do execution broker normal, esse modo instala `wandora-ops-admin-broker.service` como root. O agente `ops-mcp` continua fora de `sudo` e do grupo Docker.
 
+O contrato local do socket é deliberadamente estreito: o broker executa com `User=root` e `Group=ops-mcp`; o `systemd` cria `/run/wandora-ops-admin` como `root:ops-mcp` com modo `0750`; e o socket `admin.sock` fica `root:ops-mcp` com modo `0660`. Assim `ops-mcp` pode atravessar o diretório e falar com o broker, mas não recebe `sudo`, membership no grupo Docker nem autoridade root direta. A autoridade continua vindo exclusivamente dos tickets assinados e das allowlists do broker.
+
 O broker administrativo só aceita tickets Ed25519 emitidos pelo control plane. Cada ticket:
 
 - nasce de `host_admin_prepare`;

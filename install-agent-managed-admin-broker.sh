@@ -52,7 +52,7 @@ Requires=wandora-ops-agent.service
 [Service]
 Type=simple
 User=root
-Group=root
+Group=ops-mcp
 WorkingDirectory=$INSTALL_DIR
 Environment=WANDORA_ADMIN_BROKER_SOCKET=$SOCKET
 Environment=WANDORA_ADMIN_AUTHORITY_PUBLIC_KEY=$PUBLIC_KEY_FILE
@@ -60,11 +60,7 @@ Environment=WANDORA_AGENT_STATE=$STATE_FILE
 Environment=WANDORA_ADMIN_REPLAY_FILE=$ADMIN_STATE_DIR/replay.json
 Environment=WANDORA_ADMIN_CWDS=$ADMIN_CWDS
 Environment=WANDORA_ADMIN_PROGRAMS=$ADMIN_PROGRAMS
-ExecStartPre=/usr/bin/chgrp ops-mcp /run/wandora-ops-admin
-ExecStartPre=/usr/bin/chmod 0750 /run/wandora-ops-admin
 ExecStart=/usr/bin/node $INSTALL_DIR/dist/privileged/managed-admin-broker.js
-ExecStartPost=/usr/bin/chgrp ops-mcp $SOCKET
-ExecStartPost=/usr/bin/chmod 0660 $SOCKET
 Restart=on-failure
 RestartSec=2
 RuntimeDirectory=wandora-ops-admin
