@@ -165,6 +165,46 @@ async function executeDockerOperatorOperation(x: AgentOperation, opts?: ExecOpti
   } finally { clearTimeout(timer); }
 }
 
+async function executePostgresPinnedReadbackOperation(x: AgentOperation, opts?: ExecOptions): Promise<ExecResult> {
+  const dockerHost=process.env.DOCKER_HOST;
+  if(dockerHost!=="tcp://127.0.0.1:23751") throw new Error("docker_read_proxy_required");
+  const started=Date.now(), timeoutMs=opts?.timeoutMs??30_000;
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),timeoutMs);
+  try{
+    const r=await fetch("http://127.0.0.1:23751/ops/postgres/pinned-verifier",{
+      method:"POST",
+      headers:{"content-type":"application/json"},
+      body:JSON.stringify(x.args??{}),
+      signal:controller.signal,
+    });
+    const raw=await r.text();
+    let parsed:Record<string,unknown>={};
+    try{parsed=JSON.parse(raw) as Record<string,unknown>;}catch{}
+    if(!r.ok) return {code:1,stdout:"",stderr:String(parsed.error??("postgres_proxy_http_"+r.status)),durationMs:Date.now()-started,truncated:false,timedOut:false};
+    const code=typeof parsed.code==="number"?parsed.code:1;
+    const stderr=typeof parsed.stderr==="string"?parsed.stderr:"";
+    if(code!==0) return {code,stdout:"",stderr:stderr||"postgres_verifier_failed",durationMs:Date.now()-started,truncated:parsed.truncated===true,timedOut:false};
+    return {
+      code:0,
+      stdout:JSON.stringify({
+        verifier_id:parsed.verifier_id??null,
+        sha256:parsed.sha256??null,
+        output:typeof parsed.stdout==="string"?parsed.stdout:"",
+        stderr,
+        truncated:parsed.truncated===true,
+      }),
+      stderr:"",
+      durationMs:Date.now()-started,
+      truncated:parsed.truncated===true,
+      timedOut:false,
+    };
+  } catch(e) {
+    const timedOut=e instanceof Error&&e.name==="AbortError";
+    return {code:timedOut?null:1,stdout:"",stderr:timedOut?"postgres_proxy_timeout":(e instanceof Error?e.message:String(e)),durationMs:Date.now()-started,truncated:false,timedOut};
+  } finally { clearTimeout(timer); }
+}
+
 async function executePaperclipSemanticOperation(x: AgentOperation, opts?: ExecOptions): Promise<ExecResult> {
   const dockerHost=process.env.DOCKER_HOST;
   if(dockerHost!=="tcp://127.0.0.1:23751") throw new Error("docker_read_proxy_required");
@@ -203,6 +243,7 @@ async function executePaperclipSemanticOperation(x: AgentOperation, opts?: ExecO
   } finally { clearTimeout(timer); }
 }
 export async function executeAgentOperation(x: AgentOperation, opts?: ExecOptions): Promise<ExecResult> {
+  if (x.op === "postgres.pinned_readback") return executePostgresPinnedReadbackOperation(x, opts);
   if (x.op.startsWith("paperclip.")) return executePaperclipSemanticOperation(x, opts);
   if (["docker.exec","docker.action","docker.image_load","docker.candidate_run","docker.candidate_remove"].includes(x.op)) return executeDockerOperatorOperation(x, opts);
   if (x.op.startsWith("workspace.") || x.op.startsWith("process.")) {

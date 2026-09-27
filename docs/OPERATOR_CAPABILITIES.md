@@ -21,6 +21,7 @@ An `operator` target may declare:
 - `allowedDockerCandidateContainerPorts`: container ports accepted for disposable candidates.
 - `allowedServices`: systemd units visible to service tools.
 - `allowedServiceActions`: any of `start`, `stop`, `restart`, `reload`.
+- `allowedSemanticCapabilities`: narrow semantic operations that do not inherit generic process/Docker authority.
 
 Empty lists deny the capability. A target must use `capabilityProfile: "operator"` for mutation tools.
 
@@ -83,6 +84,31 @@ The existing `docker_action` tool may expose three additional actions only when 
 - `candidate_remove`: force-remove only a container whose name matches an allowlisted candidate prefix. Missing candidates are treated as already absent.
 
 These actions are intended for pre-production qualification. They do not authorize Compose/project promotion, stack edits, environment-file reads or arbitrary Docker API access.
+
+## Pinned PostgreSQL verifier readback
+
+For release-proof cases where the MCP needs to prove a production PostgreSQL contract without exposing a database shell, use a separate Agent Mesh target with the `postgres-readback` preset.
+
+That target grants only:
+
+```text
+allowedSemanticCapabilities = ["postgres.pinned_readback"]
+capabilityProfile = read-only
+generic docker exec = denied
+generic process execution = denied
+filesystem write = denied
+```
+
+The host-local proxy must be installed explicitly with `install-agent-postgres-readback-proxy.sh`. Its root-owned configuration pins:
+
+- the exact PostgreSQL container;
+- container execution user;
+- database/user names;
+- verifier id → SHA-256 mappings.
+
+The MCP tool receives `verifier_id` plus SQL text. Both control plane and proxy remain typed; the proxy computes SHA-256 and rejects anything that does not exactly match the approved verifier. It runs fixed `psql` arguments with `default_transaction_read_only=on`, explicit `BEGIN TRANSACTION READ ONLY` and bounded timeouts. The caller cannot select container, DB credentials, exec user, environment or arbitrary argv.
+
+This capability is **readback only**. Applying a migration requires a different capability and a separate approval/review.
 
 ## Service actions
 
