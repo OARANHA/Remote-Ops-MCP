@@ -160,6 +160,11 @@ function requireAgentMutationTransport(t: TargetConfig): void {
   if(t.transport!=="agent") throw new OpsError("CAPABILITY_DENIED", `target "${t.id}" precisa usar transport=agent para mutações Docker governadas`);
 }
 
+function requireSemanticCapability(t: TargetConfig, capability: string): void {
+  if(t.transport!=="agent") throw new OpsError("CAPABILITY_DENIED", `target "${t.id}" precisa usar transport=agent para capability semântica`);
+  requireNamedCapability(t.allowedSemanticCapabilities, capability, "capability semântica");
+}
+
 function requirePaperclipSemantic(t: TargetConfig): void {
   requireOperator(t);
   requireAgentMutationTransport(t);
@@ -268,7 +273,7 @@ const TOOL_DEFS: ToolDef[] = [
       target_id: z.string().regex(/^[a-z0-9][a-z0-9-]{1,39}$/),
       device_id: z.string().regex(/^dev_[A-Za-z0-9_-]{8,80}$/),
       environment: z.enum(["production","staging","development"]).default("production"),
-      preset: z.enum(["operator-workspace","read-only"]).default("operator-workspace"),
+      preset: z.enum(["operator-workspace","read-only","postgres-readback"]).default("operator-workspace"),
     },
     mutation: true,
     destructive: false,
@@ -278,7 +283,7 @@ const TOOL_DEFS: ToolDef[] = [
       targetId: String(args.target_id),
       deviceId: String(args.device_id),
       environment: (args.environment ?? "production") as "production"|"staging"|"development",
-      preset: (args.preset ?? "operator-workspace") as "operator-workspace"|"read-only",
+      preset: (args.preset ?? "operator-workspace") as "operator-workspace"|"read-only"|"postgres-readback",
     }),
   },
   {
@@ -569,6 +574,29 @@ const TOOL_DEFS: ToolDef[] = [
         return {target:t.id,action,...value};
       }
       throw new OpsError("INVALID_ARGUMENT","ação docker não suportada");
+    },
+  },
+
+  // ============ PostgreSQL pinned semantic readback ============
+  {
+    name: "postgres_pinned_verifier_readback",
+    description: "Executa somente um verifier PostgreSQL cujo SQL corresponda ao SHA-256 aprovado no proxy local. O proxy força sessão/transaction read-only, container/DB/user fixos e não expõe credenciais nem docker_exec genérico.",
+    inputSchema: {
+      target: targetField,
+      verifier_id: z.string().regex(/^[a-z0-9][a-z0-9_.-]{1,79}$/),
+      sql: z.string().min(1).max(128 * 1024),
+    },
+    mutation: false,
+    destructive: false,
+    idempotent: true,
+    run: async (args) => {
+      const t=resolveTarget(args.target);
+      requireSemanticCapability(t,"postgres.pinned_readback");
+      const value=await agentJson(t,"postgres.pinned_readback",{
+        verifierId:String(args.verifier_id),
+        sql:String(args.sql),
+      },30_000);
+      return {target:t.id,...value};
     },
   },
 
