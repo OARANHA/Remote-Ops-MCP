@@ -1,6 +1,6 @@
 # Remote Ops MCP
 
-Remote Ops MCP is a **remote, read-only Model Context Protocol gateway** for operating Linux servers from MCP clients such as ChatGPT, without exposing SSH credentials, arbitrary shell access, or raw infrastructure details to the client.
+Remote Ops MCP is a **capability-scoped Model Context Protocol gateway** for operating Linux servers from MCP clients such as ChatGPT, without exposing SSH credentials, arbitrary shell access, or raw infrastructure details to the client. Observation is the default; operator and signed managed-admin authority are explicit opt-ins.
 
 The service is designed to run as a small control plane in Docker/Portainer. A client addresses logical targets such as `wandora-prod`. New VPSs should normally use **Agent Mesh**: the managed host runs `wandora-ops-agent` and establishes an outbound authenticated channel to the control plane. SSH remains available for compatibility/bootstrap/break-glass.
 
@@ -54,11 +54,19 @@ curl -fsSL https://raw.githubusercontent.com/OARANHA/Remote-Ops-MCP/main/install
 
 The installer builds the agent, creates the restricted `ops-mcp` service user plus the isolated `wandora-exec` execution user, creates `/opt/wandora/ops-workspace`, installs `wandora-ops-exec-broker.service`, prints a one-time `WD-XXXX-XXXX` code and waits while an administrator approves it in **Admin → Agent Mesh Devices**. It then validates the device credential and starts broker + `wandora-ops-agent.service`.
 
+For a VPS that should support signed root administration after pairing, use the explicit managed-admin bootstrap:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/OARANHA/Remote-Ops-MCP/main/install-agent.sh | sudo bash -s -- --managed-admin
+```
+
+This keeps `ops-mcp` outside `sudo` and the Docker group. Instead it installs `wandora-ops-admin-broker.service`, a root broker that accepts only short-lived Ed25519-signed tickets issued by the control plane after `host_admin_prepare` and the user's exact `APPROVE adm_...` confirmation. The agent advertises `host.managed_admin` only while the broker socket exists. The `managed-admin` target preset grants a broad non-shell administrative program allowlist and explicit cwd roots; the broker independently enforces its local allowlist. No break-glass shell is enabled by this profile. To remove only this root authority while preserving pairing/workspace/normal execution, run `sudo bash /opt/wandora/remote-ops-agent/uninstall-agent-managed-admin-broker.sh` and revoke/disable the managed-admin target in the control plane.
+
 Pairing creates a device identity; it does **not** automatically create a Target Registry entry or grant Docker/sudo/operator authority. After pairing, the MCP can prepare a dynamic Agent Mesh target with `target_agent_prepare`; the user explicitly echoes `APPROVE adm_...` in chat; then `target_agent_apply` persists the target overlay under `/app/data` and reloads it in memory **without restarting the control plane or modifying static targets**. See [`docs/AGENT_ONBOARDING.md`](docs/AGENT_ONBOARDING.md).
 
 ## Read-only tools
 
-The server currently exposes 42 capability-scoped tools. Read-only tools remain available to observation targets; mutation tools require an explicit `operator` target.
+The server currently exposes 44 capability-scoped tools. Read-only tools remain available to observation targets; mutation tools require an explicit `operator` target.
 
 | Group | Tools |
 |---|---|
@@ -73,6 +81,7 @@ The server currently exposes 42 capability-scoped tools. Read-only tools remain 
 | Process operator | `start_process`, `read_process_output`, `send_process_input`, `kill_process`, `list_processes` |
 | Docker operator | `docker_exec`, `docker_action` |
 | PostgreSQL semantic readback | `postgres_pinned_verifier_readback` |
+| Managed admin | `host_admin_prepare`, `host_admin_apply` |
 | systemd operator | `service_action` |
 
 Operator tools are deny-by-default and require per-target allowlists. `docker_exec` accepts a container, program and argv rather than shell text; the Docker proxy independently enforces its own host-side allowlists. The isolated process broker can launch only configured programs from configured working directories.
@@ -147,7 +156,7 @@ The E2E suite validates both `noauth + MOCK_MODE` and the complete OAuth flow, i
 
 ## Security boundary
 
-Remote Ops MCP is intentionally **not** an unrestricted remote shell. Observation remains the default authority class. Operator capabilities are separate, explicit and deny-by-default: filesystem roots, process programs/CWDs, Docker exec containers/programs, Docker lifecycle actions and systemd actions are independently allowlisted per target. OS permissions and the local Docker proxy remain additional authority boundaries.
+Remote Ops MCP is intentionally **not** an unrestricted remote shell. Observation remains the default authority class. The optional `managed-admin` profile can execute approved root administrative programs, but only through actor-bound prepare/apply approval, a short-lived signed ticket, Agent Mesh, and a separate local root broker; it does not grant `sudo`, Docker-group membership, or an implicit shell to the agent. Operator capabilities are separate, explicit and deny-by-default: filesystem roots, process programs/CWDs, Docker exec containers/programs, Docker lifecycle actions and systemd actions are independently allowlisted per target. OS permissions and the local Docker proxy remain additional authority boundaries.
 
 The durable state file contains client metadata and **hashes** of refresh tokens/authorization codes, not their raw values. Access tokens are signed and additionally checked against current persisted session state on every MCP request.
 

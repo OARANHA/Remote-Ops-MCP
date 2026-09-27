@@ -28,6 +28,21 @@ Preferred flow:
 
 Do not build arbitrary unreviewed working-tree contents directly on the production VPS.
 
+## Managed-admin rollout order
+
+When introducing `managed-admin` on an existing or new VPS, preserve this order:
+
+1. Merge and publish a reviewed Remote Ops MCP commit.
+2. Promote the **control plane** first and verify that `/agent/managed-admin-public-key`, `host_admin_prepare`, `host_admin_apply`, and the `managed-admin` target preset are live.
+3. On the managed host, install/update the Agent Mesh code from the same reviewed ref and run the explicit `--managed-admin` bootstrap. The host receives only the public verification key.
+4. Wait for the device heartbeat to advertise `host.managed_admin`.
+5. Prepare the dynamic `managed-admin` target and require the user's exact `APPROVE adm_...` before applying it.
+6. Qualify the path with a harmless administrative read/status command before using it for deployment or package/service changes.
+
+Do not install the broker against an old control plane that does not expose the public-key endpoint. Do not substitute generic shell/Docker execution for a missing managed-admin capability.
+
+Rollback the host authority with `sudo bash /opt/wandora/remote-ops-agent/uninstall-agent-managed-admin-broker.sh`, then revoke/disable the corresponding managed-admin target. This preserves pairing, workspace and the ordinary execution broker.
+
 ## Revoke operations
 
 The admin console supports:

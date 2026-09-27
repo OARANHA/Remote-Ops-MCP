@@ -6,6 +6,8 @@ cd "$ROOT"
 
 bash -n install-agent.sh
 bash -n install-agent-exec-broker.sh
+bash -n install-agent-managed-admin-broker.sh
+bash -n uninstall-agent-managed-admin-broker.sh
 
 grep -q 'WANDORA_CONTROL_PLANE' install-agent.sh
 grep -q 'https://mcp.wandora.com.br' install-agent.sh
@@ -23,6 +25,13 @@ grep -q 'Next: create/associate a Target Registry entry' install-agent.sh
 grep -q 'install-agent-exec-broker.sh' install-agent.sh
 grep -q 'WANDORA_EXEC_BROKER_SOCKET' install-agent.sh
 grep -q 'wandora-ops-exec-broker.service' install-agent-exec-broker.sh
+grep -q -- '--managed-admin' install-agent.sh
+grep -q 'install-agent-managed-admin-broker.sh' install-agent.sh
+grep -q 'wandora-ops-admin-broker.service' install-agent-managed-admin-broker.sh
+grep -q 'managed-admin-public-key' install-agent-managed-admin-broker.sh
+grep -q 'chgrp ops-mcp' install-agent-managed-admin-broker.sh
+grep -q 'wandora-ops-admin-broker.service' uninstall-agent-managed-admin-broker.sh
+grep -q 'pairing_preserved=true' uninstall-agent-managed-admin-broker.sh
 grep -q 'WANDORA_EXEC_ROOTS' install-agent-exec-broker.sh
 grep -q 'NoNewPrivileges=yes' install-agent-exec-broker.sh
 grep -q 'ProtectSystem=strict' install-agent-exec-broker.sh
@@ -34,17 +43,17 @@ grep -q 'One-time pairing code' src/agent/cli.ts
 grep -q 'Agent Mesh Devices' src/agent/cli.ts
 grep -q 'terminalLink' src/agent/cli.ts
 
-if grep -Eq '(usermod|gpasswd|adduser)[^\n]*(docker|sudo)|NOPASSWD|chmod[[:space:]]+777' install-agent.sh install-agent-exec-broker.sh; then
+if grep -Eq '(usermod|gpasswd|adduser)[^\n]*(docker|sudo)|NOPASSWD|chmod[[:space:]]+777' install-agent.sh install-agent-exec-broker.sh install-agent-managed-admin-broker.sh uninstall-agent-managed-admin-broker.sh; then
   echo 'installer contains a forbidden privilege escalation pattern' >&2
   exit 1
 fi
 
-if grep -Eq '/admin/pair/approve|approvePairingByCode' install-agent.sh install-agent-exec-broker.sh; then
+if grep -Eq '/admin/pair/approve|approvePairingByCode' install-agent.sh install-agent-exec-broker.sh install-agent-managed-admin-broker.sh uninstall-agent-managed-admin-broker.sh; then
   echo 'installer must never auto-approve Agent Mesh pairing' >&2
   exit 1
 fi
 
-if grep -Eq 'docker[[:space:]]+(run|pull|exec)|systemctl[[:space:]]+(restart|stop)[[:space:]]+(docker|containerd)' install-agent.sh install-agent-exec-broker.sh; then
+if grep -Eq 'docker[[:space:]]+(run|pull|exec)|systemctl[[:space:]]+(restart|stop)[[:space:]]+(docker|containerd)' install-agent.sh install-agent-exec-broker.sh install-agent-managed-admin-broker.sh uninstall-agent-managed-admin-broker.sh; then
   echo 'installer must not require Docker or mutate the Docker daemon' >&2
   exit 1
 fi

@@ -22,6 +22,8 @@ An `operator` target may declare:
 - `allowedServices`: systemd units visible to service tools.
 - `allowedServiceActions`: any of `start`, `stop`, `restart`, `reload`.
 - `allowedSemanticCapabilities`: narrow semantic operations that do not inherit generic process/Docker authority.
+- `allowedAdminPrograms`: root programs accepted by the signed managed-admin flow.
+- `allowedAdminCwds`: working-directory roots accepted by the signed managed-admin flow.
 
 Empty lists deny the capability. A target must use `capabilityProfile: "operator"` for mutation tools.
 
@@ -112,6 +114,44 @@ The MCP tool receives `verifier_id` plus SQL text. Both control plane and proxy 
 
 This capability is **readback only**. Applying a migration requires a different capability and a separate approval/review.
 
+## Signed managed-admin
+
+For hosts that should be operable without returning to SSH for routine root administration, use the explicit Agent Mesh managed-admin bootstrap:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/OARANHA/Remote-Ops-MCP/main/install-agent.sh | sudo bash -s -- --managed-admin
+```
+
+The default installer remains least-privilege. The flag additionally installs `wandora-ops-admin-broker.service` as root. The ordinary `ops-mcp` agent is **not** added to `sudo` or the Docker group.
+
+The authority chain is:
+
+```text
+MCP OAuth/session
+  -> host_admin_prepare (no execution)
+  -> user echoes exact APPROVE adm_...
+  -> host_admin_apply
+  -> <= 2 minute Ed25519-signed one-time ticket
+  -> authenticated Agent Mesh device
+  -> local root broker
+  -> exact program + argv, shell=false
+```
+
+The signing private key is derived inside the control plane from the existing `AUTH_SECRET`. The host receives only the public verification key over HTTPS. A compromised unprivileged agent therefore cannot mint new root tickets. The root broker also verifies the paired `device_id`, ticket expiry, persistent nonce replay state, local cwd roots and local program allowlist.
+
+The `managed-admin` target preset is fail-closed:
+
+- it can only be prepared for a live Agent Mesh device currently advertising `host.managed_admin`;
+- the device advertises that capability only when the local broker socket exists;
+- the target registry and root broker both enforce program/cwd allowlists;
+- the default program set deliberately excludes shells, interpreters, `sudo`, `su` and `pkexec`;
+- command output is bounded and still passes through normal MCP secret redaction/audit;
+- each approval is actor-bound, single-use and expires if not applied.
+
+This profile is intended to cover routine administrative work such as package management, systemd, Docker Compose, deployment file installation, ownership/mode changes, networking/firewall commands and host configuration. It is not a general root shell. A future break-glass shell, if ever added, is a separate capability and must not be smuggled into this preset.
+
+Rollback is deliberately narrow: `sudo bash /opt/wandora/remote-ops-agent/uninstall-agent-managed-admin-broker.sh` removes only the root broker, local verification key and replay state. Pairing, the ordinary execution broker and workspace remain intact. The corresponding managed-admin target should then be revoked/disabled in the control plane. Once the broker socket disappears, the device stops advertising `host.managed_admin` and the capability fails closed.
+
 ## Service actions
 
 `service_action` is additionally constrained by normal operating-system permissions. Listing an action in the target registry does not grant sudo or bypass systemd/Polkit.
@@ -122,6 +162,7 @@ For a VPS that needs service mutations, grant the agent OS identity only the pre
 
 - Observation target: `read-only` or `prod-read-mostly`.
 - Operator target: Agent Mesh + isolated execution broker + explicit per-capability allowlists.
+- Managed-admin target: explicit `--managed-admin` bootstrap + signed root broker + `managed-admin` target preset + per-action `APPROVE adm_...`.
 - Keep a separate read-only target when production observation should remain independent of mutation authority.
 
 ## Cross-VPS onboarding

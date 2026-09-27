@@ -24,6 +24,16 @@ jobs:
       - run: bash test-agent-pairing.sh
       - run: bash test-agent-installer.sh
       - run: bash test-agent-postgres-readback-runtime.sh
+      - run: bash -n install-agent-managed-admin-broker.sh
+      - run: bash -n uninstall-agent-managed-admin-broker.sh
       - run: node test-target-agent-approvals.mjs
+      - run: node test-managed-admin-noauth.mjs
+      - run: node test-managed-admin-ticket.mjs
+      - run: node test-managed-admin-approvals.mjs
+      - run: node test-managed-admin-broker.mjs
+      - run: node test-managed-admin-agent-proxy.mjs
+      - run: node test-managed-admin-control-plane-e2e.mjs
+      - run: node test-postgres-readback.mjs
+      - run: node test-postgres-readback-proxy.mjs
       - name: Build production image
         run: docker build -t remote-ops-mcp:ci .

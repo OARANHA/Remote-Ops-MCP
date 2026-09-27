@@ -4,6 +4,7 @@ import { OpsError } from "../lib/errors.js";
 import { assertIdentifier } from "../lib/quote.js";
 import { getTarget, listTargets, publicTarget, targetIds } from "../config/targets.js";
 import { prepareAgentTarget, applyAgentTargetApproval } from "../config/target-approvals.js";
+import { prepareManagedAdminAction, consumeManagedAdminApproval } from "../config/managed-admin-approvals.js";
 import type { TargetConfig } from "../config/targets.js";
 import { getTransport } from "../transport.js";
 import { assertConfiguredPath, resolveCheckedGitRepo, resolveCheckedPath, resolveCheckedProcessCwd } from "../security/paths.js";
@@ -273,7 +274,7 @@ const TOOL_DEFS: ToolDef[] = [
       target_id: z.string().regex(/^[a-z0-9][a-z0-9-]{1,39}$/),
       device_id: z.string().regex(/^dev_[A-Za-z0-9_-]{8,80}$/),
       environment: z.enum(["production","staging","development"]).default("production"),
-      preset: z.enum(["operator-workspace","read-only","postgres-readback"]).default("operator-workspace"),
+      preset: z.enum(["operator-workspace","read-only","postgres-readback","managed-admin"]).default("operator-workspace"),
     },
     mutation: true,
     destructive: false,
@@ -283,7 +284,7 @@ const TOOL_DEFS: ToolDef[] = [
       targetId: String(args.target_id),
       deviceId: String(args.device_id),
       environment: (args.environment ?? "production") as "production"|"staging"|"development",
-      preset: (args.preset ?? "operator-workspace") as "operator-workspace"|"read-only"|"postgres-readback",
+      preset: (args.preset ?? "operator-workspace") as "operator-workspace"|"read-only"|"postgres-readback"|"managed-admin",
     }),
   },
   {
@@ -301,6 +302,69 @@ const TOOL_DEFS: ToolDef[] = [
       approvalId: String(args.approval_id),
       confirmation: String(args.confirmation),
     }),
+  },
+
+  {
+    name: "host_admin_prepare",
+    description: "Prepara uma ação administrativa root assinada para um target managed-admin. Não executa nada. Retorna adm_... e exige confirmação explícita do usuário.",
+    inputSchema: {
+      target: targetField,
+      program: z.string().regex(/^[A-Za-z0-9_.+-]{1,80}$/),
+      args: z.array(z.string().max(16384)).max(80).optional(),
+      cwd: z.string().min(1).max(1024).optional(),
+      timeout_ms: z.coerce.number().int().min(1000).max(120000).optional(),
+    },
+    mutation: true,
+    destructive: false,
+    idempotent: false,
+    run: async (args, ctx) => prepareManagedAdminAction({
+      actor: ctx.actor,
+      targetId: String(args.target),
+      program: args.program,
+      argv: args.args,
+      cwd: args.cwd,
+      timeoutMs: args.timeout_ms,
+    }),
+  },
+  {
+    name: "host_admin_apply",
+    description: "Executa exatamente uma ação previamente preparada por host_admin_prepare. Só use após o usuário confirmar exatamente 'APPROVE adm_...'. O ticket root é assinado, de uso único e de curta duração.",
+    inputSchema: {
+      target: targetField,
+      approval_id: z.string().regex(/^adm_[a-f0-9]{24}$/),
+      confirmation: z.string().min(1).max(80),
+    },
+    mutation: true,
+    destructive: true,
+    idempotent: false,
+    run: async (args, ctx) => {
+      const approved = consumeManagedAdminApproval({
+        actor: ctx.actor,
+        targetId: String(args.target),
+        approvalId: String(args.approval_id),
+        confirmation: String(args.confirmation),
+      });
+      const result = await agentJson(
+        approved.target,
+        "host.managed_admin",
+        { ticket: approved.ticket, signature: approved.signature },
+        Math.min(approved.ticket.timeout_ms + 5_000, 120_000),
+      );
+      if (result.exit_code !== 0 || result.timed_out === true) {
+        throw new OpsError(
+          "REMOTE_COMMAND_FAILED",
+          `managed-admin falhou (exit ${String(result.exit_code)})`,
+          String(result.stderr ?? "").slice(0, 500),
+        );
+      }
+      return {
+        target: approved.target.id,
+        approval_id: approved.approvalId,
+        summary: approved.summary,
+        executed: true,
+        result,
+      };
+    },
   },
 
   // ============ host ============
