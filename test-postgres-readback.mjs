@@ -8,7 +8,7 @@ import {
   postgresSqlAfterApprovedMetaCommands,
 } from "./dist/docker/postgres-readback.js";
 
-const sql = "\\set ON_ERROR_STOP on\n\\pset pager off\nDO $ BEGIN IF 1 <> 1 THEN RAISE EXCEPTION 'bad'; END IF; END $;\nSELECT 'VERIFY OK' AS result;";
+const sql = "\\set ON_ERROR_STOP on\n\\pset pager off\nDO $$ BEGIN IF 1 <> 1 THEN RAISE EXCEPTION 'bad'; END IF; END $$;\nSELECT 'VERIFY OK' AS result;";
 const sha = postgresVerifierSha256(sql);
 const verifiers = parsePostgresVerifierAllowlist(`commercial-crm-core=${sha}`);
 
