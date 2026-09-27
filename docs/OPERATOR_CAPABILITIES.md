@@ -20,6 +20,17 @@ The central Remote Ops control plane may govern Wandora, MedicsPro/28server and 
 
 Product-specific capabilities may be added later only through an explicit reviewed target change. They are not part of the portable baseline.
 
+## Operator Chat Minimal Disclosure V1
+
+Operator chat is a human control plane, not the raw evidence store.
+
+- `targets_list` stays concise.
+- `target_status` returns a decision-relevant capability summary by default.
+- Use `target_status(detail="full")` when exact allowlists are explicitly requested or materially required for a human decision.
+- Apply/prepare responses should report logical authority and bounded capability summaries rather than dumping full allowlists.
+- Detailed evidence remains in the existing audit log, repository and runtime; this policy does not delete, weaken or replace those sources.
+- Minimal disclosure never changes authorization. If exact detail is required to validate a guardrail, request the full view and decide from that evidence.
+
 ## Target registry
 
 An `operator` target may declare:
