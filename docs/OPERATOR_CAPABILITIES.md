@@ -106,7 +106,7 @@ The host-local proxy must be installed explicitly with `install-agent-postgres-r
 - database/user names;
 - verifier id → SHA-256 mappings.
 
-The MCP tool receives `verifier_id` plus SQL text. Both control plane and proxy remain typed; the proxy computes SHA-256 and rejects anything that does not exactly match the approved verifier. It runs fixed `psql` arguments with `default_transaction_read_only=on`, explicit `BEGIN TRANSACTION READ ONLY` and bounded timeouts. The caller cannot select container, DB credentials, exec user, environment or arbitrary argv.
+The MCP tool receives `verifier_id` plus the exact canonical verifier file content. Both control plane and proxy remain typed; the proxy computes SHA-256 over that unmodified payload and rejects anything that does not exactly match the approved verifier. After the hash matches, only the canonical local psql directives `\\set ON_ERROR_STOP on` and `\\pset pager off` may be removed because their behavior is already enforced by fixed argv/non-interactive execution; every other psql meta-command fails closed. The proxy then runs fixed `psql` arguments with `default_transaction_read_only=on`, explicit `BEGIN TRANSACTION READ ONLY` and bounded timeouts. The caller cannot select container, DB credentials, exec user, environment or arbitrary argv.
 
 This capability is **readback only**. Applying a migration requires a different capability and a separate approval/review.
 
