@@ -108,6 +108,28 @@ try {
   });
   assert.equal(targets.getTarget("medicspro-agent")?.capabilityProfile, "read-only");
 
+  const preparedPostgres = approvals.prepareAgentTarget({
+    actor: "test-actor",
+    targetId: "medicspro-db-readback",
+    deviceId,
+    environment: "production",
+    preset: "postgres-readback",
+  });
+  const appliedPostgres = approvals.applyAgentTargetApproval({
+    actor: "test-actor",
+    approvalId: preparedPostgres.approval_id,
+    confirmation: `APPROVE ${preparedPostgres.approval_id}`,
+  });
+  assert.equal(appliedPostgres.applied, true);
+  const postgresTarget = targets.getTarget("medicspro-db-readback");
+  assert.ok(postgresTarget);
+  assert.equal(postgresTarget.capabilityProfile, "read-only");
+  assert.deepEqual(postgresTarget.allowedSemanticCapabilities, ["postgres.pinned_readback"]);
+  assert.deepEqual(postgresTarget.allowedDockerContainers, []);
+  assert.deepEqual(postgresTarget.allowedDockerExecContainers, []);
+  assert.deepEqual(postgresTarget.allowedProcessPrograms, []);
+  assert.deepEqual(postgresTarget.allowedWritePaths, []);
+
   const staticAttempt = approvals.prepareAgentTarget({
     actor: "test-actor",
     targetId: "wandora-agent",
