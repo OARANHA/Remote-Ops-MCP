@@ -23,6 +23,7 @@ jobs:
       - run: bash test-e2e.sh
       - run: bash test-agent-pairing.sh
       - run: bash test-agent-installer.sh
+      - run: bash test-agent-postgres-readback-runtime.sh
       - run: node test-target-agent-approvals.mjs
       - name: Build production image
         run: docker build -t remote-ops-mcp:ci .
