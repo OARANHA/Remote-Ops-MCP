@@ -4,7 +4,7 @@ import { OpsError } from "../lib/errors.js";
 import { listDevices } from "../state/store.js";
 import { publicTarget, upsertDynamicAgentTarget, type TargetConfig } from "./targets.js";
 
-type AgentTargetPreset = "operator-workspace" | "read-only";
+type AgentTargetPreset = "operator-workspace" | "read-only" | "postgres-readback";
 
 interface PendingApproval {
   id: string;
@@ -75,7 +75,22 @@ function buildTarget(input: {
     allowedDockerCandidateHostPorts: [] as number[],
     allowedDockerCandidateContainerPorts: [] as number[],
     allowedGitRepos: [] as string[],
+    allowedSemanticCapabilities: [] as string[],
   };
+
+  if (input.preset === "postgres-readback") {
+    return {
+      ...base,
+      capabilityProfile: "read-only",
+      allowedPaths: [],
+      allowedServices: [],
+      allowedServiceActions: [],
+      allowedWritePaths: [],
+      allowedProcessCwds: [],
+      allowedProcessPrograms: [],
+      allowedSemanticCapabilities: ["postgres.pinned_readback"],
+    };
+  }
 
   if (input.preset === "read-only") {
     return {
@@ -114,9 +129,13 @@ export function prepareAgentTarget(input: {
   const target = buildTarget(input);
   const id = approvalId();
   const now = Date.now();
+  const authority =
+    input.preset === "postgres-readback"
+      ? "pinned PostgreSQL readback only; generic Docker/process/write access remains disabled"
+      : "static targets are not modified; Docker access remains disabled";
   const summary =
     `create/update dynamic target ${target.id} -> ${input.deviceId} (${input.environment}, ${input.preset}); ` +
-    `static targets are not modified; Docker access remains disabled`;
+    authority;
 
   approvals.set(id, {
     id,
