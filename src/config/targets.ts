@@ -30,6 +30,7 @@ const TargetSchema = z.object({
   allowedServices: z.array(z.string()).default([]),
   allowedServiceActions: z.array(z.enum(["start", "stop", "restart", "reload"])).default([]),
   allowedGitRepos: z.array(z.string()).default([]),
+  allowedSemanticCapabilities: z.array(z.string().regex(/^[a-z0-9][a-z0-9_.-]{1,99}$/)).default([]),
   allowedWritePaths: z.array(z.string()).default([]),
   allowedProcessCwds: z.array(z.string()).default([]),
   allowedProcessPrograms: z.array(z.string()).default([]),
