@@ -2,6 +2,24 @@
 
 Remote Ops MCP operator targets are portable across VPSs. Operator authority is opt-in and fail-closed: every write or lifecycle capability must be enabled both in the target registry and, for Docker mutations, in the local Docker proxy.
 
+## Multi-VPS Capability Baseline V1
+
+The central Remote Ops control plane may govern Wandora, MedicsPro/28server and future VPSs through the same target contract. The baseline is deliberately **product agnostic**:
+
+- one device identity per VPS;
+- one logical target per authority boundary;
+- capability authority remains the existing Target Registry plus host-local brokers/proxies;
+- presets are reusable templates, not a second capability registry;
+- a preset never inherits another target's application/container allowlists;
+- `operator-workspace` grants only the standard agent workspace/process boundary and agent-service restart; Docker authority remains empty;
+- `read-only` removes write/process/service mutation authority;
+- `postgres-readback` grants only `postgres.pinned_readback`;
+- `managed-admin` remains explicit, broker-backed and approval-gated.
+
+`validateAgentTargetAgainstPreset(...)` is a code-only attestation helper. It does not mutate the registry and does not replace per-host OS/Docker policy.
+
+Product-specific capabilities may be added later only through an explicit reviewed target change. They are not part of the portable baseline.
+
 ## Target registry
 
 An `operator` target may declare:
