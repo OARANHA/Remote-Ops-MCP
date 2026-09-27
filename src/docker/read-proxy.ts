@@ -2,9 +2,11 @@ import fs from "node:fs";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import nodePath from "node:path";
 import { denySecretPath } from "../security/paths.js";
+import { buildPostgresPinnedReadbackExec, normalizePostgresPinnedReadbackPayload, parsePostgresVerifierAllowlist } from "./postgres-readback.js";
 import { PAPERCLIP_SEMANTIC_CONTAINER, normalizePaperclipSemanticPayload, paperclipSemanticExecCommand, type PaperclipSemanticOperation } from "./paperclip-semantic.js";
 
 const PORT = Number(process.env.PORT ?? 2375);
+const BIND_HOST = process.env.BIND_HOST ?? "0.0.0.0";
 const SOCKET = process.env.DOCKER_SOCKET_PATH ?? "/var/run/docker.sock";
 const MAX_BYTES = Math.min(Math.max(Number(process.env.MAX_PROXY_BYTES ?? 2 * 1024 * 1024), 64 * 1024), 8 * 1024 * 1024);
 const allowed = csvSet(process.env.ALLOWED_DOCKER_CONTAINERS);
@@ -17,9 +19,18 @@ const candidateNetworks = csvSet(process.env.ALLOWED_DOCKER_CANDIDATE_NETWORKS);
 const candidateNamePrefixes = csvSet(process.env.ALLOWED_DOCKER_CANDIDATE_NAME_PREFIXES);
 const candidateHostPorts = csvNumberSet(process.env.ALLOWED_DOCKER_CANDIDATE_HOST_PORTS);
 const candidateContainerPorts = csvNumberSet(process.env.ALLOWED_DOCKER_CANDIDATE_CONTAINER_PORTS);
+const postgresContainer = String(process.env.POSTGRES_READBACK_CONTAINER ?? "").trim();
+const postgresVerifiers = parsePostgresVerifierAllowlist(process.env.POSTGRES_READBACK_VERIFIERS ?? "");
+const postgresExecUser = String(process.env.POSTGRES_READBACK_EXEC_USER ?? "postgres").trim();
+const postgresDbUser = String(process.env.POSTGRES_READBACK_DB_USER ?? "postgres").trim();
+const postgresDbName = String(process.env.POSTGRES_READBACK_DB_NAME ?? "postgres").trim();
+const postgresReadbackConfigured = postgresContainer.length > 0 || postgresVerifiers.size > 0;
 
 if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) throw new Error("invalid PORT");
 if (allowed.size === 0) throw new Error("ALLOWED_DOCKER_CONTAINERS must not be empty");
+if (postgresReadbackConfigured && (!postgresContainer || postgresVerifiers.size === 0)) throw new Error("incomplete PostgreSQL readback configuration");
+if (postgresContainer && !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(postgresContainer)) throw new Error("invalid POSTGRES_READBACK_CONTAINER");
+if (postgresContainer && !allowed.has(postgresContainer)) throw new Error("POSTGRES_READBACK_CONTAINER must be in ALLOWED_DOCKER_CONTAINERS");
 for (const action of allowedActions) if (!["start","stop","restart","load_image","candidate_run","candidate_remove"].includes(action)) throw new Error("invalid ALLOWED_DOCKER_ACTIONS");
 
 function csvSet(raw = ""): Set<string> { return new Set(raw.split(",").map((x) => x.trim()).filter(Boolean)); }
@@ -150,6 +161,54 @@ function demuxDockerStream(body:Buffer):{stdout:string;stderr:string;truncated:b
   if(frames===0) stdout=body.toString("utf8");
   return {stdout,stderr,truncated:false};
 }
+async function handlePostgresPinnedReadback(req:IncomingMessage,res:ServerResponse,path:string):Promise<boolean>{
+  if(path!=="/ops/postgres/pinned-verifier") return false;
+  if(req.method!=="POST"){jsonError(res,405,"method_not_allowed");return true;}
+  if(!postgresContainer||postgresVerifiers.size===0){jsonError(res,403,"postgres_readback_not_configured");return true;}
+
+  let raw:Record<string,unknown>={};
+  try{raw=JSON.parse((await readBody(req,160*1024)).toString("utf8")||"{}") as Record<string,unknown>;}catch{jsonError(res,400,"invalid_json");return true;}
+
+  try{
+    const payload=normalizePostgresPinnedReadbackPayload(raw);
+    const spec=buildPostgresPinnedReadbackExec({
+      container:postgresContainer,
+      execUser:postgresExecUser,
+      dbUser:postgresDbUser,
+      dbName:postgresDbName,
+      verifiers:postgresVerifiers,
+    },payload);
+
+    const createBody=Buffer.from(JSON.stringify({
+      AttachStdout:true,
+      AttachStderr:true,
+      AttachStdin:false,
+      Tty:false,
+      User:spec.execUser,
+      Env:spec.env,
+      Cmd:spec.cmd,
+    }));
+    const created=await dockerRequest("POST","/containers/"+encodeURIComponent(spec.container)+"/exec",createBody);
+    if(created.status!==201){send(res,created.status,created.body);return true;}
+    let execId="";
+    try{execId=String((JSON.parse(created.body.toString("utf8")) as {Id?:unknown}).Id??"");}catch{}
+    if(!/^[a-f0-9]{12,64}$/i.test(execId)){jsonError(res,502,"invalid_exec_id");return true;}
+
+    const started=await dockerRequest("POST","/exec/"+execId+"/start",Buffer.from(JSON.stringify({Detach:false,Tty:false})));
+    if(started.status!==200){send(res,started.status,started.body,String(started.headers["content-type"]??"application/json"));return true;}
+    const inspected=await dockerRequest("GET","/exec/"+execId+"/json");
+    let code=1;
+    if(inspected.status===200){try{const x=JSON.parse(inspected.body.toString("utf8")) as {ExitCode?:unknown}; if(typeof x.ExitCode==="number")code=x.ExitCode;}catch{}}
+    const out=demuxDockerStream(started.body);
+    send(res,200,JSON.stringify({code,verifier_id:spec.verifierId,sha256:spec.sha256,...out}));
+    return true;
+  }catch(e){
+    const code=e instanceof Error?e.message:"postgres_readback_invalid";
+    const status=/not_allowed|hash_mismatch/.test(code)?403:400;
+    jsonError(res,status,code);
+    return true;
+  }
+}
 async function handlePaperclipSemantic(req:IncomingMessage,res:ServerResponse,path:string):Promise<boolean>{
   const m=/^\/ops\/paperclip\/(task-drain-status|task-drain-start|task-drain-stop|tool-policies-list|tool-connection-activity-safe|tool-policy-test|tool-policy-create|tool-policy-delete)$/.exec(path);
   if(!m) return false;
@@ -277,10 +336,11 @@ async function handleOperator(req:IncomingMessage,res:ServerResponse,path:string
 async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const raw = new URL(req.url ?? "/", "http://localhost");
   const path = stripApiVersion(raw.pathname);
+  if(await handlePostgresPinnedReadback(req,res,path)) return;
   if(await handlePaperclipSemantic(req,res,path)) return;
   if(await handleOperator(req,res,path)) return;
   if (req.method !== "GET") return jsonError(res, 405, "method_not_allowed");
-  if (path === "/healthz") return send(res, 200, JSON.stringify({ status: "ok", allowed_containers: allowed.size, exec_containers:execContainers.size, exec_programs:execPrograms.size, docker_actions:[...allowedActions], image_load_roots:imageLoadRoots.size, candidate_image_prefixes:candidateImagePrefixes.size, candidate_networks:[...candidateNetworks], candidate_name_prefixes:[...candidateNamePrefixes], candidate_host_ports:[...candidateHostPorts], candidate_container_ports:[...candidateContainerPorts] }));
+  if (path === "/healthz") return send(res, 200, JSON.stringify({ status: "ok", allowed_containers: allowed.size, exec_containers:execContainers.size, exec_programs:execPrograms.size, docker_actions:[...allowedActions], image_load_roots:imageLoadRoots.size, candidate_image_prefixes:candidateImagePrefixes.size, candidate_networks:[...candidateNetworks], candidate_name_prefixes:[...candidateNamePrefixes], candidate_host_ports:[...candidateHostPorts], candidate_container_ports:[...candidateContainerPorts], postgres_readback_configured:postgresContainer.length>0&&postgresVerifiers.size>0, postgres_verifiers:[...postgresVerifiers.keys()] }));
   if (path === "/_ping") {
     if (raw.search) return jsonError(res, 400, "query_not_allowed");
     const u = await dockerRequest("GET","/_ping");
@@ -336,6 +396,6 @@ const server = http.createServer((req, res) => {
     if (!res.headersSent) jsonError(res, 502, "upstream_error"); else res.end();
   });
 });
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(JSON.stringify({ ts: new Date().toISOString(), level: "info", msg: "docker-proxy ready", port: PORT, allowed_containers: [...allowed], exec_containers:[...execContainers], exec_programs:[...execPrograms], actions:[...allowedActions], image_load_roots:[...imageLoadRoots], candidate_image_prefixes:[...candidateImagePrefixes], candidate_networks:[...candidateNetworks], candidate_name_prefixes:[...candidateNamePrefixes], candidate_host_ports:[...candidateHostPorts], candidate_container_ports:[...candidateContainerPorts] }));
+server.listen(PORT, BIND_HOST, () => {
+  console.log(JSON.stringify({ ts: new Date().toISOString(), level: "info", msg: "docker-proxy ready", port: PORT, bind_host:BIND_HOST, allowed_containers: [...allowed], exec_containers:[...execContainers], exec_programs:[...execPrograms], actions:[...allowedActions], image_load_roots:[...imageLoadRoots], candidate_image_prefixes:[...candidateImagePrefixes], candidate_networks:[...candidateNetworks], candidate_name_prefixes:[...candidateNamePrefixes], candidate_host_ports:[...candidateHostPorts], candidate_container_ports:[...candidateContainerPorts], postgres_readback_configured:postgresContainer.length>0&&postgresVerifiers.size>0, postgres_verifiers:[...postgresVerifiers.keys()] }));
 });
