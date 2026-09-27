@@ -99,6 +99,8 @@ generic process execution = denied
 filesystem write = denied
 ```
 
+Before installing the proxy on an already-paired host that predates the PostgreSQL readback capability, stage and build an exact repository revision, then run `install-agent-postgres-readback-runtime.sh` with `WANDORA_EXPECTED_REVISION=<40-char-sha>`. That installer updates only the three runtime artifacts required by this capability (`dist/agent/operations.js`, `dist/docker/read-proxy.js`, `dist/docker/postgres-readback.js`), backs up the previous files, restarts only `wandora-ops-agent.service`, and rolls back automatically on failure. It deliberately does **not** modify pairing state, the execution broker unit/binary, the target registry, Docker configuration, or database state.
+
 The host-local proxy must be installed explicitly with `install-agent-postgres-readback-proxy.sh`. Its root-owned configuration pins:
 
 - the exact PostgreSQL container;
