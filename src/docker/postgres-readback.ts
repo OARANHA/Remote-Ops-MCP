@@ -54,6 +54,20 @@ export function postgresVerifierSha256(sql: string): string {
   return crypto.createHash("sha256").update(sql, "utf8").digest("hex");
 }
 
+export function postgresSqlAfterApprovedMetaCommands(sql: string): string {
+  const out: string[] = [];
+  for (const line of sql.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("\\")) {
+      out.push(line);
+      continue;
+    }
+    if (trimmed === "\\set ON_ERROR_STOP on" || trimmed === "\\pset pager off") continue;
+    throw new Error("unsupported_postgres_meta_command");
+  }
+  return out.join("\n");
+}
+
 function requireSafeName(value: string, label: string): string {
   if (!SAFE_NAME_RE.test(value)) throw new Error("invalid_" + label);
   return value;
@@ -72,8 +86,9 @@ export function buildPostgresPinnedReadbackExec(
   const execUser = requireSafeName(config.execUser, "postgres_exec_user");
   const dbUser = requireSafeName(config.dbUser, "postgres_db_user");
   const dbName = requireSafeName(config.dbName, "postgres_db_name");
+  const executableSql = postgresSqlAfterApprovedMetaCommands(payload.sql);
 
-  const wrappedSql = "BEGIN TRANSACTION READ ONLY;\n" + payload.sql + "\nROLLBACK;\n";
+  const wrappedSql = "BEGIN TRANSACTION READ ONLY;\n" + executableSql + "\nROLLBACK;\n";
   return {
     verifierId: payload.verifierId,
     sha256,
