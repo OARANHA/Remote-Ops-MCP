@@ -8,7 +8,7 @@ bash -n install-agent-postgres-readback-runtime.sh
 command -v sudo >/dev/null 2>&1 || { echo 'sudo is required for runtime installer test' >&2; exit 1; }
 
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+trap 'sudo rm -rf "$TMP"' EXIT
 HEAD_SHA="$(git rev-parse HEAD)"
 FAKE_SYSTEMCTL="$TMP/fake-systemctl"
 
@@ -72,8 +72,8 @@ fi
 
 SUCCESS_BACKUP="$(find "$SUCCESS_BACKUPS" -maxdepth 1 -type d -name 'remote-ops-agent.rollback-postgres-readback-*' | head -n1)"
 [[ -n "$SUCCESS_BACKUP" ]]
-grep -qx 'old-operations' "$SUCCESS_BACKUP/dist/agent/operations.js"
-grep -qx 'old-read-proxy' "$SUCCESS_BACKUP/dist/docker/read-proxy.js"
+sudo grep -qx 'old-operations' "$SUCCESS_BACKUP/dist/agent/operations.js"
+sudo grep -qx 'old-read-proxy' "$SUCCESS_BACKUP/dist/docker/read-proxy.js"
 
 ROLLBACK_AGENT="$TMP/rollback-agent"
 ROLLBACK_BACKUPS="$TMP/rollback-backups"
