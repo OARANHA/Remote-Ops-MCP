@@ -24,5 +24,8 @@ jobs:
       - run: bash test-agent-pairing.sh
       - run: bash test-agent-installer.sh
       - run: node test-target-agent-approvals.mjs
+      - run: node test-postgres-readback.mjs
+      - run: node test-postgres-readback-proxy.mjs
+      - run: bash -n install-agent-postgres-readback-proxy.sh
       - name: Build production image
         run: docker build -t remote-ops-mcp:ci .
