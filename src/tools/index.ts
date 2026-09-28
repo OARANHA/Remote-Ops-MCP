@@ -13,6 +13,7 @@ import { dispatchAgentOperation } from "../agent/gateway.js";
 import { redactText, redactObject } from "../security/redact.js";
 import type { ExecResult } from "../ssh/pool.js";
 import { effectiveTargetEnabled } from "../state/store.js";
+import { portainerStatus, portainerEndpoints, portainerStacks, portainerStack, updatePortainerStackEnv, redeployPortainerGitStack, createPortainerGitStack } from "../portainer/client.js";
 
 /**
  * TOOLS V1 — 100% READ-ONLY.
@@ -1231,6 +1232,121 @@ const TOOL_DEFS: ToolDef[] = [
       const t=resolveTarget(args.target);
       requireOperator(t);
       return { target:t.id, ...(await agentJson(t,"process.list")) };
+    },
+  },
+
+  // ============ Portainer ============
+  {
+    name: "portainer_status",
+    description: "Valida a conexão autenticada com a API do Portainer configurada no control plane e retorna somente status redigido. O token nunca é retornado.",
+    inputSchema: {},
+    run: async () => portainerStatus(),
+  },
+  {
+    name: "portainer_endpoints_list",
+    description: "Lista os ambientes/endpoints do Portainer necessários para criar e operar stacks. Não retorna credenciais nem URLs internas.",
+    inputSchema: {},
+    run: async () => portainerEndpoints(),
+  },
+  {
+    name: "portainer_stacks_list",
+    description: "Lista stacks gerenciadas pelo Portainer com metadados seguros. Valores de variáveis de ambiente são sempre redigidos.",
+    inputSchema: {},
+    run: async () => portainerStacks(),
+  },
+  {
+    name: "portainer_stack_get",
+    description: "Inspeciona uma stack do Portainer por ID. Valores de variáveis de ambiente e credenciais Git são sempre redigidos.",
+    inputSchema: {
+      stack_id: z.number().int().positive(),
+    },
+    run: async (args) => portainerStack(Number(args.stack_id)),
+  },
+  {
+    name: "portainer_stack_update_env",
+    description: "Atualiza variáveis de ambiente de uma stack Portainer e faz redeploy preservando as demais variáveis por padrão. Para stacks Git usa o fluxo git/redeploy; para stacks Compose reenvia o stack file atual. Exige confirmação exata do nome da stack.",
+    inputSchema: {
+      stack_id: z.number().int().positive(),
+      confirm_stack_name: z.string().min(1).max(120),
+      changes: z.array(z.object({
+        name: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).max(160),
+        value: z.string().max(32768),
+      }).strict()).max(100).default([]),
+      unset_names: z.array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).max(160)).max(100).default([]),
+      replace_all: z.boolean().default(false),
+      pull_image: z.boolean().default(false),
+      prune: z.boolean().default(false),
+    },
+    mutation: true,
+    destructive: true,
+    idempotent: false,
+    run: async (args) => {
+      const changes = (args.changes ?? []) as Array<{name:string;value:string}>;
+      const unsetNames = (args.unset_names ?? []) as string[];
+      if (changes.length === 0 && unsetNames.length === 0 && args.replace_all !== true) {
+        throw new OpsError("INVALID_ARGUMENT", "nenhuma alteração de variável foi solicitada");
+      }
+      return updatePortainerStackEnv({
+        stackId: Number(args.stack_id),
+        confirmStackName: String(args.confirm_stack_name),
+        changes,
+        unsetNames,
+        replaceAll: args.replace_all === true,
+        pullImage: args.pull_image === true,
+        prune: args.prune === true,
+      });
+    },
+  },
+  {
+    name: "portainer_stack_git_redeploy",
+    description: "Faz Pull and redeploy de uma stack criada a partir de Git, preservando as variáveis atuais. Exige confirmação exata do nome da stack.",
+    inputSchema: {
+      stack_id: z.number().int().positive(),
+      confirm_stack_name: z.string().min(1).max(120),
+      pull_image: z.boolean().default(true),
+      prune: z.boolean().default(false),
+    },
+    mutation: true,
+    destructive: true,
+    idempotent: false,
+    run: async (args) => redeployPortainerGitStack({
+      stackId: Number(args.stack_id),
+      confirmStackName: String(args.confirm_stack_name),
+      pullImage: args.pull_image !== false,
+      prune: args.prune === true,
+    }),
+  },
+  {
+    name: "portainer_stack_create_git",
+    description: "Cria no Portainer uma nova stack Docker Standalone a partir de um repositório Git público. As variáveis ficam gerenciáveis no Portainer. Não aceita credenciais Git nesta primeira versão.",
+    inputSchema: {
+      endpoint_id: z.number().int().positive(),
+      name: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,62}$/),
+      confirm_stack_name: z.string().min(1).max(63),
+      repository_url: z.string().url(),
+      reference_name: z.string().min(1).max(240).default("refs/heads/main"),
+      compose_file: z.string().min(1).max(240).refine((value) => !value.startsWith("/") && !value.split("/").includes(".."), "compose_file deve ser relativo e sem .."),
+      env: z.array(z.object({
+        name: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).max(160),
+        value: z.string().max(32768),
+      }).strict()).max(100).default([]),
+    },
+    mutation: true,
+    destructive: false,
+    idempotent: false,
+    run: async (args) => {
+      const name = String(args.name);
+      if (String(args.confirm_stack_name) !== name) {
+        throw new OpsError("INVALID_ARGUMENT", "confirm_stack_name deve ser exatamente igual a name");
+      }
+      return createPortainerGitStack({
+        endpointId: Number(args.endpoint_id),
+        name,
+        repositoryUrl: String(args.repository_url),
+        referenceName: String(args.reference_name ?? "refs/heads/main"),
+        composeFile: String(args.compose_file),
+        env: (args.env ?? []) as Array<{name:string;value:string}>,
+      });
     },
   },
 
