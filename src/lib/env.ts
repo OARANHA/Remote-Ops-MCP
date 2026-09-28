@@ -40,7 +40,7 @@ const EnvSchema = z.object({
   PORTAINER_URL: z
     .string()
     .url()
-    .transform((value) => value.replace(/\\/+$/, ""))
+    .transform((value) => value.replace(/\/+$/, ""))
     .default("https://portainer.wandora.com.br"),
   PORTAINER_API_KEY_FILE: z.string().default("/app/secrets/portainer_api_key"),
   PORTAINER_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120_000).default(20_000),
