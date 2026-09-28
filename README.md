@@ -66,7 +66,7 @@ Pairing creates a device identity; it does **not** automatically create a Target
 
 ## Read-only tools
 
-The server currently exposes 44 capability-scoped tools. Read-only tools remain available to observation targets; mutation tools require an explicit `operator` target.
+The server currently exposes 51 capability-scoped tools. Read-only tools remain available to observation targets; mutation tools require an explicit `operator` target.
 
 | Group | Tools |
 |---|---|

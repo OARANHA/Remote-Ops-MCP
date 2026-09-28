@@ -37,6 +37,13 @@ const EnvSchema = z.object({
   AUDIT_FILE: z.string().default("data/audit.jsonl"),
   STATE_FILE: z.string().default("data/state.json"),
   TARGETS_FILE: z.string().default("config/targets.json"),
+  PORTAINER_URL: z
+    .string()
+    .url()
+    .transform((value) => value.replace(/\/+$/, ""))
+    .default("https://portainer.wandora.com.br"),
+  PORTAINER_API_KEY_FILE: z.string().default("/app/secrets/portainer_api_key"),
+  PORTAINER_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120_000).default(20_000),
 });
 
 export const env = EnvSchema.parse(process.env);
