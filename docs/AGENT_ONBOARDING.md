@@ -188,6 +188,7 @@ O instalador deliberadamente:
 
 - não adiciona `ops-mcp` aos grupos `sudo` ou `docker`;
 - não instala nem exige Docker;
+- o hardening do execution broker bloqueia o Docker socket quando ele existir, mas não falha em hosts novos onde `/var/run/docker.sock` ainda não existe;
 - instala execution broker local isolado, sem acesso ao Docker socket;
 - restringe execução a `/opt/wandora/ops-workspace` e a uma allowlist de programas;
 - não autoaprova pairing;
