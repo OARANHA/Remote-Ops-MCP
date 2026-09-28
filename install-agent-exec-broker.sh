@@ -69,7 +69,7 @@ CapabilityBoundingSet=
 AmbientCapabilities=
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 ReadWritePaths=$WORKSPACE /run/wandora-ops-exec
-InaccessiblePaths=$STATE_DIR /root /home /etc/ssh /etc/ssl/private /var/run/docker.sock
+InaccessiblePaths=$STATE_DIR /root /home /etc/ssh /etc/ssl/private -/var/run/docker.sock
 UMask=0027
 
 [Install]
