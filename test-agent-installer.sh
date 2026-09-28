@@ -43,7 +43,7 @@ grep -q 'NoNewPrivileges=yes' install-agent-exec-broker.sh
 grep -q 'ProtectSystem=strict' install-agent-exec-broker.sh
 grep -q 'ProtectHome=yes' install-agent-exec-broker.sh
 grep -q 'InaccessiblePaths=.*device.json\|InaccessiblePaths=.*wandora-ops-agent' install-agent-exec-broker.sh || grep -q 'InaccessiblePaths=$STATE_DIR' install-agent-exec-broker.sh
-grep -q '/var/run/docker.sock' install-agent-exec-broker.sh
+grep -q 'InaccessiblePaths=.*-/var/run/docker.sock' install-agent-exec-broker.sh
 
 grep -q 'One-time pairing code' src/agent/cli.ts
 grep -q 'Agent Mesh Devices' src/agent/cli.ts
