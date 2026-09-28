@@ -13,7 +13,7 @@ import { dispatchAgentOperation } from "../agent/gateway.js";
 import { redactText, redactObject } from "../security/redact.js";
 import type { ExecResult } from "../ssh/pool.js";
 import { effectiveTargetEnabled } from "../state/store.js";
-import { portainerStatus, portainerEndpoints, portainerStacks, portainerStack, updatePortainerStackEnv, redeployPortainerGitStack, createPortainerGitStack } from "../portainer/client.js";
+import { portainerStatus, portainerEndpoints, portainerStacks, portainerStack, updatePortainerStackEnv, redeployPortainerGitStack, createPortainerGitStack, startPortainerStack, stopPortainerStack, deletePortainerStack } from "../portainer/client.js";
 
 /**
  * TOOLS V1 — 100% READ-ONLY.
@@ -1261,6 +1261,53 @@ const TOOL_DEFS: ToolDef[] = [
       stack_id: z.number().int().positive(),
     },
     run: async (args) => portainerStack(Number(args.stack_id)),
+  },
+  {
+    name: "portainer_stack_start",
+    description: "Inicia uma stack parada no Portainer. Exige stack_id e confirmação exata do nome da stack.",
+    inputSchema: {
+      stack_id: z.number().int().positive(),
+      confirm_stack_name: z.string().min(1).max(120),
+    },
+    mutation: true,
+    destructive: false,
+    idempotent: false,
+    run: async (args) => startPortainerStack({
+      stackId: Number(args.stack_id),
+      confirmStackName: String(args.confirm_stack_name),
+    }),
+  },
+  {
+    name: "portainer_stack_stop",
+    description: "Para uma stack no Portainer. Exige stack_id e confirmação exata do nome da stack.",
+    inputSchema: {
+      stack_id: z.number().int().positive(),
+      confirm_stack_name: z.string().min(1).max(120),
+    },
+    mutation: true,
+    destructive: true,
+    idempotent: false,
+    run: async (args) => stopPortainerStack({
+      stackId: Number(args.stack_id),
+      confirmStackName: String(args.confirm_stack_name),
+    }),
+  },
+  {
+    name: "portainer_stack_delete",
+    description: "Remove uma stack gerenciada pelo Portainer. Exige stack_id e confirmação exata do nome; volumes só são removidos quando remove_volumes=true.",
+    inputSchema: {
+      stack_id: z.number().int().positive(),
+      confirm_stack_name: z.string().min(1).max(120),
+      remove_volumes: z.boolean().default(false),
+    },
+    mutation: true,
+    destructive: true,
+    idempotent: false,
+    run: async (args) => deletePortainerStack({
+      stackId: Number(args.stack_id),
+      confirmStackName: String(args.confirm_stack_name),
+      removeVolumes: args.remove_volumes === true,
+    }),
   },
   {
     name: "portainer_stack_update_env",
