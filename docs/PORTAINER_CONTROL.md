@@ -55,8 +55,13 @@ Valores de environment variables são sempre retornados como `[REDACTED]`.
 - `portainer_stack_update_env`
 - `portainer_stack_git_redeploy`
 - `portainer_stack_create_git`
+- `portainer_stack_start`
+- `portainer_stack_stop`
+- `portainer_stack_delete`
 
-As mutações exigem confirmação exata do nome da stack para reduzir risco de operar o ID errado.
+As mutações de lifecycle exigem `stack_id` e confirmação exata do nome da stack para reduzir risco de operar o ID errado.
+
+A exclusão não remove volumes por padrão. Para uma remoção intencional de dados persistidos, o chamador precisa definir explicitamente `remove_volumes=true`.
 
 A criação Git inicial aceita somente repositório público. Credenciais Git privadas não fazem parte desta primeira versão.
 
@@ -91,3 +96,14 @@ Docker Standalone
 ```
 
 Isto evita stacks descobertas como `Control: Limited` e mantém o Compose versionado no Git.
+
+
+## Lifecycle de stack
+
+As operações governadas usam os endpoints oficiais do Portainer associados ao `EndpointId` já registrado na stack:
+
+- start: `POST /api/stacks/{id}/start?endpointId={endpointId}`;
+- stop: `POST /api/stacks/{id}/stop?endpointId={endpointId}`;
+- delete: `DELETE /api/stacks/{id}?endpointId={endpointId}&removeVolumes={bool}`.
+
+A implementação primeiro lê a stack, valida `confirm_stack_name` contra o nome real e só então executa a mutação. Não existe ferramenta de request HTTP arbitrário para o Portainer.
