@@ -324,6 +324,93 @@ export async function redeployPortainerGitStack(input: {
   };
 }
 
+
+export async function startPortainerStack(input: {
+  stackId: number;
+  confirmStackName: string;
+}): Promise<unknown> {
+  const stack = await rawStack(input.stackId);
+  const name = stackName(stack);
+  if (input.confirmStackName !== name) {
+    throw new OpsError(
+      "INVALID_ARGUMENT",
+      "confirmação do nome da stack não corresponde",
+      `informe confirm_stack_name exatamente como "${name}"`,
+    );
+  }
+
+  const endpointId = stackEndpointId(stack);
+  const started = await requestJson<JsonObject>(
+    `/stacks/${input.stackId}/start?endpointId=${endpointId}`,
+    { method: "POST" },
+  );
+
+  return {
+    stackId: input.stackId,
+    stackName: name,
+    started: true,
+    stack: safeStack(started),
+  };
+}
+
+export async function stopPortainerStack(input: {
+  stackId: number;
+  confirmStackName: string;
+}): Promise<unknown> {
+  const stack = await rawStack(input.stackId);
+  const name = stackName(stack);
+  if (input.confirmStackName !== name) {
+    throw new OpsError(
+      "INVALID_ARGUMENT",
+      "confirmação do nome da stack não corresponde",
+      `informe confirm_stack_name exatamente como "${name}"`,
+    );
+  }
+
+  const endpointId = stackEndpointId(stack);
+  const stopped = await requestJson<JsonObject>(
+    `/stacks/${input.stackId}/stop?endpointId=${endpointId}`,
+    { method: "POST" },
+  );
+
+  return {
+    stackId: input.stackId,
+    stackName: name,
+    stopped: true,
+    stack: safeStack(stopped),
+  };
+}
+
+export async function deletePortainerStack(input: {
+  stackId: number;
+  confirmStackName: string;
+  removeVolumes: boolean;
+}): Promise<unknown> {
+  const stack = await rawStack(input.stackId);
+  const name = stackName(stack);
+  if (input.confirmStackName !== name) {
+    throw new OpsError(
+      "INVALID_ARGUMENT",
+      "confirmação do nome da stack não corresponde",
+      `informe confirm_stack_name exatamente como "${name}"`,
+    );
+  }
+
+  const endpointId = stackEndpointId(stack);
+  const removeVolumes = input.removeVolumes === true;
+  await requestJson(
+    `/stacks/${input.stackId}?endpointId=${endpointId}&removeVolumes=${removeVolumes}`,
+    { method: "DELETE" },
+  );
+
+  return {
+    stackId: input.stackId,
+    stackName: name,
+    deleted: true,
+    removeVolumes,
+  };
+}
+
 export async function createPortainerGitStack(input: {
   endpointId: number;
   name: string;
