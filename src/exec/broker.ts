@@ -94,7 +94,7 @@ function append(s: Session, label: string, chunk: Buffer): void {
 }
 function activeSessionCount(): number {
   let count = 0;
-  for (const s of sessions.values()) if (s.exitCode === null) count++;
+  for (const s of sessions.values()) if (s.closedAt === undefined) count++;
   return count;
 }
 function reap(): void {
@@ -136,16 +136,16 @@ async function handle(req: Json): Promise<Json> {
   if (op === "process.read") {
     const id = String(a.session_id ?? ""), s=sessions.get(id); if(!s) throw new Error("session_not_found");
     const offset=Math.max(0,Number(a.offset??0)||0), limit=Math.min(Math.max(Number(a.max_chars??65536)||65536,1),262144), out=s.output.slice(offset,offset+limit);
-    return { session_id:id, running:s.exitCode===null, exit_code:s.exitCode, output:out, next_offset:offset+out.length, truncated:offset+out.length<s.output.length };
+    return { session_id:id, running:s.closedAt===undefined, exit_code:s.exitCode, output:out, next_offset:offset+out.length, truncated:offset+out.length<s.output.length };
   }
   if (op === "process.input") {
-    const id=String(a.session_id??""), s=sessions.get(id); if(!s||s.exitCode!==null) throw new Error("session_not_running"); const data=decodeB64(a.input_b64,65536); s.child.stdin.write(data); return { session_id:id, bytes:data.length };
+    const id=String(a.session_id??""), s=sessions.get(id); if(!s||s.closedAt!==undefined) throw new Error("session_not_running"); const data=decodeB64(a.input_b64,65536); s.child.stdin.write(data); return { session_id:id, bytes:data.length };
   }
   if (op === "process.kill") {
     const id=String(a.session_id??""), s=sessions.get(id); if(!s) throw new Error("session_not_found"); const signal=String(a.signal??"SIGTERM"); if(!["SIGTERM","SIGINT","SIGKILL"].includes(signal)) throw new Error("signal_not_allowed"); const sent=s.child.kill(signal as NodeJS.Signals); return { session_id:id, signal, sent };
   }
   if (op === "process.list") {
-    return { max_active_sessions:MAX_ACTIVE_SESSIONS, active_sessions:activeSessionCount(), sessions:[...sessions.values()].map((s)=>({session_id:s.id,pid:s.child.pid??null,program:s.program,cwd:s.cwd,running:s.exitCode===null,exit_code:s.exitCode,started_at:new Date(s.startedAt).toISOString()})) };
+    return { max_active_sessions:MAX_ACTIVE_SESSIONS, active_sessions:activeSessionCount(), sessions:[...sessions.values()].map((s)=>({session_id:s.id,pid:s.child.pid??null,program:s.program,cwd:s.cwd,running:s.closedAt===undefined,exit_code:s.exitCode,started_at:new Date(s.startedAt).toISOString()})) };
   }
   throw new Error("unsupported_operation");
 }
