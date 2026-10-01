@@ -1,5 +1,7 @@
 services:
   docker-read-proxy:
+    group_add:
+      - "${DOCKER_IMAGE_LOAD_ROOT_GID:?defina DOCKER_IMAGE_LOAD_ROOT_GID}"
     volumes:
       - type: bind
         source: ${DOCKER_IMAGE_LOAD_ROOT_HOST:?defina DOCKER_IMAGE_LOAD_ROOT_HOST}
