@@ -52,7 +52,7 @@ On a new Debian/Ubuntu VPS:
 curl -fsSL https://raw.githubusercontent.com/OARANHA/Remote-Ops-MCP/main/install-agent.sh | sudo bash
 ```
 
-The installer builds the agent, creates the restricted `ops-mcp` service user plus the isolated `wandora-exec` execution user, creates `/opt/wandora/ops-workspace`, installs `wandora-ops-exec-broker.service`, prints a one-time `WD-XXXX-XXXX` code and waits while an administrator approves it in **Admin → Agent Mesh Devices**. It then validates the device credential and starts broker + `wandora-ops-agent.service`.
+The installer builds the agent, creates the restricted `ops-mcp` service user plus the isolated `wandora-exec` execution user, creates `/opt/wandora/ops-workspace`, installs `wandora-ops-exec-broker.service`, prints a one-time `WD-XXXX-XXXX` code and waits while an administrator approves it in **Admin → Agent Mesh Devices**. It then validates the device credential and starts broker + `wandora-ops-agent.service`. The isolated execution broker defaults to **48 concurrent active sessions** (`WANDORA_EXEC_MAX_SESSIONS=48`); completed sessions remain readable during the retention window but do not consume active-session capacity.
 
 For a VPS that should support signed root administration after pairing, use the explicit managed-admin bootstrap:
 

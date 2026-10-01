@@ -20,7 +20,8 @@ interface Session {
 const SOCKET = process.env.WANDORA_EXEC_BROKER_SOCKET ?? "/run/wandora-ops-exec/exec.sock";
 const ROOTS = (process.env.WANDORA_EXEC_ROOTS ?? "/opt/wandora/ops-workspace").split(",").map((x) => x.trim()).filter(Boolean);
 const PROGRAMS = new Set((process.env.WANDORA_EXEC_PROGRAMS ?? "bash,sh,git,node,npm,npx,pnpm,python3,curl,wget,jq,grep,sed,awk,find,head,tail,cat,wc,make").split(",").map((x) => x.trim()).filter(Boolean));
-const MAX_SESSIONS = 16;
+const MAX_ACTIVE_SESSIONS = Number(process.env.WANDORA_EXEC_MAX_SESSIONS ?? "48");
+if (!Number.isInteger(MAX_ACTIVE_SESSIONS) || MAX_ACTIVE_SESSIONS < 1 || MAX_ACTIVE_SESSIONS > 256) throw new Error("invalid WANDORA_EXEC_MAX_SESSIONS");
 const MAX_OUTPUT = 1024 * 1024;
 const MAX_WRITE = 512 * 1024;
 const sessions = new Map<string, Session>();
@@ -91,6 +92,11 @@ function append(s: Session, label: string, chunk: Buffer): void {
   s.output += add;
   if (Buffer.byteLength(s.output, "utf8") > MAX_OUTPUT) s.output = s.output.slice(-MAX_OUTPUT);
 }
+function activeSessionCount(): number {
+  let count = 0;
+  for (const s of sessions.values()) if (s.closedAt === undefined) count++;
+  return count;
+}
 function reap(): void {
   const now = Date.now();
   for (const [id,s] of sessions) if (s.closedAt && now - s.closedAt > 30 * 60_000) sessions.delete(id);
@@ -120,7 +126,7 @@ async function handle(req: Json): Promise<Json> {
     const source = checkedPath(a.source, true), destination = checkedPath(a.destination, false); fs.mkdirSync(path.dirname(destination), { recursive: true, mode: 0o750 }); fs.renameSync(source, destination); return { source, destination };
   }
   if (op === "process.start") {
-    if (sessions.size >= MAX_SESSIONS) throw new Error("session_capacity");
+    if (activeSessionCount() >= MAX_ACTIVE_SESSIONS) throw new Error("session_capacity");
     const cwd = checkedPath(a.cwd, true), program = safeProgram(a.program), args = safeArgs(a.argv);
     const child = spawn(program, args, { cwd, shell: false, stdio: ["pipe","pipe","pipe"], env: { PATH: process.env.PATH ?? "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", HOME: process.env.HOME ?? "/var/lib/wandora-exec", LANG: "C.UTF-8", TERM: "dumb" } });
     const id = "ps_" + crypto.randomBytes(12).toString("hex"), s: Session = { id, child, startedAt: Date.now(), cwd, program, output: "", exitCode: null };
@@ -130,16 +136,16 @@ async function handle(req: Json): Promise<Json> {
   if (op === "process.read") {
     const id = String(a.session_id ?? ""), s=sessions.get(id); if(!s) throw new Error("session_not_found");
     const offset=Math.max(0,Number(a.offset??0)||0), limit=Math.min(Math.max(Number(a.max_chars??65536)||65536,1),262144), out=s.output.slice(offset,offset+limit);
-    return { session_id:id, running:s.exitCode===null, exit_code:s.exitCode, output:out, next_offset:offset+out.length, truncated:offset+out.length<s.output.length };
+    return { session_id:id, running:s.closedAt===undefined, exit_code:s.exitCode, output:out, next_offset:offset+out.length, truncated:offset+out.length<s.output.length };
   }
   if (op === "process.input") {
-    const id=String(a.session_id??""), s=sessions.get(id); if(!s||s.exitCode!==null) throw new Error("session_not_running"); const data=decodeB64(a.input_b64,65536); s.child.stdin.write(data); return { session_id:id, bytes:data.length };
+    const id=String(a.session_id??""), s=sessions.get(id); if(!s||s.closedAt!==undefined) throw new Error("session_not_running"); const data=decodeB64(a.input_b64,65536); s.child.stdin.write(data); return { session_id:id, bytes:data.length };
   }
   if (op === "process.kill") {
     const id=String(a.session_id??""), s=sessions.get(id); if(!s) throw new Error("session_not_found"); const signal=String(a.signal??"SIGTERM"); if(!["SIGTERM","SIGINT","SIGKILL"].includes(signal)) throw new Error("signal_not_allowed"); const sent=s.child.kill(signal as NodeJS.Signals); return { session_id:id, signal, sent };
   }
   if (op === "process.list") {
-    return { sessions:[...sessions.values()].map((s)=>({session_id:s.id,pid:s.child.pid??null,program:s.program,cwd:s.cwd,running:s.exitCode===null,exit_code:s.exitCode,started_at:new Date(s.startedAt).toISOString()})) };
+    return { max_active_sessions:MAX_ACTIVE_SESSIONS, active_sessions:activeSessionCount(), sessions:[...sessions.values()].map((s)=>({session_id:s.id,pid:s.child.pid??null,program:s.program,cwd:s.cwd,running:s.closedAt===undefined,exit_code:s.exitCode,started_at:new Date(s.startedAt).toISOString()})) };
   }
   throw new Error("unsupported_operation");
 }
