@@ -65,7 +65,7 @@ try{
   assert.equal(before.result.active_sessions,3);
   assert.equal(before.result.sessions.length,3);
 
-  const killed=await request("process.kill",{session_id:ids[0],signal:"SIGTERM"});
+  const killed=await request("process.kill",{session_id:ids[0],signal:"SIGKILL"});
   assert.equal(killed.ok,true,JSON.stringify(killed));
   await waitClosed(ids[0]);
 
