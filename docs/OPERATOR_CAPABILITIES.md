@@ -103,6 +103,9 @@ ALLOWED_DOCKER_CANDIDATE_CONTAINER_PORTS=8080
 
 The target registry can only reduce this authority further.
 
+When the Docker proxy itself runs in a container, every configured image-load root must also exist inside that proxy container. The production Compose contract therefore bind-mounts the governed root read-only, using `DOCKER_IMAGE_LOAD_ROOT_HOST` for the host source and `DOCKER_IMAGE_LOAD_ROOT_CONTAINER` for the in-proxy path. The value exposed through `ALLOWED_DOCKER_IMAGE_LOAD_ROOTS` must refer to the in-proxy path. On Wandora hosts both default to `/opt/wandora/ops-workspace`, preserving the same absolute path on both sides of the read-only bind.
+
+
 `docker_exec` does not accept shell text, environment overrides, user overrides, privileged mode, working-directory overrides, mounts or arbitrary Docker API requests. It accepts a container, one program name and an argv array. Output is bounded and redacted before returning to the MCP client.
 
 
