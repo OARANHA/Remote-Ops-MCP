@@ -42,6 +42,8 @@ assert.ok(
   "image-load overlay must preserve a stable in-proxy path",
 );
 assert.ok(overlay.includes("read_only: true"), "image-load root mount must be read-only");
+assert.ok(overlay.includes("${DOCKER_IMAGE_LOAD_ROOT_GID:?defina DOCKER_IMAGE_LOAD_ROOT_GID}"), "image-load overlay must require the governed root gid");
 assert.ok(envExample.includes("DOCKER_IMAGE_LOAD_ROOT_HOST="), "missing host mount env example");
 assert.ok(envExample.includes("DOCKER_IMAGE_LOAD_ROOT_CONTAINER=/opt/wandora/ops-workspace"), "missing container mount env example");
+assert.ok(envExample.includes("DOCKER_IMAGE_LOAD_ROOT_GID="), "missing image-load root gid env example");
 console.log("DOCKER_PROXY_COMPOSE_CANDIDATE_ENV_WIRING=GREEN");
