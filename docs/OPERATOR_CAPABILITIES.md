@@ -103,6 +103,9 @@ ALLOWED_DOCKER_CANDIDATE_CONTAINER_PORTS=8080
 
 The target registry can only reduce this authority further.
 
+When the Docker proxy runs in a container, an image-load path must also exist inside that proxy container. Keep this filesystem exposure opt-in: append `docker-compose.image-load-root.yml` only on hosts that deliberately enable `load_image`. Set `DOCKER_IMAGE_LOAD_ROOT_HOST` to the governed host directory and keep `DOCKER_IMAGE_LOAD_ROOT_CONTAINER` aligned with the path exposed through `ALLOWED_DOCKER_IMAGE_LOAD_ROOTS`. The overlay bind is read-only and refuses to create a missing host path.
+
+
 `docker_exec` does not accept shell text, environment overrides, user overrides, privileged mode, working-directory overrides, mounts or arbitrary Docker API requests. It accepts a container, one program name and an argv array. Output is bounded and redacted before returning to the MCP client.
 
 
