@@ -103,6 +103,10 @@ ALLOWED_DOCKER_CANDIDATE_CONTAINER_PORTS=8080
 
 The target registry can only reduce this authority further.
 
+For a containerized Docker proxy, the opt-in `docker-compose.image-load-root.yml` overlay also requires `DOCKER_IMAGE_LOAD_ROOT_GID`: the numeric host group that owns/traverses the governed image-load root. The proxy receives that group only as a supplementary group while the bind remains read-only. Do not weaken host directory/file modes to make image loading work. Derive the numeric group from the governed root on the host (for example, `stat -c %g /opt/wandora/ops-workspace`) and keep `ALLOWED_DOCKER_IMAGE_LOAD_ROOTS` aligned with the in-proxy target path.
+
+
+
 When the Docker proxy runs in a container, an image-load path must also exist inside that proxy container. Keep this filesystem exposure opt-in: append `docker-compose.image-load-root.yml` only on hosts that deliberately enable `load_image`. Set `DOCKER_IMAGE_LOAD_ROOT_HOST` to the governed host directory and keep `DOCKER_IMAGE_LOAD_ROOT_CONTAINER` aligned with the path exposed through `ALLOWED_DOCKER_IMAGE_LOAD_ROOTS`. The overlay bind is read-only and refuses to create a missing host path.
 
 
