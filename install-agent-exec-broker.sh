@@ -10,12 +10,14 @@ BROKER_SERVICE_NAME="wandora-ops-exec-broker.service"
 BROKER_SERVICE_FILE="/etc/systemd/system/$BROKER_SERVICE_NAME"
 EXEC_SOCKET="${WANDORA_EXEC_BROKER_SOCKET:-/run/wandora-ops-exec/exec.sock}"
 EXEC_PROGRAMS="${WANDORA_EXEC_PROGRAMS:-bash,sh,git,node,npm,npx,pnpm,python3,curl,wget,jq,grep,sed,awk,find,head,tail,cat,wc,make}"
+EXEC_MAX_SESSIONS="${WANDORA_EXEC_MAX_SESSIONS:-48}"
 
 log() { printf '\033[1;34m[wandora-exec]\033[0m %s\n' "$*"; }
 ok() { printf '\033[1;32m✓\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 
 [[ "${EUID}" -eq 0 ]] || die "run with sudo/root"
+[[ "$EXEC_MAX_SESSIONS" =~ ^[0-9]+$ ]] && (( EXEC_MAX_SESSIONS >= 1 && EXEC_MAX_SESSIONS <= 256 )) || die "WANDORA_EXEC_MAX_SESSIONS must be an integer between 1 and 256"
 test -f "$INSTALL_DIR/dist/exec/broker.js" || die "missing $INSTALL_DIR/dist/exec/broker.js"
 getent group "$EXEC_GROUP" >/dev/null 2>&1 || die "group $EXEC_GROUP does not exist"
 
@@ -49,6 +51,7 @@ RuntimeDirectoryMode=0750
 Environment=WANDORA_EXEC_BROKER_SOCKET=$EXEC_SOCKET
 Environment=WANDORA_EXEC_ROOTS=$WORKSPACE
 Environment=WANDORA_EXEC_PROGRAMS=$EXEC_PROGRAMS
+Environment=WANDORA_EXEC_MAX_SESSIONS=$EXEC_MAX_SESSIONS
 NoNewPrivileges=yes
 PrivateTmp=yes
 PrivateDevices=yes
@@ -93,3 +96,4 @@ ok "Execution broker is active"
 printf 'broker=%s\n' "$BROKER_SERVICE_NAME"
 printf 'workspace=%s\n' "$WORKSPACE"
 printf 'socket=%s\n' "$EXEC_SOCKET"
+printf 'max_active_sessions=%s\n' "$EXEC_MAX_SESSIONS"
