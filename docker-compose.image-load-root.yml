@@ -1,0 +1,9 @@
+services:
+  docker-read-proxy:
+    volumes:
+      - type: bind
+        source: ${DOCKER_IMAGE_LOAD_ROOT_HOST:?defina DOCKER_IMAGE_LOAD_ROOT_HOST}
+        target: ${DOCKER_IMAGE_LOAD_ROOT_CONTAINER:-/opt/wandora/ops-workspace}
+        read_only: true
+        bind:
+          create_host_path: false
