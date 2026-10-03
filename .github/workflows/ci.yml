@@ -65,9 +65,9 @@ jobs:
             /app/scripts/elus-vendaerp-danfe-canary.ts 2>&1)"
           code=$?
           set -e
-          printf 'canary_smoke_exit=%s\\n' "$code"
-          if ! printf '%s\\n' "$output" | grep -Fx '{"ok":false,"code":"invalid_scope"}'; then
-            printf '%s\\n' "$output"
+          printf 'canary_smoke_exit=%s\n' "$code"
+          if ! printf '%s\n' "$output" | grep -Fx '{"ok":false,"code":"invalid_scope"}'; then
+            printf '%s\n' "$output"
             exit 1
           fi
           test "$code" -ne 0
