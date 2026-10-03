@@ -136,9 +136,12 @@ const docker = {
       lastCandidateCreate = JSON.parse(body.toString("utf8"));
       assert.equal(lastCandidateCreate.Image, imageRef);
       assert.deepEqual(lastCandidateCreate.Cmd, [
-        "/app/node_modules/.bin/tsx",
+        "node",
+        "--import",
+        "tsx",
         "/app/scripts/elus-vendaerp-danfe-canary.ts",
       ]);
+      assert.equal(lastCandidateCreate.Env.includes("TSX_DISABLE_CACHE=1"), true);
       assert.equal(lastCandidateCreate.HostConfig.Privileged, false);
       assert.equal(lastCandidateCreate.HostConfig.ReadonlyRootfs, true);
       assert.deepEqual(lastCandidateCreate.HostConfig.CapDrop, ["ALL"]);
