@@ -146,6 +146,10 @@ const docker = {
       assert.equal(lastCandidateCreate.HostConfig.ReadonlyRootfs, true);
       assert.deepEqual(lastCandidateCreate.HostConfig.CapDrop, ["ALL"]);
       assert.equal(lastCandidateCreate.HostConfig.NetworkMode, "bridge");
+      assert.equal(
+        lastCandidateCreate.HostConfig.Tmpfs["/tmp"],
+        "rw,exec,nosuid,nodev,size=33554432",
+      );
       assert.equal(lastCandidateCreate.Env.some((x) => x.includes("must-not-cross")), false);
       for (const [key, value] of Object.entries(sourceSecrets)) {
         assert.equal(lastCandidateCreate.Env.includes(key + "=" + value), true);
