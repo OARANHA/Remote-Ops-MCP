@@ -171,6 +171,7 @@ assert.equal(toolsSource.includes('agentJson(t,"elus.vendaerp_danfe_canary_reado
 
 const compose = fs.readFileSync("docker-compose.portainer.yml", "utf8");
 for (const name of [
+  "ELUS_DANFE_CANARY_PORTAINER_ENDPOINT_ID",
   "ELUS_DANFE_CANARY_SOURCE_CONTAINER",
   "ELUS_DANFE_CANARY_IMAGE",
   "ELUS_DANFE_CANARY_REVISION",
