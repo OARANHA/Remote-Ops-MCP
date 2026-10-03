@@ -3,6 +3,9 @@ import fs from "node:fs";
 
 import {
   ELUS_DANFE_CANARY_CAPABILITY,
+  ELUS_DANFE_CANARY_PORTAINER_API_KEY_FILE,
+  ELUS_DANFE_CANARY_PORTAINER_ENDPOINT_ID,
+  ELUS_DANFE_CANARY_PORTAINER_ORIGIN,
   ELUS_DANFE_CANARY_REPOSITORY,
   buildElusDanfeCanaryEnv,
   decodeElusDanfeCanaryReceipt,
@@ -19,6 +22,9 @@ const digest = "sha256:" + "7".repeat(64);
 const image = ELUS_DANFE_CANARY_REPOSITORY + "@" + digest;
 
 assert.equal(ELUS_DANFE_CANARY_CAPABILITY, "elus.vendaerp_danfe_canary_readonly");
+assert.equal(ELUS_DANFE_CANARY_PORTAINER_ORIGIN, "https://ops-vigia.wandora.com.br");
+assert.equal(ELUS_DANFE_CANARY_PORTAINER_ENDPOINT_ID, 3);
+assert.equal(ELUS_DANFE_CANARY_PORTAINER_API_KEY_FILE, "/app/secrets/portainer_vigia_api_key");
 
 const payload = normalizeElusDanfeCanaryPayload({
   conversationId: "11111111-1111-4111-8111-111111111111",
@@ -157,6 +163,11 @@ assert.notEqual(
   elusDanfeCanaryScopeSha256(payload),
   elusDanfeCanaryScopeSha256({ ...payload, pedidoCodigo: 124 }),
 );
+
+const toolsSource = fs.readFileSync("src/tools/index.ts", "utf8");
+assert.equal(toolsSource.includes("baseUrl:ELUS_DANFE_CANARY_PORTAINER_ORIGIN"), true);
+assert.equal(toolsSource.includes("apiKeyFile:ELUS_DANFE_CANARY_PORTAINER_API_KEY_FILE"), true);
+assert.equal(toolsSource.includes('agentJson(t,"elus.vendaerp_danfe_canary_readonly"'), false);
 
 const compose = fs.readFileSync("docker-compose.portainer.yml", "utf8");
 for (const name of [
