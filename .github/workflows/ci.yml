@@ -57,7 +57,9 @@ jobs:
             --pids-limit 128 \
             -e HOME=/tmp \
             -e TMPDIR=/tmp \
-            "$image" 2>&1)"
+            "$image" \
+            /app/node_modules/.bin/tsx \
+            /app/scripts/elus-vendaerp-danfe-canary.ts 2>&1)"
           code=$?
           set -e
           printf 'canary_smoke_exit=%s\\n' "$code"
