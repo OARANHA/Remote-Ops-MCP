@@ -34,6 +34,75 @@ function apiUrl(path: string): string {
   return `${base}/api${normalized}`;
 }
 
+function portainerDockerPath(endpointId: number, dockerPath: string): string {
+  if (!Number.isInteger(endpointId) || endpointId <= 0) {
+    throw new OpsError("INVALID_ARGUMENT", "Portainer endpoint inválido");
+  }
+  if (!dockerPath.startsWith("/") || dockerPath.startsWith("//") || /[\r\n\0]/.test(dockerPath)) {
+    throw new OpsError("INVALID_ARGUMENT", "Docker API path inválido");
+  }
+  return `/endpoints/${endpointId}/docker${dockerPath}`;
+}
+
+export async function portainerDockerRequest(input: {
+  endpointId: number;
+  method: string;
+  path: string;
+  body?: Buffer;
+  timeoutMs?: number;
+  maxBytes?: number;
+}): Promise<{ status: number; body: Buffer }> {
+  const token = await apiKey();
+  const timeoutMs = Math.min(Math.max(input.timeoutMs ?? env.PORTAINER_TIMEOUT_MS, 1000), 180_000);
+  const maxBytes = Math.min(Math.max(input.maxBytes ?? 2 * 1024 * 1024, 64 * 1024), 8 * 1024 * 1024);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(apiUrl(portainerDockerPath(input.endpointId, input.path)), {
+      method: input.method,
+      headers: {
+        Accept: "*/*",
+        "X-API-Key": token,
+        ...(input.body ? { "Content-Type": "application/json" } : {}),
+      },
+      body: input.body,
+      signal: controller.signal,
+    });
+
+    if (response.status === 401 || response.status === 403) cachedApiKey = undefined;
+
+    const chunks: Buffer[] = [];
+    let total = 0;
+    if (response.body) {
+      const reader = response.body.getReader();
+      while (true) {
+        const next = await reader.read();
+        if (next.done) break;
+        const chunk = Buffer.from(next.value);
+        total += chunk.length;
+        if (total > maxBytes) {
+          await reader.cancel();
+          throw new OpsError("REMOTE_COMMAND_FAILED", "resposta Docker via Portainer excedeu o limite");
+        }
+        chunks.push(chunk);
+      }
+    }
+    return { status: response.status, body: Buffer.concat(chunks) };
+  } catch (error) {
+    if (error instanceof OpsError) throw error;
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new OpsError("COMMAND_TIMEOUT", "timeout no Docker API via Portainer");
+    }
+    throw new OpsError(
+      "REMOTE_COMMAND_FAILED",
+      "falha no Docker API via Portainer",
+      error instanceof Error ? redactText(error.message) : undefined,
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function requestJson<T = unknown>(
   path: string,
   init: RequestInit = {},
