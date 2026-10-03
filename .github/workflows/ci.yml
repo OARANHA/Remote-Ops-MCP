@@ -44,7 +44,7 @@ jobs:
       - name: Smoke pinned Elus DANFE canary runtime
         run: |
           set -euo pipefail
-          image="ghcr.io/oaranha/elus-danfe-canary@sha256:73e1b7566185e9ad0844f71618929b10314d30e0494e218aab16f0ccf1a92529"
+          image="ghcr.io/oaranha/elus-danfe-canary@sha256:da5d041d72b98a99afba0e1a27f7b897b9f80357007cf2b7a6ebc8ce6f78ef38"
           docker pull "$image"
           set +e
           output="$(docker run --rm \
