@@ -52,6 +52,8 @@ const FAILURE_CODES = new Set([
   "invalid_scope",
   "missing_sealed_runtime_env",
   "unexpected_failure",
+  "canary_execution_outcome_unknown",
+  "canary_result_invalid",
 ]);
 
 const PROVIDER_CALLS = [
