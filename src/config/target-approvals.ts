@@ -42,9 +42,11 @@ export function prepareAgentTarget(input: {
   const authority =
     input.preset === "postgres-readback"
       ? "pinned PostgreSQL readback only; generic Docker/process/write access remains disabled"
-      : input.preset === "managed-admin"
-        ? "workspace operator + signed managed-admin root broker; no generic sudo/docker group and no break-glass shell"
-        : "static targets are not modified; Docker access remains disabled";
+      : input.preset === "elus-danfe-canary"
+        ? "Elus DANFE readonly semantic canary only; generic Docker/process/write access remains disabled"
+        : input.preset === "managed-admin"
+          ? "workspace operator + signed managed-admin root broker; no generic sudo/docker group and no break-glass shell"
+          : "static targets are not modified; Docker access remains disabled";
   const summary =
     `create/update dynamic target ${target.id} -> ${input.deviceId} (${input.environment}, ${input.preset}); ` +
     authority;
