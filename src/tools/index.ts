@@ -13,14 +13,8 @@ import { dispatchAgentOperation } from "../agent/gateway.js";
 import { redactText, redactObject } from "../security/redact.js";
 import type { ExecResult } from "../ssh/pool.js";
 import { effectiveTargetEnabled } from "../state/store.js";
-import { portainerStatus, portainerEndpoints, portainerStacks, portainerStack, updatePortainerStackEnv, redeployPortainerGitStack, createPortainerGitStack, startPortainerStack, stopPortainerStack, deletePortainerStack, portainerDockerRequest } from "../portainer/client.js";
-import {
-  ELUS_DANFE_CANARY_PORTAINER_API_KEY_FILE,
-  ELUS_DANFE_CANARY_PORTAINER_ENDPOINT_ID,
-  ELUS_DANFE_CANARY_PORTAINER_ORIGIN,
-  parseElusDanfeCanaryConfig,
-} from "../docker/elus-danfe-canary.js";
-import { executeElusDanfeCanaryOnce } from "../docker/elus-danfe-canary-runtime.js";
+import { portainerStatus, portainerEndpoints, portainerStacks, portainerStack, updatePortainerStackEnv, redeployPortainerGitStack, createPortainerGitStack, startPortainerStack, stopPortainerStack, deletePortainerStack } from "../portainer/client.js";
+import { parseElusDanfeCanaryConfig } from "../docker/elus-danfe-canary.js";
 
 /**
  * TOOLS V1 — 100% READ-ONLY.
@@ -184,6 +178,31 @@ function requireAgentMutationTransport(t: TargetConfig): void {
 function requireSemanticCapability(t: TargetConfig, capability: string): void {
   if(t.transport!=="agent") throw new OpsError("CAPABILITY_DENIED", `target "${t.id}" precisa usar transport=agent para capability semântica`);
   requireNamedCapability(t.allowedSemanticCapabilities, capability, "capability semântica");
+}
+
+function requireElusDanfeCanaryConfig(): Record<string, unknown> {
+  let config;
+  try{
+    config=parseElusDanfeCanaryConfig({
+      sourceContainer:env.ELUS_DANFE_CANARY_SOURCE_CONTAINER,
+      image:env.ELUS_DANFE_CANARY_IMAGE,
+      revision:env.ELUS_DANFE_CANARY_REVISION,
+      candidateName:env.ELUS_DANFE_CANARY_CONTAINER_NAME,
+      receiptName:env.ELUS_DANFE_CANARY_RECEIPT_NAME,
+      network:env.ELUS_DANFE_CANARY_NETWORK,
+    });
+  }catch{
+    throw new OpsError("CAPABILITY_DENIED","configuração do canário Elus é inválida");
+  }
+  if(!config) throw new OpsError("CAPABILITY_DENIED","canário Elus não está configurado");
+  return {
+    sourceContainer:config.sourceContainer,
+    image:config.imageRef,
+    revision:config.revision,
+    candidateName:config.candidateName,
+    receiptName:config.receiptName,
+    network:config.network,
+  };
 }
 
 function requirePaperclipSemantic(t: TargetConfig): void {
@@ -677,8 +696,24 @@ const TOOL_DEFS: ToolDef[] = [
 
   // ============ Elus VendaERP DANFE governed canary ============
   {
+    name: "elus_vendaerp_danfe_canary_preflight",
+    description: "Valida localmente no Agent Mesh do Vigia o Portainer, stack Elus, container fonte, env selado e estado candidate/receipt. Não executa VendaERP, não cria containers e não expõe secrets.",
+    inputSchema: {
+      target: targetField,
+    },
+    mutation: false,
+    destructive: false,
+    idempotent: true,
+    run: async (args) => {
+      const t=resolveTarget(args.target);
+      requireSemanticCapability(t,"elus.vendaerp_danfe_canary_readonly");
+      const value=await agentJson(t,"elus.vendaerp_danfe_canary_preflight",{config:requireElusDanfeCanaryConfig()},30_000);
+      return {target:t.id,...value};
+    },
+  },
+  {
     name: "elus_vendaerp_danfe_canary_readonly",
-    description: "Executa uma única passagem governada do canário Elus VendaERP → Pedido → Pessoa → contato → NFe → DANFE. O VendaERP permanece GET-only; a capability para no preview, não envia WhatsApp, não expõe credenciais/PII/XML e impede repetição real por recibo no proxy.",
+    description: "Executa uma única passagem governada no Agent Mesh do Vigia para Elus VendaERP → Pedido → Pessoa → contato → NFe → DANFE. O VendaERP permanece GET-only; para no preview, não envia WhatsApp, não expõe credenciais/PII/XML e impede repetição real por receipt.",
     inputSchema: {
       target: targetField,
       conversation_id: z.string().uuid().describe("Conversation ID opaco do Elus (UUID)"),
@@ -691,44 +726,14 @@ const TOOL_DEFS: ToolDef[] = [
       const t=resolveTarget(args.target);
       requireOperator(t);
       requireSemanticCapability(t,"elus.vendaerp_danfe_canary_readonly");
-      const payload={
+      const value=await agentJson(t,"elus.vendaerp_danfe_canary_readonly",{
+        config:requireElusDanfeCanaryConfig(),
         conversationId:String(args.conversation_id),
         pedidoCodigo:Number(args.pedido_codigo),
-      };
-      const endpointId=env.ELUS_DANFE_CANARY_PORTAINER_ENDPOINT_ID;
-      if(endpointId!==ELUS_DANFE_CANARY_PORTAINER_ENDPOINT_ID){
-        throw new OpsError(
-          "CAPABILITY_DENIED",
-          "canário Elus exige o Portainer Vigia no endpoint 3",
-        );
-      }
-      let config;
-      try{
-        config=parseElusDanfeCanaryConfig({
-          sourceContainer:env.ELUS_DANFE_CANARY_SOURCE_CONTAINER,
-          image:env.ELUS_DANFE_CANARY_IMAGE,
-          revision:env.ELUS_DANFE_CANARY_REVISION,
-          candidateName:env.ELUS_DANFE_CANARY_CONTAINER_NAME,
-          receiptName:env.ELUS_DANFE_CANARY_RECEIPT_NAME,
-          network:env.ELUS_DANFE_CANARY_NETWORK,
-        });
-      }catch{
-        throw new OpsError("CAPABILITY_DENIED","configuração control-plane do canário Elus é inválida");
-      }
-      if(!config) throw new OpsError("CAPABILITY_DENIED","canário Elus via Portainer Vigia não está configurado");
-      const execution=await executeElusDanfeCanaryOnce({
-        request:(method,path,body,options)=>portainerDockerRequest({
-          endpointId,
-          baseUrl:ELUS_DANFE_CANARY_PORTAINER_ORIGIN,
-          apiKeyFile:ELUS_DANFE_CANARY_PORTAINER_API_KEY_FILE,
-          method,
-          path,
-          body,
-          timeoutMs:options?.timeoutMs,
-          maxBytes:options?.maxBytes,
-        }),
-      },config,payload);
-      return {target:t.id,...execution.result,replayed:execution.replayed};
+      },150_000);
+      const result=value.result;
+      if(!result||typeof result!=="object"||Array.isArray(result)) throw new OpsError("REMOTE_COMMAND_FAILED","resultado sanitizado do canário Elus inválido");
+      return {target:t.id,...(result as Record<string,unknown>),replayed:value.replayed===true};
     },
   },
 

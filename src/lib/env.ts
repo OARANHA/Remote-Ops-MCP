@@ -45,8 +45,8 @@ const EnvSchema = z.object({
   PORTAINER_API_KEY_FILE: z.string().default("/app/secrets/portainer_api_key"),
   PORTAINER_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120_000).default(20_000),
 
-  // Optional control-plane execution path for the governed Elus DANFE canary.
-  ELUS_DANFE_CANARY_PORTAINER_ENDPOINT_ID: z.coerce.number().int().positive().optional(),
+  // Non-secret canary artifact configuration. Execution happens on the target agent;
+  // the Portainer credential never belongs to the control plane.
   ELUS_DANFE_CANARY_SOURCE_CONTAINER: z.string().optional(),
   ELUS_DANFE_CANARY_IMAGE: z.string().optional(),
   ELUS_DANFE_CANARY_REVISION: z.string().optional(),

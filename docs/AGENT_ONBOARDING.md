@@ -109,6 +109,24 @@ target_agent_apply(...)
 
 O target dinâmico é persistido em `/app/data/dynamic-targets.json` e sobreposto ao registry estático em memória. Targets estáticos não podem ser sobrescritos por esse mecanismo.
 
+### Integrações permanentes: use o target permanente do host
+
+Depois do pairing e do onboarding inicial, o fluxo normal não deve recriar targets para cada operação.
+O target permanente do host recebe apenas as capabilities semânticas das aplicações instaladas nele.
+
+Exemplo: no Vigia, `vigia-agent` pode receber `elus.vendaerp_danfe_canary_readonly` na sua
+`allowedSemanticCapabilities`. A capability executa localmente no mesmo device.
+
+Um target adicional específico da aplicação continua possível quando houver necessidade real de
+isolamento de autoridade, mas é opcional; não faz parte do caminho feliz de operação.
+
+Credenciais da aplicação não pertencem ao control plane. O agent mantém secrets locais persistentes
+no diretório de estado do próprio Agent Mesh, protegido para `ops-mcp`, e a capability lê o secret
+somente no host gerenciado.
+
+O target dinâmico permanece útil para bootstrap, laboratório e autoridade temporária, não para cada
+chamada de uma integração permanente.
+
 O preset `operator-workspace` libera apenas:
 
 - escrita/processos em `/opt/wandora/ops-workspace`;

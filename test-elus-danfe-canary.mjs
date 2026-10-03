@@ -3,10 +3,13 @@ import fs from "node:fs";
 
 import {
   ELUS_DANFE_CANARY_CAPABILITY,
-  ELUS_DANFE_CANARY_PORTAINER_API_KEY_FILE,
-  ELUS_DANFE_CANARY_PORTAINER_ENDPOINT_ID,
-  ELUS_DANFE_CANARY_PORTAINER_ORIGIN,
+  ELUS_DANFE_CANARY_CANDIDATE_NAME,
+  ELUS_DANFE_CANARY_LOCAL_PORTAINER_API_KEY_FILE,
+  ELUS_DANFE_CANARY_NETWORK,
+  ELUS_DANFE_CANARY_RECEIPT_NAME,
   ELUS_DANFE_CANARY_REPOSITORY,
+  ELUS_DANFE_CANARY_SOURCE_CONTAINER,
+  ELUS_DANFE_CANARY_STACK_NAME,
   buildElusDanfeCanaryEnv,
   decodeElusDanfeCanaryReceipt,
   elusDanfeCanaryScopeSha256,
@@ -22,9 +25,12 @@ const digest = "sha256:" + "7".repeat(64);
 const image = ELUS_DANFE_CANARY_REPOSITORY + "@" + digest;
 
 assert.equal(ELUS_DANFE_CANARY_CAPABILITY, "elus.vendaerp_danfe_canary_readonly");
-assert.equal(ELUS_DANFE_CANARY_PORTAINER_ORIGIN, "https://ops-vigia.wandora.com.br");
-assert.equal(ELUS_DANFE_CANARY_PORTAINER_ENDPOINT_ID, 3);
-assert.equal(ELUS_DANFE_CANARY_PORTAINER_API_KEY_FILE, "/app/secrets/portainer_vigia_api_key");
+assert.equal(ELUS_DANFE_CANARY_LOCAL_PORTAINER_API_KEY_FILE, "/var/lib/wandora-ops-agent/secrets/portainer_api_key");
+assert.equal(ELUS_DANFE_CANARY_STACK_NAME, "elus");
+assert.equal(ELUS_DANFE_CANARY_SOURCE_CONTAINER, "elus-app");
+assert.equal(ELUS_DANFE_CANARY_CANDIDATE_NAME, "wandora-elus-danfe-canary-once");
+assert.equal(ELUS_DANFE_CANARY_RECEIPT_NAME, "wandora-elus-danfe-canary-receipt");
+assert.equal(ELUS_DANFE_CANARY_NETWORK, "bridge");
 
 const payload = normalizeElusDanfeCanaryPayload({
   conversationId: "11111111-1111-4111-8111-111111111111",
@@ -165,13 +171,34 @@ assert.notEqual(
 );
 
 const toolsSource = fs.readFileSync("src/tools/index.ts", "utf8");
-assert.equal(toolsSource.includes("baseUrl:ELUS_DANFE_CANARY_PORTAINER_ORIGIN"), true);
-assert.equal(toolsSource.includes("apiKeyFile:ELUS_DANFE_CANARY_PORTAINER_API_KEY_FILE"), true);
-assert.equal(toolsSource.includes('agentJson(t,"elus.vendaerp_danfe_canary_readonly"'), false);
+assert.equal(toolsSource.includes('agentJson(t,"elus.vendaerp_danfe_canary_preflight"'), true);
+assert.equal(toolsSource.includes('agentJson(t,"elus.vendaerp_danfe_canary_readonly"'), true);
+assert.equal(toolsSource.includes("portainer_vigia_api_key"), false);
+assert.equal(toolsSource.includes("ops-vigia.wandora.com.br"), false);
+
+const agentSource = fs.readFileSync("src/agent/elus-danfe-local.ts", "utf8");
+assert.equal(agentSource.includes('const LOCAL_PORTAINER_HOST = "127.0.0.1"'), true);
+assert.equal(agentSource.includes("rejectUnauthorized: false"), true);
+assert.equal(agentSource.includes('"/api/stacks"'), true);
+assert.equal(agentSource.includes("ELUS_DANFE_CANARY_STACK_NAME"), true);
+assert.equal(agentSource.includes("DOCKER_HOST"), false);
+assert.equal(agentSource.includes("23751"), false);
+assert.equal(agentSource.includes("X-API-Key"), true);
+assert.equal(agentSource.includes("PORTAINER_ENDPOINT_ID"), false);
+assert.equal(agentSource.includes("PORTAINER_STACK_ID"), false);
+
+const operationsSource = fs.readFileSync("src/agent/operations.ts", "utf8");
+const elusStart = operationsSource.indexOf("async function executeElusDanfeCanaryOperation");
+const elusEnd = operationsSource.indexOf("async function executePaperclipSemanticOperation", elusStart);
+const elusBlock = operationsSource.slice(elusStart, elusEnd);
+assert.equal(elusBlock.includes("docker_read_proxy_required"), false);
+assert.equal(elusBlock.includes("127.0.0.1:23751"), false);
+assert.equal(elusBlock.includes("Promise.race"), false);
 
 const compose = fs.readFileSync("docker-compose.portainer.yml", "utf8");
+assert.equal(compose.includes("ELUS_DANFE_CANARY_PORTAINER_ENDPOINT_ID"), false);
+const proxyBlock = compose.split("remote-ops-docker-read-proxy:")[1] ?? "";
 for (const name of [
-  "ELUS_DANFE_CANARY_PORTAINER_ENDPOINT_ID",
   "ELUS_DANFE_CANARY_SOURCE_CONTAINER",
   "ELUS_DANFE_CANARY_IMAGE",
   "ELUS_DANFE_CANARY_REVISION",
@@ -179,7 +206,7 @@ for (const name of [
   "ELUS_DANFE_CANARY_RECEIPT_NAME",
   "ELUS_DANFE_CANARY_NETWORK",
 ]) {
-  assert.equal(compose.includes(name), true, name + " must be wired into docker-read-proxy");
+  assert.equal(proxyBlock.includes(name), false, name + " must not be wired into docker-read-proxy");
 }
 
 console.log("ELUS_DANFE_CANARY_CONTRACT=GREEN");

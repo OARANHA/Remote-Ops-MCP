@@ -148,6 +148,7 @@ ensure_agent_user() {
   fi
 
   install -d -o "$AGENT_USER" -g "$AGENT_GROUP" -m 0700 "$STATE_DIR"
+  install -d -o "$AGENT_USER" -g "$AGENT_GROUP" -m 0700 "$STATE_DIR/secrets"
   ok "Restricted service user ready"
 }
 

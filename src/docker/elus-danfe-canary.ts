@@ -2,9 +2,12 @@ import crypto from "node:crypto";
 
 export const ELUS_DANFE_CANARY_CAPABILITY = "elus.vendaerp_danfe_canary_readonly";
 export const ELUS_DANFE_CANARY_REPOSITORY = "ghcr.io/oaranha/elus-danfe-canary";
-export const ELUS_DANFE_CANARY_PORTAINER_ORIGIN = "https://ops-vigia.wandora.com.br";
-export const ELUS_DANFE_CANARY_PORTAINER_ENDPOINT_ID = 3;
-export const ELUS_DANFE_CANARY_PORTAINER_API_KEY_FILE = "/app/secrets/portainer_vigia_api_key";
+export const ELUS_DANFE_CANARY_LOCAL_PORTAINER_API_KEY_FILE = "/var/lib/wandora-ops-agent/secrets/portainer_api_key";
+export const ELUS_DANFE_CANARY_STACK_NAME = "elus";
+export const ELUS_DANFE_CANARY_SOURCE_CONTAINER = "elus-app";
+export const ELUS_DANFE_CANARY_CANDIDATE_NAME = "wandora-elus-danfe-canary-once";
+export const ELUS_DANFE_CANARY_RECEIPT_NAME = "wandora-elus-danfe-canary-receipt";
+export const ELUS_DANFE_CANARY_NETWORK = "bridge";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SHA256_RE = /^sha256:[a-f0-9]{64}$/;
