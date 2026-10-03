@@ -41,5 +41,26 @@ jobs:
       - run: node test-postgres-readback-proxy.mjs
       - run: node test-elus-danfe-canary.mjs
       - run: node test-elus-danfe-canary-runtime.mjs
+      - name: Smoke pinned Elus DANFE canary runtime
+        run: |
+          set -euo pipefail
+          image="ghcr.io/oaranha/elus-danfe-canary@sha256:73e1b7566185e9ad0844f71618929b10314d30e0494e218aab16f0ccf1a92529"
+          docker pull "$image"
+          set +e
+          output="$(docker run --rm \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --network none \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=33554432 \
+            --memory 512m \
+            --pids-limit 128 \
+            -e HOME=/tmp \
+            -e TMPDIR=/tmp \
+            "$image" 2>&1)"
+          code=$?
+          set -e
+          test "$code" -eq 2
+          test "$(printf '%s\n' "$output" | tail -n 1)" = '{"ok":false,"code":"invalid_scope"}'
       - name: Build production image
         run: docker build -t remote-ops-mcp:ci .
