@@ -21,6 +21,7 @@ grep -q 'ProtectHome=yes' install-agent.sh
 grep -q 'CapabilityBoundingSet=' install-agent.sh
 grep -q 'AmbientCapabilities=' install-agent.sh
 grep -q 'ReadWritePaths=$STATE_DIR' install-agent.sh
+grep -q 'install -d -o "$AGENT_USER" -g "$AGENT_GROUP" -m 0700 "$STATE_DIR/secrets"' install-agent.sh
 grep -q 'Next: create/associate a Target Registry entry' install-agent.sh
 grep -q 'install-agent-exec-broker.sh' install-agent.sh
 grep -q 'WANDORA_EXEC_BROKER_SOCKET' install-agent.sh

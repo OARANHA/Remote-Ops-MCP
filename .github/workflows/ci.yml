@@ -39,5 +39,37 @@ jobs:
       - run: node test-managed-admin-control-plane-e2e.mjs
       - run: node test-postgres-readback.mjs
       - run: node test-postgres-readback-proxy.mjs
+      - run: node test-elus-danfe-canary.mjs
+      - run: node test-elus-danfe-canary-runtime.mjs
+      - name: Smoke pinned Elus DANFE canary runtime
+        run: |
+          set -euo pipefail
+          image="ghcr.io/oaranha/elus-danfe-canary@sha256:da5d041d72b98a99afba0e1a27f7b897b9f80357007cf2b7a6ebc8ce6f78ef38"
+          docker pull "$image"
+          set +e
+          output="$(docker run --rm \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --network none \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=33554432 \
+            --memory 512m \
+            --pids-limit 128 \
+            -e HOME=/tmp \
+            -e TMPDIR=/tmp \
+            -e TSX_DISABLE_CACHE=1 \
+            "$image" \
+            node \
+            --import \
+            tsx \
+            /app/scripts/elus-vendaerp-danfe-canary.ts 2>&1)"
+          code=$?
+          set -e
+          printf 'canary_smoke_exit=%s\n' "$code"
+          if ! printf '%s\n' "$output" | grep -Fx '{"ok":false,"code":"invalid_scope"}'; then
+            printf '%s\n' "$output"
+            exit 1
+          fi
+          test "$code" -ne 0
       - name: Build production image
         run: docker build -t remote-ops-mcp:ci .

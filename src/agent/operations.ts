@@ -4,6 +4,7 @@ import { denySecretPath } from "../security/paths.js";
 import { callExecBroker } from "./exec-broker-client.js";
 import { callManagedAdminBroker } from "./managed-admin-broker-client.js";
 import { normalizeManagedAdminTicket } from "../privileged/managed-admin-ticket.js";
+import { executeElusDanfeCanaryAgent, preflightElusDanfeCanaryAgent } from "./elus-danfe-local.js";
 
 export interface AgentOperation {
   op: string;
@@ -244,6 +245,35 @@ async function executePostgresPinnedReadbackOperation(x: AgentOperation, opts?: 
   } finally { clearTimeout(timer); }
 }
 
+async function executeElusDanfeCanaryOperation(x: AgentOperation, _opts?: ExecOptions): Promise<ExecResult> {
+  const started=Date.now();
+  try{
+    const execution=await executeElusDanfeCanaryAgent(x.args??{});
+    return {
+      code:0,
+      stdout:JSON.stringify({result:execution.result,replayed:execution.replayed}),
+      stderr:"",
+      durationMs:Date.now()-started,
+      truncated:false,
+      timedOut:false,
+    };
+  }catch(e){
+    const message=e instanceof Error?e.message:String(e);
+    return {code:1,stdout:"",stderr:message,durationMs:Date.now()-started,truncated:false,timedOut:false};
+  }
+}
+
+async function executeElusDanfeCanaryPreflightOperation(x: AgentOperation, _opts?: ExecOptions): Promise<ExecResult> {
+  const started=Date.now();
+  try{
+    const result=await preflightElusDanfeCanaryAgent(x.args??{});
+    return {code:0,stdout:JSON.stringify(result),stderr:"",durationMs:Date.now()-started,truncated:false,timedOut:false};
+  }catch(e){
+    const message=e instanceof Error?e.message:String(e);
+    return {code:1,stdout:"",stderr:message,durationMs:Date.now()-started,truncated:false,timedOut:false};
+  }
+}
+
 async function executePaperclipSemanticOperation(x: AgentOperation, opts?: ExecOptions): Promise<ExecResult> {
   const dockerHost=process.env.DOCKER_HOST;
   if(dockerHost!=="tcp://127.0.0.1:23751") throw new Error("docker_read_proxy_required");
@@ -284,6 +314,8 @@ async function executePaperclipSemanticOperation(x: AgentOperation, opts?: ExecO
 export async function executeAgentOperation(x: AgentOperation, opts?: ExecOptions): Promise<ExecResult> {
   if (x.op === "host.managed_admin") return executeManagedAdminOperation(x, opts);
   if (x.op === "postgres.pinned_readback") return executePostgresPinnedReadbackOperation(x, opts);
+  if (x.op === "elus.vendaerp_danfe_canary_preflight") return executeElusDanfeCanaryPreflightOperation(x, opts);
+  if (x.op === "elus.vendaerp_danfe_canary_readonly") return executeElusDanfeCanaryOperation(x, opts);
   if (x.op.startsWith("paperclip.")) return executePaperclipSemanticOperation(x, opts);
   if (["docker.exec","docker.action","docker.image_load","docker.candidate_run","docker.candidate_remove"].includes(x.op)) return executeDockerOperatorOperation(x, opts);
   if (x.op.startsWith("workspace.") || x.op.startsWith("process.")) {

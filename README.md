@@ -64,9 +64,11 @@ This keeps `ops-mcp` outside `sudo` and the Docker group. Instead it installs `w
 
 Pairing creates a device identity; it does **not** automatically create a Target Registry entry or grant Docker/sudo/operator authority. After pairing, the MCP can prepare a dynamic Agent Mesh target with `target_agent_prepare`; the user explicitly echoes `APPROVE adm_...` in chat; then `target_agent_apply` persists the target overlay under `/app/data` and reloads it in memory **without restarting the control plane or modifying static targets**. See [`docs/AGENT_ONBOARDING.md`](docs/AGENT_ONBOARDING.md).
 
+Dynamic targets are intended for bootstrap, experiments and temporary authority. Long-lived application integrations should normally add their semantic capabilities to the **permanent target of the already paired host**; a separate application target is optional when stricter isolation is useful. Application credentials stay on the managed host under the agent state directory and semantic operations execute locally through Agent Mesh; the control plane should not become a cross-host secret store.
+
 ## Read-only tools
 
-The server currently exposes 51 capability-scoped tools. Read-only tools remain available to observation targets; mutation tools require an explicit `operator` target.
+The server currently exposes 56 capability-scoped tools. Read-only tools remain available to observation targets; mutation tools require an explicit `operator` target.
 
 | Group | Tools |
 |---|---|
@@ -81,6 +83,7 @@ The server currently exposes 51 capability-scoped tools. Read-only tools remain 
 | Process operator | `start_process`, `read_process_output`, `send_process_input`, `kill_process`, `list_processes` |
 | Docker operator | `docker_exec`, `docker_action` |
 | PostgreSQL semantic readback | `postgres_pinned_verifier_readback` |
+| Elus semantic | `elus_vendaerp_danfe_canary_preflight`, `elus_vendaerp_danfe_canary_readonly` |
 | Managed admin | `host_admin_prepare`, `host_admin_apply` |
 | systemd operator | `service_action` |
 

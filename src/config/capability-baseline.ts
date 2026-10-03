@@ -1,7 +1,7 @@
 import { MANAGED_ADMIN_CAPABILITY, MANAGED_ADMIN_DEFAULT_CWDS, MANAGED_ADMIN_DEFAULT_PROGRAMS } from "../privileged/managed-admin-policy.js";
 import type { TargetConfig } from "./targets.js";
 
-export type AgentTargetPreset = "operator-workspace" | "read-only" | "postgres-readback" | "managed-admin";
+export type AgentTargetPreset = "operator-workspace" | "read-only" | "postgres-readback" | "elus-danfe-canary" | "managed-admin";
 
 export const AGENT_WORKSPACE_ROOT = "/opt/wandora/ops-workspace";
 
@@ -96,6 +96,20 @@ export function buildAgentTargetFromPreset(input: {
       allowedProcessCwds: [],
       allowedProcessPrograms: [],
       allowedSemanticCapabilities: ["postgres.pinned_readback"],
+    };
+  }
+
+  if (input.preset === "elus-danfe-canary") {
+    return {
+      ...base,
+      capabilityProfile: "operator",
+      allowedPaths: [],
+      allowedServices: [],
+      allowedServiceActions: [],
+      allowedWritePaths: [],
+      allowedProcessCwds: [],
+      allowedProcessPrograms: [],
+      allowedSemanticCapabilities: ["elus.vendaerp_danfe_canary_readonly"],
     };
   }
 

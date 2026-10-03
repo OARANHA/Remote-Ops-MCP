@@ -93,24 +93,35 @@ async function readBody(req: IncomingMessage, max=128*1024): Promise<Buffer> {
   }
   return Buffer.concat(chunks);
 }
-function dockerRequest(method: string, reqPath: string, body?: Buffer, contentType = "application/json"): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: Buffer }> {
+function dockerRequestWithOptions(
+  method: string,
+  reqPath: string,
+  body?: Buffer,
+  contentType = "application/json",
+  options: { timeoutMs?: number; maxBytes?: number } = {},
+): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: Buffer }> {
   return new Promise((resolve, reject) => {
     const headers:Record<string,string|number>={host:"docker"};
     if(body){headers["content-type"]=contentType;headers["content-length"]=body.length;}
+    const maxBytes=Math.min(Math.max(options.maxBytes??MAX_BYTES,64*1024),8*1024*1024);
+    const timeoutMs=Math.min(Math.max(options.timeoutMs??30000,1000),180000);
     const r = http.request({ socketPath: SOCKET, path: reqPath, method, headers }, (u) => {
       const chunks: Buffer[] = []; let total = 0;
       u.on("data", (chunk: Buffer) => {
         total += chunk.length;
-        if (total > MAX_BYTES) { r.destroy(new Error("upstream_response_too_large")); return; }
+        if (total > maxBytes) { r.destroy(new Error("upstream_response_too_large")); return; }
         chunks.push(chunk);
       });
       u.on("end", () => resolve({ status: u.statusCode ?? 502, headers: u.headers, body: Buffer.concat(chunks) }));
     });
-    r.setTimeout(30000, () => r.destroy(new Error("upstream_timeout")));
+    r.setTimeout(timeoutMs, () => r.destroy(new Error("upstream_timeout")));
     r.on("error", reject);
     if(body) r.write(body);
     r.end();
   });
+}
+function dockerRequest(method: string, reqPath: string, body?: Buffer, contentType = "application/json"): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: Buffer }> {
+  return dockerRequestWithOptions(method,reqPath,body,contentType);
 }
 function dockerFileRequest(reqPath:string,filePath:string):Promise<{status:number;headers:http.IncomingHttpHeaders;body:Buffer}>{
   return new Promise((resolve,reject)=>{

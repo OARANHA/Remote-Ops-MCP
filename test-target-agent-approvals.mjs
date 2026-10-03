@@ -131,6 +131,29 @@ try {
   assert.deepEqual(postgresTarget.allowedProcessPrograms, []);
   assert.deepEqual(postgresTarget.allowedWritePaths, []);
 
+  const preparedElusCanary = approvals.prepareAgentTarget({
+    actor: "test-actor",
+    targetId: "vigia-elus-danfe-canary",
+    deviceId,
+    environment: "production",
+    preset: "elus-danfe-canary",
+  });
+  const appliedElusCanary = approvals.applyAgentTargetApproval({
+    actor: "test-actor",
+    approvalId: preparedElusCanary.approval_id,
+    confirmation: `APPROVE ${preparedElusCanary.approval_id}`,
+  });
+  assert.equal(appliedElusCanary.applied, true);
+  const elusCanaryTarget = targets.getTarget("vigia-elus-danfe-canary");
+  assert.ok(elusCanaryTarget);
+  assert.equal(elusCanaryTarget.capabilityProfile, "operator");
+  assert.deepEqual(elusCanaryTarget.allowedSemanticCapabilities, ["elus.vendaerp_danfe_canary_readonly"]);
+  assert.deepEqual(elusCanaryTarget.allowedDockerContainers, []);
+  assert.deepEqual(elusCanaryTarget.allowedDockerExecContainers, []);
+  assert.deepEqual(elusCanaryTarget.allowedDockerActions, []);
+  assert.deepEqual(elusCanaryTarget.allowedProcessPrograms, []);
+  assert.deepEqual(elusCanaryTarget.allowedWritePaths, []);
+
   assert.throws(
     () => approvals.prepareAgentTarget({
       actor: "test-actor",

@@ -44,6 +44,15 @@ const EnvSchema = z.object({
     .default("https://portainer.wandora.com.br"),
   PORTAINER_API_KEY_FILE: z.string().default("/app/secrets/portainer_api_key"),
   PORTAINER_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120_000).default(20_000),
+
+  // Non-secret canary artifact configuration. Execution happens on the target agent;
+  // the Portainer credential never belongs to the control plane.
+  ELUS_DANFE_CANARY_SOURCE_CONTAINER: z.string().optional(),
+  ELUS_DANFE_CANARY_IMAGE: z.string().optional(),
+  ELUS_DANFE_CANARY_REVISION: z.string().optional(),
+  ELUS_DANFE_CANARY_CONTAINER_NAME: z.string().optional(),
+  ELUS_DANFE_CANARY_RECEIPT_NAME: z.string().optional(),
+  ELUS_DANFE_CANARY_NETWORK: z.string().optional(),
 });
 
 export const env = EnvSchema.parse(process.env);
