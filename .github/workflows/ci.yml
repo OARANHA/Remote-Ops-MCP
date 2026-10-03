@@ -52,7 +52,7 @@ jobs:
             --cap-drop ALL \
             --security-opt no-new-privileges:true \
             --network none \
-            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=33554432 \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=33554432 \
             --memory 512m \
             --pids-limit 128 \
             -e HOME=/tmp \
@@ -66,7 +66,10 @@ jobs:
           code=$?
           set -e
           printf 'canary_smoke_exit=%s\\n' "$code"
-          printf '%s\\n' "$output" | grep -Fx '{"ok":false,"code":"invalid_scope"}'
+          if ! printf '%s\\n' "$output" | grep -Fx '{"ok":false,"code":"invalid_scope"}'; then
+            printf '%s\\n' "$output"
+            exit 1
+          fi
           test "$code" -ne 0
       - name: Build production image
         run: docker build -t remote-ops-mcp:ci .
