@@ -19,6 +19,13 @@ O Remote-Ops apenas orquestra uma imagem já qualificada por CI e pinada por
 digest imutável. O caller não escolhe imagem, container de origem, rede, comando
 nem variáveis de ambiente.
 
+A autoridade Docker deste canário é ainda mais estreita: a origem Portainer é
+pinada em `https://ops-vigia.wandora.com.br`, o endpoint esperado é `3` e a
+credencial vem exclusivamente de `/app/secrets/portainer_vigia_api_key`. As
+tools gerais de Portainer continuam usando `https://portainer.wandora.com.br`
+e sua credencial própria. Ausência ou divergência dessa configuração falha
+fechado; não há fallback do canário para Agent Mesh/Docker local.
+
 ## Efeitos permitidos
 
 - VendaERP: **somente GET**;
