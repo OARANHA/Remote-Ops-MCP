@@ -261,6 +261,93 @@ export function encodeElusDanfeCanaryReceipt(result: Record<string, unknown>): s
   return encoded;
 }
 
+function validateSanitizedElusDanfeCanaryResult(value: unknown): Record<string, unknown> {
+  const input = asRecord(value);
+  if (input.ok === false) {
+    const code = String(input.code ?? "");
+    if (!FAILURE_CODES.has(code) || input.whatsapp_sent !== false || input.vendaerp_writes !== 0) {
+      throw new Error("invalid_canary_receipt");
+    }
+    return { ok: false, code, whatsapp_sent: false, vendaerp_writes: 0 };
+  }
+  if (input.ok !== true) throw new Error("invalid_canary_receipt");
+
+  const pedidoCodigo = Number(input.pedido_codigo);
+  const nfeNumero = Number(input.nfe_numero);
+  const danfeSizeBytes = Number(input.danfe_size_bytes);
+  const previewHttpStatus = Number(input.preview_http_status);
+  const previewExpiresSeconds = Number(input.preview_expires_seconds);
+  const evidenceRaw = input.identity_evidence;
+
+  if (
+    !Number.isSafeInteger(pedidoCodigo) ||
+    pedidoCodigo < 1 ||
+    !Number.isSafeInteger(nfeNumero) ||
+    nfeNumero < 1 ||
+    !Number.isSafeInteger(danfeSizeBytes) ||
+    danfeSizeBytes < 5 ||
+    danfeSizeBytes > 50 * 1024 * 1024 ||
+    !Number.isInteger(previewHttpStatus) ||
+    previewHttpStatus < 200 ||
+    previewHttpStatus > 299 ||
+    !Number.isInteger(previewExpiresSeconds) ||
+    previewExpiresSeconds < 1 ||
+    previewExpiresSeconds > 3600 ||
+    !Array.isArray(evidenceRaw) ||
+    evidenceRaw.length < 1 ||
+    evidenceRaw.length > 3
+  ) {
+    throw new Error("invalid_canary_receipt");
+  }
+
+  const allowedEvidence = new Set(["cpf", "email", "telefone"]);
+  const identityEvidence = evidenceRaw.map((x) => String(x));
+  if (
+    identityEvidence.some((x) => !allowedEvidence.has(x)) ||
+    new Set(identityEvidence).size !== identityEvidence.length ||
+    !Array.isArray(input.provider_calls) ||
+    input.provider_calls.length !== PROVIDER_CALLS.length
+  ) {
+    throw new Error("invalid_canary_receipt");
+  }
+  for (let i = 0; i < PROVIDER_CALLS.length; i++) {
+    if (input.provider_calls[i] !== PROVIDER_CALLS[i]) throw new Error("invalid_canary_receipt");
+  }
+
+  for (const flag of [
+    "pedido_localizado",
+    "pessoa_confirmada",
+    "contato_confirmado",
+    "nfe_confirmada",
+    "danfe_valido",
+    "preview_pronto",
+  ]) {
+    if (input[flag] !== true) throw new Error("invalid_canary_receipt");
+  }
+  if (input.whatsapp_sent !== false || input.vendaerp_writes !== 0) {
+    throw new Error("invalid_canary_receipt");
+  }
+
+  return {
+    ok: true,
+    pedido_codigo: pedidoCodigo,
+    nfe_numero: nfeNumero,
+    identity_evidence: identityEvidence,
+    provider_calls: [...PROVIDER_CALLS],
+    pedido_localizado: true,
+    pessoa_confirmada: true,
+    contato_confirmado: true,
+    nfe_confirmada: true,
+    danfe_valido: true,
+    danfe_size_bytes: danfeSizeBytes,
+    preview_pronto: true,
+    preview_http_status: previewHttpStatus,
+    preview_expires_seconds: previewExpiresSeconds,
+    whatsapp_sent: false,
+    vendaerp_writes: 0,
+  };
+}
+
 export function decodeElusDanfeCanaryReceipt(encoded: unknown): Record<string, unknown> {
   const text = String(encoded ?? "");
   if (!/^[A-Za-z0-9_-]{1,4096}$/.test(text)) throw new Error("invalid_canary_receipt");
@@ -270,5 +357,5 @@ export function decodeElusDanfeCanaryReceipt(encoded: unknown): Record<string, u
   } catch {
     throw new Error("invalid_canary_receipt");
   }
-  return sanitizeElusDanfeCanaryResult(parsed);
+  return validateSanitizedElusDanfeCanaryResult(parsed);
 }
