@@ -14,7 +14,12 @@ import { redactText, redactObject } from "../security/redact.js";
 import type { ExecResult } from "../ssh/pool.js";
 import { effectiveTargetEnabled } from "../state/store.js";
 import { portainerStatus, portainerEndpoints, portainerStacks, portainerStack, updatePortainerStackEnv, redeployPortainerGitStack, createPortainerGitStack, startPortainerStack, stopPortainerStack, deletePortainerStack, portainerDockerRequest } from "../portainer/client.js";
-import { parseElusDanfeCanaryConfig } from "../docker/elus-danfe-canary.js";
+import {
+  ELUS_DANFE_CANARY_PORTAINER_API_KEY_FILE,
+  ELUS_DANFE_CANARY_PORTAINER_ENDPOINT_ID,
+  ELUS_DANFE_CANARY_PORTAINER_ORIGIN,
+  parseElusDanfeCanaryConfig,
+} from "../docker/elus-danfe-canary.js";
 import { executeElusDanfeCanaryOnce } from "../docker/elus-danfe-canary-runtime.js";
 
 /**
@@ -691,40 +696,39 @@ const TOOL_DEFS: ToolDef[] = [
         pedidoCodigo:Number(args.pedido_codigo),
       };
       const endpointId=env.ELUS_DANFE_CANARY_PORTAINER_ENDPOINT_ID;
-      if(endpointId!==undefined){
-        let config;
-        try{
-          config=parseElusDanfeCanaryConfig({
-            sourceContainer:env.ELUS_DANFE_CANARY_SOURCE_CONTAINER,
-            image:env.ELUS_DANFE_CANARY_IMAGE,
-            revision:env.ELUS_DANFE_CANARY_REVISION,
-            candidateName:env.ELUS_DANFE_CANARY_CONTAINER_NAME,
-            receiptName:env.ELUS_DANFE_CANARY_RECEIPT_NAME,
-            network:env.ELUS_DANFE_CANARY_NETWORK,
-          });
-        }catch{
-          throw new OpsError("CAPABILITY_DENIED","configuração control-plane do canário Elus é inválida");
-        }
-        if(!config) throw new OpsError("CAPABILITY_DENIED","canário Elus via Portainer não está configurado");
-        const execution=await executeElusDanfeCanaryOnce({
-          request:(method,path,body,options)=>portainerDockerRequest({
-            endpointId,
-            method,
-            path,
-            body,
-            timeoutMs:options?.timeoutMs,
-            maxBytes:options?.maxBytes,
-          }),
-        },config,payload);
-        return {target:t.id,...execution.result,replayed:execution.replayed};
+      if(endpointId!==ELUS_DANFE_CANARY_PORTAINER_ENDPOINT_ID){
+        throw new OpsError(
+          "CAPABILITY_DENIED",
+          "canário Elus exige o Portainer Vigia no endpoint 3",
+        );
       }
-
-      const value=await agentJson(t,"elus.vendaerp_danfe_canary_readonly",payload,125_000);
-      const result=value.result;
-      if(!result||typeof result!=="object"||Array.isArray(result)) {
-        throw new OpsError("REMOTE_COMMAND_FAILED","resposta inválida da capability Elus DANFE canary");
+      let config;
+      try{
+        config=parseElusDanfeCanaryConfig({
+          sourceContainer:env.ELUS_DANFE_CANARY_SOURCE_CONTAINER,
+          image:env.ELUS_DANFE_CANARY_IMAGE,
+          revision:env.ELUS_DANFE_CANARY_REVISION,
+          candidateName:env.ELUS_DANFE_CANARY_CONTAINER_NAME,
+          receiptName:env.ELUS_DANFE_CANARY_RECEIPT_NAME,
+          network:env.ELUS_DANFE_CANARY_NETWORK,
+        });
+      }catch{
+        throw new OpsError("CAPABILITY_DENIED","configuração control-plane do canário Elus é inválida");
       }
-      return {target:t.id,...(result as Record<string,unknown>),replayed:value.replayed===true};
+      if(!config) throw new OpsError("CAPABILITY_DENIED","canário Elus via Portainer Vigia não está configurado");
+      const execution=await executeElusDanfeCanaryOnce({
+        request:(method,path,body,options)=>portainerDockerRequest({
+          endpointId,
+          baseUrl:ELUS_DANFE_CANARY_PORTAINER_ORIGIN,
+          apiKeyFile:ELUS_DANFE_CANARY_PORTAINER_API_KEY_FILE,
+          method,
+          path,
+          body,
+          timeoutMs:options?.timeoutMs,
+          maxBytes:options?.maxBytes,
+        }),
+      },config,payload);
+      return {target:t.id,...execution.result,replayed:execution.replayed};
     },
   },
 
