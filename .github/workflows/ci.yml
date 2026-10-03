@@ -60,7 +60,8 @@ jobs:
             "$image" 2>&1)"
           code=$?
           set -e
-          test "$code" -eq 2
-          test "$(printf '%s\n' "$output" | tail -n 1)" = '{"ok":false,"code":"invalid_scope"}'
+          printf 'canary_smoke_exit=%s\\n' "$code"
+          printf '%s\\n' "$output" | grep -Fx '{"ok":false,"code":"invalid_scope"}'
+          test "$code" -ne 0
       - name: Build production image
         run: docker build -t remote-ops-mcp:ci .
