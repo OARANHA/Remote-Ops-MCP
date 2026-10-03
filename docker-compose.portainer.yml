@@ -41,6 +41,13 @@ services:
       PORTAINER_URL: ${PORTAINER_URL:-https://portainer.wandora.com.br}
       PORTAINER_API_KEY_FILE: /app/secrets/portainer_api_key
       PORTAINER_TIMEOUT_MS: ${PORTAINER_TIMEOUT_MS:-20000}
+      ELUS_DANFE_CANARY_PORTAINER_ENDPOINT_ID: ${ELUS_DANFE_CANARY_PORTAINER_ENDPOINT_ID:-}
+      ELUS_DANFE_CANARY_SOURCE_CONTAINER: ${ELUS_DANFE_CANARY_SOURCE_CONTAINER:-}
+      ELUS_DANFE_CANARY_IMAGE: ${ELUS_DANFE_CANARY_IMAGE:-}
+      ELUS_DANFE_CANARY_REVISION: ${ELUS_DANFE_CANARY_REVISION:-}
+      ELUS_DANFE_CANARY_CONTAINER_NAME: ${ELUS_DANFE_CANARY_CONTAINER_NAME:-wandora-elus-danfe-canary-once}
+      ELUS_DANFE_CANARY_RECEIPT_NAME: ${ELUS_DANFE_CANARY_RECEIPT_NAME:-wandora-elus-danfe-canary-receipt}
+      ELUS_DANFE_CANARY_NETWORK: ${ELUS_DANFE_CANARY_NETWORK:-bridge}
     volumes:
       - ${REMOTE_OPS_HOME:-/opt/remote-ops-mcp}/config:/app/config:ro
       - ${REMOTE_OPS_HOME:-/opt/wandora/stacks/remote-ops-mcp/runtime}/data:/app/data
