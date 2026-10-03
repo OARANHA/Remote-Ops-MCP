@@ -668,6 +668,34 @@ const TOOL_DEFS: ToolDef[] = [
     },
   },
 
+  // ============ Elus VendaERP DANFE governed canary ============
+  {
+    name: "elus_vendaerp_danfe_canary_readonly",
+    description: "Executa uma única passagem governada do canário Elus VendaERP → Pedido → Pessoa → contato → NFe → DANFE. O VendaERP permanece GET-only; a capability para no preview, não envia WhatsApp, não expõe credenciais/PII/XML e impede repetição real por recibo no proxy.",
+    inputSchema: {
+      target: targetField,
+      conversation_id: z.string().uuid().describe("Conversation ID opaco do Elus (UUID)"),
+      pedido_codigo: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    },
+    mutation: true,
+    destructive: false,
+    idempotent: false,
+    run: async (args) => {
+      const t=resolveTarget(args.target);
+      requireOperator(t);
+      requireSemanticCapability(t,"elus.vendaerp_danfe_canary_readonly");
+      const value=await agentJson(t,"elus.vendaerp_danfe_canary_readonly",{
+        conversationId:String(args.conversation_id),
+        pedidoCodigo:Number(args.pedido_codigo),
+      },125_000);
+      const result=value.result;
+      if(!result||typeof result!=="object"||Array.isArray(result)) {
+        throw new OpsError("REMOTE_COMMAND_FAILED","resposta inválida da capability Elus DANFE canary");
+      }
+      return {target:t.id,...(result as Record<string,unknown>),replayed:value.replayed===true};
+    },
+  },
+
   // ============ PostgreSQL pinned semantic readback ============
   {
     name: "postgres_pinned_verifier_readback",
