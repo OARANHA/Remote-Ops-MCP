@@ -52,7 +52,7 @@ jobs:
             --cap-drop ALL \
             --security-opt no-new-privileges:true \
             --network none \
-            --tmpfs /tmp:rw,exec,nosuid,nodev,size=33554432 \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=33554432 \
             --memory 512m \
             --pids-limit 128 \
             -e HOME=/tmp \
