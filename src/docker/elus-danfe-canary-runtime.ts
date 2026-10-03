@@ -300,6 +300,7 @@ export async function executeElusDanfeCanaryOnce(
 
   const createBody = jsonBody({
     Image: config.imageRef,
+    Cmd: ["/app/node_modules/.bin/tsx", "/app/scripts/elus-vendaerp-danfe-canary.ts"],
     Env: [
       ...buildElusDanfeCanaryEnv(sealed, payload),
       "HOME=/tmp",
