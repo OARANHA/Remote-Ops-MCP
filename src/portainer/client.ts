@@ -6,137 +6,32 @@ import { redactObject, redactText } from "../security/redact.js";
 type JsonObject = Record<string, unknown>;
 type EnvVar = { name: string; value: string };
 
-const cachedApiKeys = new Map<string, string>();
+let cachedApiKey: string | undefined;
 
-function resolvedApiKeyFile(customFile?: string): string {
-  if (customFile === undefined) return env.PORTAINER_API_KEY_FILE;
-  const file = customFile.trim();
-  if (
-    !file.startsWith("/app/secrets/") ||
-    file.includes("..") ||
-    /[\r\n\0]/.test(file)
-  ) {
-    throw new OpsError("CAPABILITY_DENIED", "arquivo de credencial Portainer inválido");
-  }
-  return file;
-}
-
-async function apiKey(customFile?: string): Promise<string> {
-  const file = resolvedApiKeyFile(customFile);
-  const cached = cachedApiKeys.get(file);
-  if (cached) return cached;
+async function apiKey(): Promise<string> {
+  if (cachedApiKey) return cachedApiKey;
   let raw: string;
   try {
-    raw = await readFile(file, "utf8");
+    raw = await readFile(env.PORTAINER_API_KEY_FILE, "utf8");
   } catch {
     throw new OpsError(
       "CAPABILITY_DENIED",
       "Portainer API não configurada",
-      `grave o access token somente no secret file autorizado ${file}`,
+      `crie um access token no Portainer e grave-o somente em ${env.PORTAINER_API_KEY_FILE}`,
     );
   }
   const token = raw.trim();
   if (!token || token.length < 16 || /\s/.test(token)) {
     throw new OpsError("CAPABILITY_DENIED", "token do Portainer ausente ou inválido");
   }
-  cachedApiKeys.set(file, token);
+  cachedApiKey = token;
   return token;
 }
 
-function apiUrl(path: string, customBaseUrl?: string): string {
-  const rawBase = (customBaseUrl ?? env.PORTAINER_URL).trim();
-  if (customBaseUrl !== undefined) {
-    let parsed: URL;
-    try {
-      parsed = new URL(rawBase);
-    } catch {
-      throw new OpsError("CAPABILITY_DENIED", "origem Portainer inválida");
-    }
-    if (
-      parsed.protocol !== "https:" ||
-      parsed.username ||
-      parsed.password ||
-      parsed.search ||
-      parsed.hash
-    ) {
-      throw new OpsError("CAPABILITY_DENIED", "origem Portainer inválida");
-    }
-  }
-  const base = rawBase.replace(/\/+$/, "");
+function apiUrl(path: string): string {
+  const base = env.PORTAINER_URL.replace(/\/+$/, "");
   const normalized = path.startsWith("/") ? path : `/${path}`;
   return `${base}/api${normalized}`;
-}
-
-function portainerDockerPath(endpointId: number, dockerPath: string): string {
-  if (!Number.isInteger(endpointId) || endpointId <= 0) {
-    throw new OpsError("INVALID_ARGUMENT", "Portainer endpoint inválido");
-  }
-  if (!dockerPath.startsWith("/") || dockerPath.startsWith("//") || /[\r\n\0]/.test(dockerPath)) {
-    throw new OpsError("INVALID_ARGUMENT", "Docker API path inválido");
-  }
-  return `/endpoints/${endpointId}/docker${dockerPath}`;
-}
-
-export async function portainerDockerRequest(input: {
-  endpointId: number;
-  method: string;
-  path: string;
-  body?: Buffer;
-  timeoutMs?: number;
-  maxBytes?: number;
-  baseUrl?: string;
-  apiKeyFile?: string;
-}): Promise<{ status: number; body: Buffer }> {
-  const credentialFile = resolvedApiKeyFile(input.apiKeyFile);
-  const token = await apiKey(input.apiKeyFile);
-  const timeoutMs = Math.min(Math.max(input.timeoutMs ?? env.PORTAINER_TIMEOUT_MS, 1000), 180_000);
-  const maxBytes = Math.min(Math.max(input.maxBytes ?? 2 * 1024 * 1024, 64 * 1024), 8 * 1024 * 1024);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(apiUrl(portainerDockerPath(input.endpointId, input.path), input.baseUrl), {
-      method: input.method,
-      headers: {
-        Accept: "*/*",
-        "X-API-Key": token,
-        ...(input.body ? { "Content-Type": "application/json" } : {}),
-      },
-      body: input.body,
-      signal: controller.signal,
-    });
-
-    if (response.status === 401 || response.status === 403) cachedApiKeys.delete(credentialFile);
-
-    const chunks: Buffer[] = [];
-    let total = 0;
-    if (response.body) {
-      const reader = response.body.getReader();
-      while (true) {
-        const next = await reader.read();
-        if (next.done) break;
-        const chunk = Buffer.from(next.value);
-        total += chunk.length;
-        if (total > maxBytes) {
-          await reader.cancel();
-          throw new OpsError("REMOTE_COMMAND_FAILED", "resposta Docker via Portainer excedeu o limite");
-        }
-        chunks.push(chunk);
-      }
-    }
-    return { status: response.status, body: Buffer.concat(chunks) };
-  } catch (error) {
-    if (error instanceof OpsError) throw error;
-    if (error instanceof Error && error.name === "AbortError") {
-      throw new OpsError("COMMAND_TIMEOUT", "timeout no Docker API via Portainer");
-    }
-    throw new OpsError(
-      "REMOTE_COMMAND_FAILED",
-      "falha no Docker API via Portainer",
-      error instanceof Error ? redactText(error.message) : undefined,
-    );
-  } finally {
-    clearTimeout(timeout);
-  }
 }
 
 async function requestJson<T = unknown>(
@@ -174,7 +69,7 @@ async function requestJson<T = unknown>(
           ? JSON.stringify(redactObject(payload)).slice(0, 800)
           : String(payload ?? "").slice(0, 800);
       if (response.status === 401 || response.status === 403) {
-        cachedApiKeys.delete(env.PORTAINER_API_KEY_FILE);
+        cachedApiKey = undefined;
         throw new OpsError(
           "CAPABILITY_DENIED",
           `Portainer recusou a credencial (HTTP ${response.status})`,
