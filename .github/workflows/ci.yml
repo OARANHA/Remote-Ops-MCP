@@ -39,5 +39,7 @@ jobs:
       - run: node test-managed-admin-control-plane-e2e.mjs
       - run: node test-postgres-readback.mjs
       - run: node test-postgres-readback-proxy.mjs
+      - run: node test-elus-danfe-canary.mjs
+      - run: node test-elus-danfe-canary-runtime.mjs
       - name: Build production image
         run: docker build -t remote-ops-mcp:ci .
