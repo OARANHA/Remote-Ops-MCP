@@ -4,6 +4,8 @@ import nodePath from "node:path";
 import { denySecretPath } from "../security/paths.js";
 import { buildPostgresPinnedReadbackExec, normalizePostgresPinnedReadbackPayload, parsePostgresVerifierAllowlist } from "./postgres-readback.js";
 import { PAPERCLIP_SEMANTIC_CONTAINER, normalizePaperclipSemanticPayload, paperclipSemanticExecCommand, type PaperclipSemanticOperation } from "./paperclip-semantic.js";
+import { normalizeElusDanfeCanaryPayload, parseElusDanfeCanaryConfig } from "./elus-danfe-canary.js";
+import { executeElusDanfeCanaryOnce } from "./elus-danfe-canary-runtime.js";
 
 const PORT = Number(process.env.PORT ?? 2375);
 const BIND_HOST = process.env.BIND_HOST ?? "0.0.0.0";
@@ -25,6 +27,14 @@ const postgresExecUser = String(process.env.POSTGRES_READBACK_EXEC_USER ?? "post
 const postgresDbUser = String(process.env.POSTGRES_READBACK_DB_USER ?? "postgres").trim();
 const postgresDbName = String(process.env.POSTGRES_READBACK_DB_NAME ?? "postgres").trim();
 const postgresReadbackConfigured = postgresContainer.length > 0 || postgresVerifiers.size > 0;
+const elusDanfeCanaryConfig = parseElusDanfeCanaryConfig({
+  sourceContainer: process.env.ELUS_DANFE_CANARY_SOURCE_CONTAINER,
+  image: process.env.ELUS_DANFE_CANARY_IMAGE,
+  revision: process.env.ELUS_DANFE_CANARY_REVISION,
+  candidateName: process.env.ELUS_DANFE_CANARY_CONTAINER_NAME,
+  receiptName: process.env.ELUS_DANFE_CANARY_RECEIPT_NAME,
+  network: process.env.ELUS_DANFE_CANARY_NETWORK,
+});
 
 if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) throw new Error("invalid PORT");
 if (allowed.size === 0) throw new Error("ALLOWED_DOCKER_CONTAINERS must not be empty");
@@ -93,24 +103,35 @@ async function readBody(req: IncomingMessage, max=128*1024): Promise<Buffer> {
   }
   return Buffer.concat(chunks);
 }
-function dockerRequest(method: string, reqPath: string, body?: Buffer, contentType = "application/json"): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: Buffer }> {
+function dockerRequestWithOptions(
+  method: string,
+  reqPath: string,
+  body?: Buffer,
+  contentType = "application/json",
+  options: { timeoutMs?: number; maxBytes?: number } = {},
+): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: Buffer }> {
   return new Promise((resolve, reject) => {
     const headers:Record<string,string|number>={host:"docker"};
     if(body){headers["content-type"]=contentType;headers["content-length"]=body.length;}
+    const maxBytes=Math.min(Math.max(options.maxBytes??MAX_BYTES,64*1024),8*1024*1024);
+    const timeoutMs=Math.min(Math.max(options.timeoutMs??30000,1000),180000);
     const r = http.request({ socketPath: SOCKET, path: reqPath, method, headers }, (u) => {
       const chunks: Buffer[] = []; let total = 0;
       u.on("data", (chunk: Buffer) => {
         total += chunk.length;
-        if (total > MAX_BYTES) { r.destroy(new Error("upstream_response_too_large")); return; }
+        if (total > maxBytes) { r.destroy(new Error("upstream_response_too_large")); return; }
         chunks.push(chunk);
       });
       u.on("end", () => resolve({ status: u.statusCode ?? 502, headers: u.headers, body: Buffer.concat(chunks) }));
     });
-    r.setTimeout(30000, () => r.destroy(new Error("upstream_timeout")));
+    r.setTimeout(timeoutMs, () => r.destroy(new Error("upstream_timeout")));
     r.on("error", reject);
     if(body) r.write(body);
     r.end();
   });
+}
+function dockerRequest(method: string, reqPath: string, body?: Buffer, contentType = "application/json"): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: Buffer }> {
+  return dockerRequestWithOptions(method,reqPath,body,contentType);
 }
 function dockerFileRequest(reqPath:string,filePath:string):Promise<{status:number;headers:http.IncomingHttpHeaders;body:Buffer}>{
   return new Promise((resolve,reject)=>{
@@ -160,6 +181,39 @@ function demuxDockerStream(body:Buffer):{stdout:string;stderr:string;truncated:b
   }
   if(frames===0) stdout=body.toString("utf8");
   return {stdout,stderr,truncated:false};
+}
+async function handleElusDanfeCanary(req:IncomingMessage,res:ServerResponse,path:string):Promise<boolean>{
+  if(path!=="/ops/elus/vendaerp-danfe-canary-readonly") return false;
+  if(req.method!=="POST"){jsonError(res,405,"method_not_allowed");return true;}
+  if(!elusDanfeCanaryConfig){jsonError(res,403,"elus_danfe_canary_not_configured");return true;}
+
+  let raw:Record<string,unknown>={};
+  try{raw=JSON.parse((await readBody(req,16*1024)).toString("utf8")||"{}") as Record<string,unknown>;}
+  catch{jsonError(res,400,"invalid_json");return true;}
+
+  let payload;
+  try{payload=normalizeElusDanfeCanaryPayload(raw);}
+  catch(e){
+    const code=e instanceof Error&&/^[a-z0-9_]{3,80}$/.test(e.message)?e.message:"invalid_canary_payload";
+    jsonError(res,400,code);return true;
+  }
+
+  try{
+    const execution=await executeElusDanfeCanaryOnce({
+      request:async(method,reqPath,body,options)=>{
+        const value=await dockerRequestWithOptions(method,reqPath,body,"application/json",options);
+        return {status:value.status,body:value.body};
+      },
+    },elusDanfeCanaryConfig,payload);
+    send(res,200,JSON.stringify(execution));
+    return true;
+  }catch(e){
+    const code=e instanceof Error&&/^[a-z0-9_]{3,100}$/.test(e.message)?e.message:"elus_canary_failed";
+    const status=code==="canary_already_consumed"||code==="canary_in_progress"?409:
+      code==="missing_sealed_runtime_env"||code==="elus_source_container_unavailable"?412:502;
+    jsonError(res,status,code);
+    return true;
+  }
 }
 async function handlePostgresPinnedReadback(req:IncomingMessage,res:ServerResponse,path:string):Promise<boolean>{
   if(path!=="/ops/postgres/pinned-verifier") return false;
@@ -336,11 +390,12 @@ async function handleOperator(req:IncomingMessage,res:ServerResponse,path:string
 async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const raw = new URL(req.url ?? "/", "http://localhost");
   const path = stripApiVersion(raw.pathname);
+  if(await handleElusDanfeCanary(req,res,path)) return;
   if(await handlePostgresPinnedReadback(req,res,path)) return;
   if(await handlePaperclipSemantic(req,res,path)) return;
   if(await handleOperator(req,res,path)) return;
   if (req.method !== "GET") return jsonError(res, 405, "method_not_allowed");
-  if (path === "/healthz") return send(res, 200, JSON.stringify({ status: "ok", allowed_containers: allowed.size, exec_containers:execContainers.size, exec_programs:execPrograms.size, docker_actions:[...allowedActions], image_load_roots:imageLoadRoots.size, candidate_image_prefixes:candidateImagePrefixes.size, candidate_networks:[...candidateNetworks], candidate_name_prefixes:[...candidateNamePrefixes], candidate_host_ports:[...candidateHostPorts], candidate_container_ports:[...candidateContainerPorts], postgres_readback_configured:postgresContainer.length>0&&postgresVerifiers.size>0, postgres_verifiers:[...postgresVerifiers.keys()] }));
+  if (path === "/healthz") return send(res, 200, JSON.stringify({ status: "ok", allowed_containers: allowed.size, exec_containers:execContainers.size, exec_programs:execPrograms.size, docker_actions:[...allowedActions], image_load_roots:imageLoadRoots.size, candidate_image_prefixes:candidateImagePrefixes.size, candidate_networks:[...candidateNetworks], candidate_name_prefixes:[...candidateNamePrefixes], candidate_host_ports:[...candidateHostPorts], candidate_container_ports:[...candidateContainerPorts], postgres_readback_configured:postgresContainer.length>0&&postgresVerifiers.size>0, postgres_verifiers:[...postgresVerifiers.keys()], elus_danfe_canary_configured:elusDanfeCanaryConfig!==null }));
   if (path === "/_ping") {
     if (raw.search) return jsonError(res, 400, "query_not_allowed");
     const u = await dockerRequest("GET","/_ping");
