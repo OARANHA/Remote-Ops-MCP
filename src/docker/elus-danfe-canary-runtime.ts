@@ -204,7 +204,12 @@ async function finalizeExistingCandidate(
   }
   if (runningOf(inspect)) throw new Error("canary_in_progress");
 
-  const result = await readCandidateResult(docker, config.candidateName);
+  let result: Record<string, unknown>;
+  try {
+    result = await readCandidateResult(docker, config.candidateName);
+  } catch {
+    result = sanitizeElusDanfeCanaryResult({ ok: false, code: "canary_result_invalid" });
+  }
   await createReceipt(docker, config, scopeSha256, result);
   await removeContainerBestEffort(docker, config.candidateName);
   return { result, replayed: true };
@@ -346,10 +351,21 @@ export async function executeElusDanfeCanaryOnce(
     { timeoutMs: 120_000, maxBytes: 64 * 1024 },
   );
   if (waited.status !== 200) {
-    throw new Error("canary_execution_outcome_unknown");
+    const result = sanitizeElusDanfeCanaryResult({
+      ok: false,
+      code: "canary_execution_outcome_unknown",
+    });
+    await createReceipt(docker, config, scopeSha256, result);
+    await removeContainerBestEffort(docker, config.candidateName);
+    return { result, replayed: false };
   }
 
-  const result = await readCandidateResult(docker, config.candidateName);
+  let result: Record<string, unknown>;
+  try {
+    result = await readCandidateResult(docker, config.candidateName);
+  } catch {
+    result = sanitizeElusDanfeCanaryResult({ ok: false, code: "canary_result_invalid" });
+  }
   await createReceipt(docker, config, scopeSha256, result);
   await removeContainerBestEffort(docker, config.candidateName);
   return { result, replayed: false };
