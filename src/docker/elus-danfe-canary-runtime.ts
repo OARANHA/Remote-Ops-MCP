@@ -322,7 +322,7 @@ export async function executeElusDanfeCanaryOnce(
       SecurityOpt: ["no-new-privileges:true"],
       PidsLimit: 128,
       Memory: 536870912,
-      Tmpfs: { "/tmp": "rw,exec,nosuid,nodev,size=33554432" },
+      Tmpfs: { "/tmp": "rw,noexec,nosuid,nodev,size=33554432" },
     },
   });
   const created = await docker.request(
