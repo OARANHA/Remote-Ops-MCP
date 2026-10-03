@@ -57,8 +57,11 @@ jobs:
             --pids-limit 128 \
             -e HOME=/tmp \
             -e TMPDIR=/tmp \
+            -e TSX_DISABLE_CACHE=1 \
             "$image" \
-            /app/node_modules/.bin/tsx \
+            node \
+            --import \
+            tsx \
             /app/scripts/elus-vendaerp-danfe-canary.ts 2>&1)"
           code=$?
           set -e
