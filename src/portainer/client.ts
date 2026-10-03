@@ -88,7 +88,7 @@ export async function portainerDockerRequest(input: {
   apiKeyFile?: string;
 }): Promise<{ status: number; body: Buffer }> {
   const credentialFile = resolvedApiKeyFile(input.apiKeyFile);
-  const token = await apiKey(credentialFile);
+  const token = await apiKey(input.apiKeyFile);
   const timeoutMs = Math.min(Math.max(input.timeoutMs ?? env.PORTAINER_TIMEOUT_MS, 1000), 180_000);
   const maxBytes = Math.min(Math.max(input.maxBytes ?? 2 * 1024 * 1024, 64 * 1024), 8 * 1024 * 1024);
   const controller = new AbortController();
