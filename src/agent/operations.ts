@@ -244,6 +244,41 @@ async function executePostgresPinnedReadbackOperation(x: AgentOperation, opts?: 
   } finally { clearTimeout(timer); }
 }
 
+async function executeElusDanfeCanaryOperation(x: AgentOperation, opts?: ExecOptions): Promise<ExecResult> {
+  const dockerHost=process.env.DOCKER_HOST;
+  if(dockerHost!=="tcp://127.0.0.1:23751") throw new Error("docker_read_proxy_required");
+  const started=Date.now(), timeoutMs=opts?.timeoutMs??120_000;
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),timeoutMs);
+  try{
+    const r=await fetch("http://127.0.0.1:23751/ops/elus/vendaerp-danfe-canary-readonly",{
+      method:"POST",
+      headers:{"content-type":"application/json"},
+      body:JSON.stringify(x.args??{}),
+      signal:controller.signal,
+    });
+    const raw=await r.text();
+    let parsed:Record<string,unknown>={};
+    try{parsed=JSON.parse(raw) as Record<string,unknown>;}catch{}
+    if(!r.ok) return {code:1,stdout:"",stderr:String(parsed.error??("elus_canary_proxy_http_"+r.status)),durationMs:Date.now()-started,truncated:false,timedOut:false};
+    const result=parsed.result;
+    if(!result||typeof result!=="object"||Array.isArray(result)) {
+      return {code:1,stdout:"",stderr:"invalid_elus_canary_proxy_result",durationMs:Date.now()-started,truncated:false,timedOut:false};
+    }
+    return {
+      code:0,
+      stdout:JSON.stringify({result,replayed:parsed.replayed===true}),
+      stderr:"",
+      durationMs:Date.now()-started,
+      truncated:false,
+      timedOut:false,
+    };
+  } catch(e) {
+    const timedOut=e instanceof Error&&e.name==="AbortError";
+    return {code:timedOut?null:1,stdout:"",stderr:timedOut?"elus_canary_proxy_timeout":(e instanceof Error?e.message:String(e)),durationMs:Date.now()-started,truncated:false,timedOut};
+  } finally { clearTimeout(timer); }
+}
+
 async function executePaperclipSemanticOperation(x: AgentOperation, opts?: ExecOptions): Promise<ExecResult> {
   const dockerHost=process.env.DOCKER_HOST;
   if(dockerHost!=="tcp://127.0.0.1:23751") throw new Error("docker_read_proxy_required");
@@ -284,6 +319,7 @@ async function executePaperclipSemanticOperation(x: AgentOperation, opts?: ExecO
 export async function executeAgentOperation(x: AgentOperation, opts?: ExecOptions): Promise<ExecResult> {
   if (x.op === "host.managed_admin") return executeManagedAdminOperation(x, opts);
   if (x.op === "postgres.pinned_readback") return executePostgresPinnedReadbackOperation(x, opts);
+  if (x.op === "elus.vendaerp_danfe_canary_readonly") return executeElusDanfeCanaryOperation(x, opts);
   if (x.op.startsWith("paperclip.")) return executePaperclipSemanticOperation(x, opts);
   if (["docker.exec","docker.action","docker.image_load","docker.candidate_run","docker.candidate_remove"].includes(x.op)) return executeDockerOperatorOperation(x, opts);
   if (x.op.startsWith("workspace.") || x.op.startsWith("process.")) {
