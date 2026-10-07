@@ -19,6 +19,10 @@ ADMIN_URL=""
 REPAIR=0
 SKIP_NODE_INSTALL=0
 MANAGED_ADMIN=0
+ISOLATED_NODE=0
+NODE_HOME=""
+NODE_BIN="/usr/bin/node"
+NPM_BIN="/usr/bin/npm"
 
 usage() {
   cat <<'EOF'
@@ -32,6 +36,7 @@ Options:
   --ref REF             Git branch/tag to install (default: main)
   --re-pair             Revoke local pairing state and request a new WD code
   --skip-node-install   Do not install Node.js automatically
+  --isolated-node       Install/use Node.js 22 under /opt/wandora without changing /usr/bin/node
   --managed-admin       Install signed managed-admin root broker after pairing (explicit opt-in)
   -h, --help            Show help
 
@@ -63,6 +68,8 @@ while (($#)); do
       REPAIR=1; shift ;;
     --skip-node-install)
       SKIP_NODE_INSTALL=1; shift ;;
+    --isolated-node)
+      ISOLATED_NODE=1; shift ;;
     --managed-admin)
       MANAGED_ADMIN=1; shift ;;
     -h|--help)
@@ -74,6 +81,10 @@ done
 
 CONTROL_PLANE="${CONTROL_PLANE%/}"
 ADMIN_URL="$CONTROL_PLANE/admin"
+
+if (( ISOLATED_NODE && SKIP_NODE_INSTALL )); then
+  die "--isolated-node cannot be combined with --skip-node-install"
+fi
 
 [[ "${EUID}" -eq 0 ]] || die "run with sudo/root"
 [[ "$CONTROL_PLANE" =~ ^https?:// ]] || die "invalid control plane URL: $CONTROL_PLANE"
@@ -94,7 +105,7 @@ export DEBIAN_FRONTEND=noninteractive
 install_base_packages() {
   log "Installing/verifying base packages..."
   apt-get update -qq
-  apt-get install -y --no-install-recommends ca-certificates curl gnupg git >/dev/null
+  apt-get install -y --no-install-recommends ca-certificates curl gnupg git xz-utils >/dev/null
   ok "Base packages ready"
 }
 
@@ -103,13 +114,72 @@ node_major() {
   "$bin" -p 'process.versions.node.split(".")[0]' 2>/dev/null || true
 }
 
+install_isolated_node22() {
+  local node_arch manifest filename expected tmp_root tarball extracted major
+  case "$(dpkg --print-architecture)" in
+    amd64) node_arch="x64" ;;
+    arm64) node_arch="arm64" ;;
+    *) die "isolated Node.js installation supports amd64/arm64 only" ;;
+  esac
+
+  NODE_HOME="$BASE_DIR/node22"
+  NODE_BIN="$NODE_HOME/bin/node"
+  NPM_BIN="$NODE_HOME/bin/npm"
+
+  if [[ -x "$NODE_BIN" ]]; then
+    major="$(node_major "$NODE_BIN")"
+    if [[ "$major" =~ ^[0-9]+$ ]] && (( major >= 22 )); then
+      ok "Isolated Node.js $("$NODE_BIN" --version) already available at $NODE_HOME"
+      return
+    fi
+  fi
+
+  log "Installing isolated Node.js 22 at $NODE_HOME..."
+  install -d -m 0755 "$BASE_DIR"
+  tmp_root="$(mktemp -d "$BASE_DIR/.node22-stage-XXXXXX")"
+  manifest="$tmp_root/SHASUMS256.txt"
+
+  curl -fsSL --proto '=https' --tlsv1.2 https://nodejs.org/dist/latest-v22.x/SHASUMS256.txt -o "$manifest"
+  filename="$(awk -v suffix="linux-${node_arch}.tar.xz" '$2 ~ suffix "$" {print $2; exit}' "$manifest")"
+  [[ -n "$filename" ]] || { rm -rf "$tmp_root"; die "could not resolve latest Node.js 22 archive"; }
+  expected="$(awk -v f="$filename" '$2 == f {print $1; exit}' "$manifest")"
+  [[ "$expected" =~ ^[a-f0-9]{64}$ ]] || { rm -rf "$tmp_root"; die "invalid Node.js checksum metadata"; }
+
+  tarball="$tmp_root/$filename"
+  curl -fsSL --proto '=https' --tlsv1.2 "https://nodejs.org/dist/latest-v22.x/$filename" -o "$tarball"
+  (cd "$tmp_root" && printf '%s  %s\n' "$expected" "$filename" | sha256sum -c - >/dev/null)
+  tar -xJf "$tarball" -C "$tmp_root"
+  extracted="$tmp_root/${filename%.tar.xz}"
+  [[ -x "$extracted/bin/node" && -x "$extracted/bin/npm" ]] || { rm -rf "$tmp_root"; die "isolated Node.js archive is incomplete"; }
+
+  rm -rf "$NODE_HOME.new"
+  mv "$extracted" "$NODE_HOME.new"
+  rm -rf "$NODE_HOME"
+  mv "$NODE_HOME.new" "$NODE_HOME"
+  rm -rf "$tmp_root"
+  chown -R root:root "$NODE_HOME"
+  chmod -R go-w "$NODE_HOME"
+
+  major="$(node_major "$NODE_BIN")"
+  [[ "$major" =~ ^[0-9]+$ ]] && (( major >= 22 )) || die "isolated Node.js >=22 installation failed"
+  ok "Isolated Node.js $("$NODE_BIN" --version) installed at $NODE_HOME"
+}
+
 ensure_node22() {
   local major=""
+
+  if (( ISOLATED_NODE )); then
+    install_isolated_node22
+    return
+  fi
+
   if [[ -x /usr/bin/node ]]; then
     major="$(node_major /usr/bin/node)"
   fi
 
   if [[ "$major" =~ ^[0-9]+$ ]] && (( major >= 22 )); then
+    NODE_BIN="/usr/bin/node"
+    NPM_BIN="/usr/bin/npm"
     ok "Node.js $(/usr/bin/node --version) already available"
     return
   fi
@@ -134,6 +204,8 @@ ensure_node22() {
   major="$(node_major /usr/bin/node)"
   [[ "$major" =~ ^[0-9]+$ ]] && (( major >= 22 ))     || die "Node.js >=22 installation failed"
 
+  NODE_BIN="/usr/bin/node"
+  NPM_BIN="/usr/bin/npm"
   ok "Node.js $(/usr/bin/node --version) installed"
 }
 
@@ -165,9 +237,10 @@ install_agent_code() {
 
   (
     cd "$stage"
-    npm ci --no-audit --no-fund >/dev/null
-    npm run build >/dev/null
-    npm prune --omit=dev --no-audit --no-fund >/dev/null
+    export PATH="$(dirname "$NODE_BIN"):$PATH"
+    "$NPM_BIN" ci --no-audit --no-fund >/dev/null
+    "$NPM_BIN" run build >/dev/null
+    "$NPM_BIN" prune --omit=dev --no-audit --no-fund >/dev/null
   )
 
   test -f "$stage/dist/agent/cli.js" || die "agent build missing dist/agent/cli.js"
@@ -212,7 +285,7 @@ Environment=NODE_ENV=production
 Environment=WANDORA_CONTROL_PLANE=$CONTROL_PLANE
 Environment=WANDORA_AGENT_STATE=$STATE_FILE
 Environment=WANDORA_EXEC_BROKER_SOCKET=$EXEC_SOCKET
-ExecStart=/usr/bin/node $INSTALL_DIR/dist/agent/cli.js run
+ExecStart=$NODE_BIN $INSTALL_DIR/dist/agent/cli.js run
 Restart=always
 RestartSec=5
 NoNewPrivileges=yes
@@ -268,7 +341,7 @@ try_open_local_browser() {
 }
 
 run_as_agent() {
-  runuser -u "$AGENT_USER" --     env       HOME="$STATE_DIR"       WANDORA_CONTROL_PLANE="$CONTROL_PLANE"       WANDORA_AGENT_STATE="$STATE_FILE"       /usr/bin/node "$INSTALL_DIR/dist/agent/cli.js" "$@"
+  runuser -u "$AGENT_USER" --     env       HOME="$STATE_DIR"       WANDORA_CONTROL_PLANE="$CONTROL_PLANE"       WANDORA_AGENT_STATE="$STATE_FILE"       "$NODE_BIN" "$INSTALL_DIR/dist/agent/cli.js" "$@"
 }
 
 pair_if_needed() {
@@ -307,7 +380,7 @@ pair_if_needed() {
 }
 
 install_exec_broker() {
-  WANDORA_AGENT_DIR="$INSTALL_DIR"   WANDORA_AGENT_STATE_DIR="$STATE_DIR"   WANDORA_AGENT_WORKSPACE="$WORKSPACE"   WANDORA_EXEC_BROKER_SOCKET="$EXEC_SOCKET"   bash "$INSTALL_DIR/install-agent-exec-broker.sh"
+  WANDORA_AGENT_DIR="$INSTALL_DIR"   WANDORA_AGENT_STATE_DIR="$STATE_DIR"   WANDORA_AGENT_WORKSPACE="$WORKSPACE"   WANDORA_EXEC_BROKER_SOCKET="$EXEC_SOCKET"   WANDORA_NODE_BIN="$NODE_BIN"   bash "$INSTALL_DIR/install-agent-exec-broker.sh"
 }
 
 install_managed_admin() {
@@ -317,6 +390,7 @@ install_managed_admin() {
   WANDORA_CONTROL_PLANE="$CONTROL_PLANE" \
   WANDORA_AGENT_DIR="$INSTALL_DIR" \
   WANDORA_AGENT_STATE="$STATE_FILE" \
+  WANDORA_NODE_BIN="$NODE_BIN" \
   bash "$INSTALL_DIR/install-agent-managed-admin-broker.sh"
 }
 
@@ -335,7 +409,7 @@ start_agent() {
   systemctl is-active --quiet "$SERVICE_NAME"     || { journalctl -u "$SERVICE_NAME" -n 50 --no-pager >&2 || true; die "agent service failed to start"; }
 
   local device_id
-  device_id="$(/usr/bin/node -e 'const fs=require("fs");const p=process.argv[1];const s=JSON.parse(fs.readFileSync(p,"utf8"));process.stdout.write(String(s.device_id||""));' "$STATE_FILE")"
+  device_id="$("$NODE_BIN" -e 'const fs=require("fs");const p=process.argv[1];const s=JSON.parse(fs.readFileSync(p,"utf8"));process.stdout.write(String(s.device_id||""));' "$STATE_FILE")"
   [[ "$device_id" =~ ^dev_ ]] || die "paired device_id is missing"
 
   printf '\n'
@@ -347,6 +421,7 @@ start_agent() {
   printf 'broker=%s\n' "$BROKER_SERVICE_NAME"
   printf 'workspace=%s\n' "$WORKSPACE"
   printf 'state=%s\n' "$STATE_FILE"
+  printf 'node_runtime=%s\n' "$NODE_BIN"
   printf '\nNext: create/associate a Target Registry entry with deviceId=%s and transport=agent.\n' "$device_id"
 }
 
