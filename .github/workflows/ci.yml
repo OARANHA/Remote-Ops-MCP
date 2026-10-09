@@ -22,6 +22,7 @@ jobs:
       - run: node test-dsh-offline-lab.mjs
       - run: node test-dsh-offline-governed.mjs
       - run: node test-dsh-offline-proxy-mock.mjs
+      - run: node test-dsh-lab-target-preset.mjs
       - run: node --check labs/dsh-offline/probe.mjs
       - run: docker compose -f labs/dsh-offline/compose.yaml config --quiet
       - name: Offline sandbox security probe (ephemeral GitHub runner, no Chutes)
