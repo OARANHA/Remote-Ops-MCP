@@ -14,6 +14,7 @@ import { redactText, redactObject } from "../security/redact.js";
 import type { ExecResult } from "../ssh/pool.js";
 import { effectiveTargetEnabled } from "../state/store.js";
 import { portainerStatus, portainerEndpoints, portainerStacks, portainerStack, updatePortainerStackEnv, redeployPortainerGitStack, createPortainerGitStack, startPortainerStack, stopPortainerStack, deletePortainerStack } from "../portainer/client.js";
+import { LAB_TARGET_ID, LAB_CAPABILITY, REQUIRED_CHECKS } from "../docker/vigiafast-offline-probe.js";
 
 /**
  * TOOLS V1 — 100% READ-ONLY.
@@ -1232,6 +1233,48 @@ const TOOL_DEFS: ToolDef[] = [
       const t=resolveTarget(args.target);
       requireOperator(t);
       return { target:t.id, ...(await agentJson(t,"process.list")) };
+    },
+  },
+
+  {
+    name: "vigiafast_dsh_offline_probe",
+    description: "Executa uma unica prova sintética OFFLINE de isolamento Docker em target de desenvolvimento VIGIAFAST dedicado. Requer imagem sha256 previamente instalada e proxy opt-in; sem Chutes, modelos, rede, portas, mounts ou entrada de código.",
+    inputSchema: { target: targetField },
+    mutation: true,
+    destructive: false,
+    idempotent: false,
+    run: async (args) => {
+      const t = resolveTarget(args.target);
+      requireOperator(t);
+      if (t.id !== LAB_TARGET_ID || t.environment !== "development" || t.transport !== "agent" || !t.deviceId) {
+        throw new OpsError("CAPABILITY_DENIED", "offline lab exige target exclusivo de desenvolvimento via Agent Mesh");
+      }
+      if (!t.allowedSemanticCapabilities.includes(LAB_CAPABILITY)) {
+        throw new OpsError("CAPABILITY_DENIED", "capability offline lab nao autorizada explicitamente");
+      }
+      if (listTargets().some((other) => other.id !== t.id && other.deviceId === t.deviceId)) {
+        throw new OpsError("CAPABILITY_DENIED", "device do laboratorio nao pode ser compartilhado com outro target");
+      }
+      const result = await agentJson(t, LAB_CAPABILITY, {}, 60_000);
+      // Agent and proxy responses are already bounded. Project allowlisted
+      // fields only; do not return any additional payloads from Docker.
+      if (result.type !== "offline_lab_attestation" || typeof result.ok !== "boolean"
+          || !result.checks || typeof result.checks !== "object" || Array.isArray(result.checks)) {
+        throw new OpsError("REMOTE_COMMAND_FAILED", "resposta de isolamento invalida");
+      }
+      const inputChecks = result.checks as Record<string, unknown>;
+      const expected: string[] = REQUIRED_CHECKS.map((key) => key === "no_provider_secret" ? "no_provider_material" : key);
+      if (Object.keys(inputChecks).length !== expected.length
+          || Object.keys(inputChecks).some((key) => !expected.includes(key))
+          || expected.some((key) => typeof inputChecks[key] !== "boolean")) {
+        throw new OpsError("REMOTE_COMMAND_FAILED", "checks de isolamento invalidos");
+      }
+      const checks = Object.fromEntries(expected.map((key) => [key, inputChecks[key]]));
+      const actualOk = Object.values(checks).every((value) => value === true);
+      if (result.ok !== actualOk) {
+        throw new OpsError("REMOTE_COMMAND_FAILED", "checks de isolamento inconsistentes");
+      }
+      return { target: t.id, type: "offline_lab_attestation", ok: actualOk, checks };
     },
   },
 

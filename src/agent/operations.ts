@@ -180,6 +180,11 @@ async function executeDockerOperatorOperation(x: AgentOperation, opts?: ExecOpti
   } else if(x.op==="docker.candidate_remove") {
     pathName="/ops/candidates/"+encodeURIComponent(safeId(a.name))+"/remove";
     body={};
+  } else if(x.op==="vigiafast.dsh.offline_probe") {
+    // No caller-controlled arguments, image, name, shell, model, port or mount.
+    if(Object.keys(a).length!==0) throw new Error("offline_lab_no_args");
+    pathName="/ops/vigiafast/dsh/offline-probe";
+    body={};
   } else {
     throw new Error("unsupported_docker_operator_operation");
   }
@@ -285,7 +290,7 @@ export async function executeAgentOperation(x: AgentOperation, opts?: ExecOption
   if (x.op === "host.managed_admin") return executeManagedAdminOperation(x, opts);
   if (x.op === "postgres.pinned_readback") return executePostgresPinnedReadbackOperation(x, opts);
   if (x.op.startsWith("paperclip.")) return executePaperclipSemanticOperation(x, opts);
-  if (["docker.exec","docker.action","docker.image_load","docker.candidate_run","docker.candidate_remove"].includes(x.op)) return executeDockerOperatorOperation(x, opts);
+  if (["docker.exec","docker.action","docker.image_load","docker.candidate_run","docker.candidate_remove","vigiafast.dsh.offline_probe"].includes(x.op)) return executeDockerOperatorOperation(x, opts);
   if (x.op.startsWith("workspace.") || x.op.startsWith("process.")) {
     const started = Date.now();
     try {
