@@ -1263,7 +1263,7 @@ const TOOL_DEFS: ToolDef[] = [
         throw new OpsError("REMOTE_COMMAND_FAILED", "resposta de isolamento invalida");
       }
       const inputChecks = result.checks as Record<string, unknown>;
-      const expected = REQUIRED_CHECKS.map((key) => key === "no_provider_secret" ? "no_provider_material" : key);
+      const expected: string[] = REQUIRED_CHECKS.map((key) => key === "no_provider_secret" ? "no_provider_material" : key);
       if (Object.keys(inputChecks).length !== expected.length
           || Object.keys(inputChecks).some((key) => !expected.includes(key))
           || expected.some((key) => typeof inputChecks[key] !== "boolean")) {
