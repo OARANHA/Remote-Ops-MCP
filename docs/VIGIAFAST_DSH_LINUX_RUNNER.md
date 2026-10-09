@@ -13,6 +13,9 @@ O `src/dsh/runner.ts` é um **programa específico**, que só chama `dsh --profi
 | `/opt/vigiafast-agent/worktree/CRISE` | checkout Git isolado, único cwd aceito |
 | `/usr/local/bin/dsh` | executável CLI versionado e revisado |
 | `/etc/vigiafast-dsh/chutes-headless.patch.yml` | configuração Chutes da PR #51, somente leitura |
+| `/opt/vigiafast-runner/dist/` | distribuição compilada **completa**, incluindo `dsh/runner.js`, `dsh/protocol.js` e `security/redact.js` |
+| `/usr/local/bin/vigiafast-dsh-runner` | launcher Node pinado (`bin/vigiafast-dsh-runner`), único programa do broker |
+| `/var/lib/vigiafast-dsh/dsh` | `DSH_HOME` fixo para o perfil/credenciais do executor dedicado |
 
 O wrapper contém uma regra do SHA inicial exato e nega um checkout sujo em sessão **nova**. Para continuar sessão, o caller fornece o `session_id` da mesma workspace e `expected_sha`; o próprio Harness deve restringir a retomada por cwd/escopo. Em execução futura, o coordenador é responsável por amarrar o processo e seu ID a um usuário, branch e tarefa; o protocolo atual ainda não persiste isso como uma nova autorização independente.
 
@@ -21,8 +24,8 @@ O wrapper contém uma regra do SHA inicial exato e nega um checkout sujo em sess
 **Não executar este contrato em `wandora-prod` ou target de outra aplicação.**
 
 1. Criar um **device/target exclusivo para desenvolvimento**, sem acesso a arquivos/serviços de outros projetos. Criar um broker/usuário dedicado ou VM própria; não reutilizar o `wandora-exec` compartilhado de produção. Recursos limitados: começar com 1 tarefa por vez. Container/VM isolado, sem `docker.sock`, host SSH, volumes de clientes ou acesso a redes internas.
-2. Publicar binário construído a partir de commit fixado: compilar o repo Remote-Ops-MCP em ambiente de build, `install -m 0755 dist/dsh/runner.js /usr/local/bin/vigiafast-dsh-runner`. O CLI `dsh` também precisa estar instalado em `/usr/local/bin/dsh`. **Não fazer isso agora.**
-3. Provisionar a credencial Chutes no **credential store do perfil** do Harness correspondente ao usuário do worker, não no prompt, YAML versionado ou saída do MCP. O execution broker existente remove variáveis de ambiente arbitrárias: `CHUTES_API_KEY` não será automaticamente repassada de um secret manager para `dsh`. Validar como a chave será referenciada via `apiKeyEnv` e o armazenamento do Harness antes do primeiro uso.
+2. Empacotar a **árvore compilada completa** (`dist/`) do Remote-Ops-MCP no destino root-owned `/opt/vigiafast-runner/dist/`; incluir `package.json` com `"type":"module"` no diretório pai e todas as dependências de runtime necessárias. Copiar o launcher `bin/vigiafast-dsh-runner` para `/usr/local/bin/vigiafast-dsh-runner` com modo executável. **Não copiar somente `dist/dsh/runner.js`**, pois ele possui imports relativos. O CLI `dsh` revisado deve ser instalado em `/usr/local/bin/dsh` com destino final root-owned. Patch Chutes em `/etc/vigiafast-dsh/chutes-headless.patch.yml`, também root-owned, nunca gravável pelo usuário de execução. **Não fazer isso agora.**
+3. Fixar `HOME=/var/lib/vigiafast-dsh` e `DSH_HOME=/var/lib/vigiafast-dsh/dsh` como no executor; **não** herdar `HOME=/var/lib/wandora-exec` do broker genérico. O runner define `DSH_PERMISSION_MODE=workspace-write` e `DSH_TELEMETRY_DISABLED=1`, mas essas variáveis **não criam isolamento suficiente**. Provisionar a credencial Chutes no **credential store do perfil** do Harness do usuário dedicado, nunca no prompt, YAML versionado ou saída do MCP. O broker existente remove envs arbitrárias: `CHUTES_API_KEY` não será automaticamente repassada. **Bloqueador:** o modelo com ferramentas de shell pode tentar ler arquivos de credenciais acessíveis pelo mesmo usuário. Exigir segredo de canário com quota estrita e isolamento/egress ou solução de proxy com injeção fora do processo antes de permitir trabalhos com dados sensíveis.
 4. Configurar allowlist do target **exclusivamente** com `allowedProcessPrograms: ["vigiafast-dsh-runner"]`, `allowedProcessCwds: ["/opt/vigiafast-agent/worktree/CRISE"]`, o processo local do broker limitado àquele diretório e user sem privilégios. As permissões genéricas do host broker não podem servir de substituto às regras do target. Tokens GitHub com mínimo privilégio, nunca com merge, admin ou deploy.
 5. Emitir chamada `start_process` com `program="vigiafast-dsh-runner"`, `cwd="/opt/vigiafast-agent/worktree/CRISE"`, `args=[]`; salvar o `ps_...` retornado.
 6. Enviar pelo `send_process_input` **uma única linha JSON terminada por `\\n`**:
@@ -37,7 +40,7 @@ O SHA de exemplo é fictício — substituir pelo commit real autorizado. O runn
 
 ### Primeiro experimento permitido depois de aprovação
 
-Uma chamada **sintética**, sem cliente real, com branch dedicada e modelo autorizado. Verificar: build TypeScript; testes `node test-dsh-protocol.mjs`; invocação com falso checkout/sem chave deve falhar fechado; execução em ambiente descartável com chave custodiada e limite financeiro; `--json` filtrado; read/cancel; sessão; GitHub diff e CI. Não chamar quatro agentes antes de dimensionamento.
+Uma chamada **sintética**, sem cliente real, com branch dedicada e modelo autorizado. Verificar: build TypeScript; testes `node test-dsh-protocol.mjs` e `node test-dsh-runner-gates.mjs`; invocação com falso checkout/sem chave deve falhar fechado; execução em ambiente descartável com chave custodiada e limite financeiro; `--json` filtrado; read/cancel; sessão; GitHub diff e CI. Não chamar quatro agentes antes de dimensionamento.
 
 ## Memória canônica
 
@@ -48,12 +51,13 @@ Prompt de execução obriga a leitura no checkout SHA-preciso: `docs/PROJECT_SOU
 - O Harness é *developer preview* sem auditoria de segurança: um modelo com ferramentas de shell pode ler qualquer recurso liberado ao seu usuário. **Isolamento OS e segredos fora do alcance do usuário do executor ainda precisam de avaliação**; armazenar a chave no mesmo HOME do processo do agent traz risco de leitura/exfiltração. Considerar proxy de egress com injeção de token fora do processo antes de conceder acesso a código sensível.
 - Não há prova de funcionamento Linux/chamadas Chutes, configuração real de modelo, sessão GitHub, multiagentes ou isolamento de cliente. `--json` não fornece um log completo, e o filtrador deliberadamente remove eventos internos.
 - A configuração Chutes de quatro modelos existe na PR #51, mas o wrapper não implementa roteamento dinâmico por tarefa; inicialmente usa o default. Para quatro agentes, primeiro validar worktrees, limites de custo e decisão do coordenador.
-- Há nomes/caminhos fixos propositais, ainda não parametrizados nem homologados. Não criar permissões globais para contorná-los.
+- Há nomes/caminhos fixos propositais, ainda não parametrizados nem homologados. Não criar permissões globais para contorná-los. O executor exige CLI e patch efetivos de propriedade `root` e sem bits de escrita para grupo/outros; a árvore compilada e o launcher também devem ser implantados como root-owned e read-only ao worker.
+- O stream externo inclui texto de resposta final após redação sintática de segredos conhecidos. **Isso não garante remoção de PII ou segredos desconhecidos.** Nunca disponibilizar dados reais de clientes no ambiente do executor. A aprovação de acesso aos dados e egress é independente deste filtro.
 - Expor a Web UI requer revisão separada, autenticação e túnel privado; **não está contemplado nesta PR**.
 - Não criar/alterar target, pairing, perfil do broker, fluxo de CI, commit/merge ou deploy pelo chat sem autorização específica.
 
 ## CI e aceite
 
-Esta PR inclui teste negativo unitário para schema, redator e filtro de eventos; adiciona o comando à CI, após o build. **O workflow ainda precisa rodar e passar antes do aceite.** CI sintética não substitui smoke real em ambiente isolado.
+A PR passou pela primeira rodada de CI conforme comunicação do operador (`green` para head anterior). Após correções de segurança e novo commit, **é necessária nova CI do head atualizado**; não presumir que o sinal anterior abranja estas mudanças. Testes unitários do protocolo e de falha fechada do runner estão na CI, após o build. CI sintética não substitui smoke real em ambiente isolado.
 
 Dois gates explícitos: revisão de segurança desta PR e **autorização humana separada para instalação**. Até lá, só existem código, documentação e plano de operação.
