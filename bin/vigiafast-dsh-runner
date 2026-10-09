@@ -1,0 +1,9 @@
+#!/usr/bin/env node
+"use strict";
+// Static, opt-in entrypoint for a dedicated Linux broker allowlist.
+// Deploy ONLY with the complete, pinned/root-owned distribution at this path.
+// Do not interpret arguments, shell text, model output, or caller-provided paths.
+void import("/opt/vigiafast-runner/dist/dsh/runner.js").catch(() => {
+  process.stdout.write('{"type":"failure","code":"worker_not_installed"}\n');
+  process.exitCode = 1;
+});
