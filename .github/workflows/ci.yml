@@ -19,6 +19,11 @@ jobs:
       - run: npm run build
       - run: node test-dsh-protocol.mjs
       - run: node test-dsh-runner-gates.mjs
+      - run: node test-dsh-offline-lab.mjs
+      - run: node --check labs/dsh-offline/probe.mjs
+      - run: docker compose -f labs/dsh-offline/compose.yaml config --quiet
+      - name: Offline sandbox security probe (ephemeral GitHub runner, no Chutes)
+        run: docker compose -f labs/dsh-offline/compose.yaml run --rm --build --no-deps vigiafast-dsh-offline
       - run: node test-exec-broker-session-capacity.mjs
       - run: node test-paperclip-semantic.mjs
       - run: node test-docker-candidate-contract.mjs
