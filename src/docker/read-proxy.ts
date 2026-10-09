@@ -4,6 +4,7 @@ import nodePath from "node:path";
 import { denySecretPath } from "../security/paths.js";
 import { buildPostgresPinnedReadbackExec, normalizePostgresPinnedReadbackPayload, parsePostgresVerifierAllowlist } from "./postgres-readback.js";
 import { PAPERCLIP_SEMANTIC_CONTAINER, normalizePaperclipSemanticPayload, paperclipSemanticExecCommand, type PaperclipSemanticOperation } from "./paperclip-semantic.js";
+import { LAB_NAME, offlineLabCreateRequest, parseLabAttestation, validateLabImage } from "./vigiafast-offline-probe.js";
 
 const PORT = Number(process.env.PORT ?? 2375);
 const BIND_HOST = process.env.BIND_HOST ?? "0.0.0.0";
@@ -24,6 +25,9 @@ const postgresVerifiers = parsePostgresVerifierAllowlist(process.env.POSTGRES_RE
 const postgresExecUser = String(process.env.POSTGRES_READBACK_EXEC_USER ?? "postgres").trim();
 const postgresDbUser = String(process.env.POSTGRES_READBACK_DB_USER ?? "postgres").trim();
 const postgresDbName = String(process.env.POSTGRES_READBACK_DB_NAME ?? "postgres").trim();
+const offlineLabImageRaw = String(process.env.VIGIAFAST_DSH_OFFLINE_IMAGE_SHA256 ?? "");
+const offlineLabImage = offlineLabImageRaw ? validateLabImage(offlineLabImageRaw) : "";
+let offlineLabBusy = false;
 const postgresReadbackConfigured = postgresContainer.length > 0 || postgresVerifiers.size > 0;
 
 if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) throw new Error("invalid PORT");
@@ -240,6 +244,63 @@ async function handlePaperclipSemantic(req:IncomingMessage,res:ServerResponse,pa
   return true;
 }
 async function handleOperator(req:IncomingMessage,res:ServerResponse,path:string):Promise<boolean>{
+  if(path==="/ops/vigiafast/dsh/offline-probe"){
+    if(req.method!=="POST"){jsonError(res,405,"method_not_allowed");return true;}
+    if(!offlineLabImage){jsonError(res,403,"offline_lab_disabled");return true;}
+    let payload:unknown;
+    try{payload=JSON.parse((await readBody(req,1024)).toString("utf8")||"{}");}
+    catch{jsonError(res,400,"invalid_json");return true;}
+    if(!payload||typeof payload!=="object"||Array.isArray(payload)||Object.keys(payload).length!==0){
+      jsonError(res,400,"offline_lab_no_args");return true;
+    }
+    if(offlineLabBusy){jsonError(res,409,"offline_lab_busy");return true;}
+    offlineLabBusy=true;
+    let containerId="";
+    let result:ReturnType<typeof parseLabAttestation>|null=null;
+    let cleanupOk=true;
+    try{
+      const create=await dockerRequest(
+        "POST","/containers/create?name="+encodeURIComponent(LAB_NAME),
+        Buffer.from(JSON.stringify(offlineLabCreateRequest(offlineLabImage)))
+      );
+      if(create.status!==201)throw new Error("offline_lab_create_failed");
+      try{containerId=String((JSON.parse(create.body.toString("utf8")) as {Id?:unknown}).Id??"");}
+      catch{throw new Error("offline_lab_invalid_id");}
+      if(!/^[a-f0-9]{64}$/i.test(containerId))throw new Error("offline_lab_invalid_id");
+      const started=await dockerRequest("POST","/containers/"+containerId+"/start",Buffer.alloc(0));
+      if(started.status!==204)throw new Error("offline_lab_start_failed");
+      // Docker wait has a bounded timeout (dockerRequest is capped at 30s).
+      const waited=await dockerRequest("POST","/containers/"+containerId+"/wait?condition=not-running",Buffer.alloc(0));
+      if(waited.status!==200)throw new Error("offline_lab_wait_failed");
+      let status:unknown;
+      try{status=JSON.parse(waited.body.toString("utf8"));}
+      catch{throw new Error("offline_lab_invalid_exit");}
+      const statusCode=(status as {StatusCode?:unknown}).StatusCode;
+      if(typeof statusCode!=="number"||!Number.isInteger(statusCode))throw new Error("offline_lab_invalid_exit");
+      const logs=await dockerRequest("GET","/containers/"+containerId+"/logs?stdout=1&stderr=0&tail=4");
+      if(logs.status!==200)throw new Error("offline_lab_logs_unavailable");
+      const out=demuxDockerStream(logs.body);
+      // The proxy only projects a single structured attestation. Never return
+      // raw stdout/stderr/host data; no custom log strings pass this boundary.
+      const lines=out.stdout.split("\n").map((s)=>s.trim()).filter(Boolean);
+      if(lines.length!==1||out.truncated||out.stderr.trim())throw new Error("offline_lab_unexpected_output");
+      result=parseLabAttestation(JSON.parse(lines[0]) as unknown,statusCode);
+    }catch{
+      // Errors are deliberately generic: no Docker IDs, URLs, env or logs.
+    }finally{
+      if(containerId&&/^[a-f0-9]{64}$/i.test(containerId)){
+        try{
+          const removed=await dockerRequest("DELETE","/containers/"+containerId+"?force=1&v=1");
+          cleanupOk=removed.status===204||removed.status===404;
+        }catch{cleanupOk=false;}
+      }
+      offlineLabBusy=false;
+    }
+    if(!cleanupOk){jsonError(res,502,"offline_lab_cleanup_failed");return true;}
+    if(!result){jsonError(res,502,"offline_lab_probe_failed");return true;}
+    send(res,200,JSON.stringify(result));
+    return true;
+  }
   if(path==="/ops/images/load"){
     if(req.method!=="POST"){jsonError(res,405,"method_not_allowed");return true;}
     let payload:Record<string,unknown>; try{payload=JSON.parse((await readBody(req)).toString("utf8")||"{}") as Record<string,unknown>;}catch{jsonError(res,400,"invalid_json");return true;}
