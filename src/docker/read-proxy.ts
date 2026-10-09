@@ -256,6 +256,7 @@ async function handleOperator(req:IncomingMessage,res:ServerResponse,path:string
     if(offlineLabBusy){jsonError(res,409,"offline_lab_busy");return true;}
     offlineLabBusy=true;
     let containerId="";
+    let createdByUs=false;
     let result:ReturnType<typeof parseLabAttestation>|null=null;
     let cleanupOk=true;
     try{
@@ -264,6 +265,7 @@ async function handleOperator(req:IncomingMessage,res:ServerResponse,path:string
         Buffer.from(JSON.stringify(offlineLabCreateRequest(offlineLabImage)))
       );
       if(create.status!==201)throw new Error("offline_lab_create_failed");
+      createdByUs=true;
       try{containerId=String((JSON.parse(create.body.toString("utf8")) as {Id?:unknown}).Id??"");}
       catch{throw new Error("offline_lab_invalid_id");}
       if(!/^[a-f0-9]{64}$/i.test(containerId))throw new Error("offline_lab_invalid_id");
@@ -288,9 +290,12 @@ async function handleOperator(req:IncomingMessage,res:ServerResponse,path:string
     }catch{
       // Errors are deliberately generic: no Docker IDs, URLs, env or logs.
     }finally{
-      if(containerId&&/^[a-f0-9]{64}$/i.test(containerId)){
+      if(createdByUs){
+        // If Docker created a container but returned an invalid ID, remove it
+        // by the fixed name; never delete a conflicting preexisting container.
+        const ref=/^[a-f0-9]{64}$/i.test(containerId)?containerId:LAB_NAME;
         try{
-          const removed=await dockerRequest("DELETE","/containers/"+containerId+"?force=1&v=1");
+          const removed=await dockerRequest("DELETE","/containers/"+encodeURIComponent(ref)+"?force=1&v=1");
           cleanupOk=removed.status===204||removed.status===404;
         }catch{cleanupOk=false;}
       }
