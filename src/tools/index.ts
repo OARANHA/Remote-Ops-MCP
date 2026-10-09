@@ -291,7 +291,7 @@ const TOOL_DEFS: ToolDef[] = [
       target_id: z.string().regex(/^[a-z0-9][a-z0-9-]{1,39}$/),
       device_id: z.string().regex(/^dev_[A-Za-z0-9_-]{8,80}$/),
       environment: z.enum(["production","staging","development"]).default("production"),
-      preset: z.enum(["operator-workspace","read-only","postgres-readback","managed-admin"]).default("operator-workspace"),
+      preset: z.enum(["operator-workspace","read-only","postgres-readback","managed-admin","vigiafast-dsh-offline"]).default("operator-workspace"),
     },
     mutation: true,
     destructive: false,
@@ -301,7 +301,7 @@ const TOOL_DEFS: ToolDef[] = [
       targetId: String(args.target_id),
       deviceId: String(args.device_id),
       environment: (args.environment ?? "production") as "production"|"staging"|"development",
-      preset: (args.preset ?? "operator-workspace") as "operator-workspace"|"read-only"|"postgres-readback"|"managed-admin",
+      preset: (args.preset ?? "operator-workspace") as "operator-workspace"|"read-only"|"postgres-readback"|"managed-admin"|"vigiafast-dsh-offline",
     }),
   },
   {
