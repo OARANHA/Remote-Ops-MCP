@@ -1,6 +1,6 @@
 # Fase A1 — contêiner de laboratório offline VIGIAFAST
 
-**Status: PROPOSTO / CI, não instalado na VPS.** Segue a [issue #53](https://github.com/OARANHA/Remote-Ops-MCP/issues/53) e depende das Draft PRs #51 (Chutes provider) e #52 (runner Linux). Este slice **não instala nem executa DeepSeek Harness**, usa apenas um probe Node.js para verificar condições de isolamento de um contêiner descartável.
+**Status: PROPOSTO / Draft PR, não instalado na VPS.** A CI foi informada `green` para o head anterior; as correções da verificação de montagem exigem CI nova. Segue a [issue #53](https://github.com/OARANHA/Remote-Ops-MCP/issues/53) e depende das Draft PRs #51 (Chutes provider) e #52 (runner Linux). Este slice **não instala nem executa DeepSeek Harness**, usa apenas um probe Node.js para verificar condições de isolamento de um contêiner descartável.
 
 ## Objetivo e contrato
 
@@ -15,13 +15,13 @@ A1 testa um ambiente de contêiner **sem rede** e sem qualquer montagem de diret
 - `mem_limit: 256m`, `cpus: 0.5`, `pids_limit: 32`, `restart: no`, `init: true`.
 - Base Node `24.21.0-bookworm-slim` (versão explícita; **digest deve ser fixado** antes de qualquer implantação duradoura).
 
-`probe.mjs` atesta UID, capabilities, `NoNewPrivs`, apenas loopback, raiz não gravável, ausência de socket Docker, nenhuma env de segredo e `/tmp` efêmero.
+`probe.mjs` atesta UID, capabilities, `NoNewPrivs`, apenas loopback, **opções de montagem `ro` da raiz obtidas em `/proc/self/mountinfo`**, ausência de socket Docker, nenhuma env de segredo e `/tmp` efêmero. Uma simples tentativa de escrita em `/etc` por usuário sem privilégios produz `EACCES` mesmo num rootfs `rw` e **não comprova** montagem read-only; por isso foi substituída. O teste negativo exercita explicitamente rootfs `rw`, flags ambíguas e múltiplos registros da raiz.
 
 **Limitação:** estas verificações observam o próprio contêiner; não garantem que o daemon Docker/host esteja endurecido, que o kernel não tenha vulnerabilidades ou que o acesso a redes/arquivos de produção esteja impossível em qualquer cenário. Verificar a configuração resultante do daemon e aplicar mitigação adicional (AppArmor/seccomp, limites de cgroup, política host de egress) antes de permitir código não confiável.
 
 ## Primeiro teste possível, somente em CI descartável
 
-A CI da PR valida sintaxe do `compose.yaml`, invariantes via `node test-dsh-offline-lab.mjs` e executa um contêiner descartável na máquina efêmera do GitHub Actions, sem credencial externa. Essa CI **não equivale a execução na VPS Wandora**.
+A CI da PR valida sintaxe do `compose.yaml`, invariantes via `node test-dsh-offline-lab.mjs` (incluindo parser de `mountinfo` com cenários negativos) e executa um contêiner descartável na máquina efêmera do GitHub Actions, sem credencial externa. Essa CI **não equivale a execução na VPS Wandora**.
 
 Comandos documentados **para ambiente descartável e autorizado**, nunca executar em target atual de produção só porque a documentação os cita:
 
@@ -52,6 +52,6 @@ Sem esse gate, só o experimento em GitHub Actions é permitido.
 
 ## JEV.1 / decisão
 
-Em 2026-10-09 o `jev_route_task` escolheu `split_task` (probabilidade 0.67) para separar manifesto/CI do provisionamento da VPS. O `jev_guard_action` rejeitou (`deny`, 1.00) contornar a allowlist atual usando Docker CLI genérico. Decisão adotada: **preparar a A1 em Draft PR, sem deploy e sem segredos**. O julgamento é consultivo; política e testes determinísticos prevalecem.
+Em 2026-10-09 o `jev_route_task` escolheu `split_task` (probabilidade 0.67) para separar manifesto/CI do provisionamento da VPS. Após a primeira CI `green` informada, nova revisão JEV indicou `deep_review` (0.54) e `jev_guard_action` `allow` (0.72) para corrigir o falso positivo do teste sem deploy. O `jev_guard_action` rejeitou (`deny`, 1.00) contornar a allowlist atual usando Docker CLI genérico. Decisão adotada: **preparar a A1 em Draft PR, sem deploy e sem segredos**. O julgamento é consultivo; política e testes determinísticos prevalecem.
 
 A documentação canônica do CRISE permanece em seu repositório. Nada aqui aceita ADR-0003/0004 nem dá acesso a cliente real.
