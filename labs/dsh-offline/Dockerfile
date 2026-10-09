@@ -9,7 +9,7 @@ ENV NODE_ENV=production \
     DSH_TELEMETRY_DISABLED=1
 
 WORKDIR /opt/vigiafast
-COPY --chown=0:0 probe.mjs /opt/vigiafast/probe.mjs
+COPY --chown=0:0 probe.mjs mountinfo.mjs /opt/vigiafast/
 
 # UID sem privilégios; o bind de projetos, Docker socket e rede são proibidos.
 USER 10001:10001
