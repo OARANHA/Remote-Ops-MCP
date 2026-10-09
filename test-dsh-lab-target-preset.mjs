@@ -57,7 +57,7 @@ try {
 
   function newDevice(hostname) {
     const pairing=state.createPairing({hostname,os:"linux test",agent_version:"test"});
-    assert.equal(state.approvePairingByCode(pairing.code),true);
+    assert.ok(state.approvePairingByCode(pairing.code));
     const claimed=state.claimPairing(pairing.pairing_id,pairing.poll_token);
     assert.equal(claimed.status,"paired");
     const id=claimed.device.device_id;
@@ -66,6 +66,7 @@ try {
   }
   const labDevice=newDevice("isolated-lab-test");
   const sharedDevice=newDevice("other-target-test");
+  const raceDevice=newDevice("racing-target-test");
 
   for(const bad of [
     {targetId:"wrong-lab",deviceId:labDevice,environment:"development"},
@@ -89,10 +90,13 @@ try {
   const other=approvals.prepareAgentTarget({actor:"tester",targetId:"other-service",deviceId:sharedDevice,environment:"development",preset:"read-only"});
   approvals.applyAgentTargetApproval({actor:"tester",approvalId:other.approval_id,confirmation:"APPROVE "+other.approval_id});
   assert.throws(()=>approvals.prepareAgentTarget({actor:"tester",targetId:LAB_TARGET_ID,deviceId:sharedDevice,environment:"development",preset}),/device Agent Mesh exclusivo/);
+  assert.throws(()=>approvals.prepareAgentTarget({actor:"tester",targetId:"competing",deviceId:labDevice,environment:"development",preset:"read-only"}),/device do laboratorio nao pode ser reutilizado/);
+  assert.throws(()=>approvals.prepareAgentTarget({actor:"tester",targetId:LAB_TARGET_ID,deviceId:labDevice,environment:"development",preset:"managed-admin"}),/identificador do laboratorio reservado/);
 
-  // A device may be shared AFTER the lab approval was prepared; apply must re-check.
-  const pending=approvals.prepareAgentTarget({actor:"tester",targetId:LAB_TARGET_ID,deviceId:labDevice,environment:"development",preset});
-  const competitor=approvals.prepareAgentTarget({actor:"tester",targetId:"competing",deviceId:labDevice,environment:"development",preset:"read-only"});
+  // Two tickets may be prepared while both are pending. The apply step must
+  // re-check exclusivity after another target has been applied first.
+  const pending=approvals.prepareAgentTarget({actor:"tester",targetId:LAB_TARGET_ID,deviceId:raceDevice,environment:"development",preset});
+  const competitor=approvals.prepareAgentTarget({actor:"tester",targetId:"competing",deviceId:raceDevice,environment:"development",preset:"read-only"});
   approvals.applyAgentTargetApproval({actor:"tester",approvalId:competitor.approval_id,confirmation:"APPROVE "+competitor.approval_id});
   assert.throws(()=>approvals.applyAgentTargetApproval({actor:"tester",approvalId:pending.approval_id,confirmation:"APPROVE "+pending.approval_id}),/device do laboratorio nao e exclusivo/);
   assert.equal(targets.getTarget(LAB_TARGET_ID).deviceId,labDevice,"existing lab unchanged");
