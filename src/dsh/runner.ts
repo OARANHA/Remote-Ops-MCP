@@ -6,7 +6,8 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { spawn, execFileSync, type ChildProcess } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 import { CANONICAL_PATHS, canonicalTaskPrompt, parseTaskRequest, safeDshEvent } from "./protocol.js";
 
 const ROOT = "/opt/vigiafast-agent/worktree/CRISE";
@@ -15,6 +16,8 @@ const PATCH = "/etc/vigiafast-dsh/chutes-headless.patch.yml";
 const MAX_STDOUT_BYTES = 4 * 1024 * 1024;
 const MAX_EVENTS = 2000;
 const TIMEOUT_MS = 12 * 60_000;
+const WORKER_HOME = "/var/lib/vigiafast-dsh";
+const WORKER_DSH_HOME = "/var/lib/vigiafast-dsh/dsh";
 
 function emit(value: object): void {
   process.stdout.write(JSON.stringify(value) + "\n");
@@ -46,8 +49,14 @@ function verifyCheckout(expectedSha: string, isResume: boolean): void {
     });
     if (dirty.trim()) throw new Error("checkout_dirty");
   }
-  if (!fs.statSync(DSH_BIN).isFile() && !fs.statSync(DSH_BIN).isSymbolicLink()) throw new Error("dsh_missing");
-  if (!fs.statSync(PATCH).isFile()) throw new Error("patch_missing");
+  // Fixed binary and provider patch must be owned by root and not writable
+  // by group/others. This check does not replace OS process isolation.
+  for (const file of [DSH_BIN, PATCH]) {
+    const info = fs.statSync(file); // dereference symlinks
+    if (!info.isFile() || info.uid !== 0 || (info.mode & 0o022) !== 0) {
+      throw new Error("untrusted_executor_dependency");
+    }
+  }
 }
 
 function readRequest(): Promise<unknown> {
@@ -98,7 +107,10 @@ async function run(): Promise<void> {
     stdio: ["pipe", "pipe", "pipe"],
     env: {
       PATH: "/usr/local/bin:/usr/bin:/bin",
-      HOME: process.env.HOME ?? "/var/lib/vigiafast-dsh",
+      HOME: WORKER_HOME,
+      DSH_HOME: WORKER_DSH_HOME,
+      DSH_PERMISSION_MODE: "workspace-write",
+      DSH_TELEMETRY_DISABLED: "1",
       LANG: "C.UTF-8",
       TERM: "dumb",
       // Auth is loaded by Harness from the dedicated account's credential store.
@@ -111,6 +123,7 @@ async function run(): Promise<void> {
   let bytes = 0;
   let eventCount = 0;
   let lineBuffer = "";
+  const decoder = new StringDecoder("utf8");
   let sawFinal = false;
   let abortCode: string | null = null;
   let completed = false;
@@ -136,7 +149,7 @@ async function run(): Promise<void> {
     if (abortCode) return;
     bytes += data.length;
     if (bytes > MAX_STDOUT_BYTES) return abort("event_stream_limit");
-    lineBuffer += data.toString("utf8");
+    lineBuffer += decoder.write(data);
     if (Buffer.byteLength(lineBuffer, "utf8") > 131_072) return abort("event_line_limit");
     let newline: number;
     while ((newline = lineBuffer.indexOf("\n")) >= 0) {
@@ -162,6 +175,7 @@ async function run(): Promise<void> {
       clearTimeout(timer);
       process.off("SIGTERM", onSignal);
       process.off("SIGINT", onSignal);
+      lineBuffer += decoder.end();
       const ok = !abortCode && code === 0 && sawFinal && lineBuffer.trim().length === 0;
       emit({ type: "complete", ok, exit_code: typeof code === "number" ? code : null, ...(abortCode ? { error: abortCode } : {}) });
       if (!ok) process.exitCode = 1;
