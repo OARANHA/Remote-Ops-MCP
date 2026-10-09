@@ -14,7 +14,7 @@ import { redactText, redactObject } from "../security/redact.js";
 import type { ExecResult } from "../ssh/pool.js";
 import { effectiveTargetEnabled } from "../state/store.js";
 import { portainerStatus, portainerEndpoints, portainerStacks, portainerStack, updatePortainerStackEnv, redeployPortainerGitStack, createPortainerGitStack, startPortainerStack, stopPortainerStack, deletePortainerStack } from "../portainer/client.js";
-import { LAB_TARGET_ID, LAB_CAPABILITY } from "../docker/vigiafast-offline-probe.js";
+import { LAB_TARGET_ID, LAB_CAPABILITY, REQUIRED_CHECKS } from "../docker/vigiafast-offline-probe.js";
 
 /**
  * TOOLS V1 — 100% READ-ONLY.
@@ -1262,7 +1262,19 @@ const TOOL_DEFS: ToolDef[] = [
           || !result.checks || typeof result.checks !== "object" || Array.isArray(result.checks)) {
         throw new OpsError("REMOTE_COMMAND_FAILED", "resposta de isolamento invalida");
       }
-      return { target: t.id, type: result.type, ok: result.ok, checks: result.checks };
+      const inputChecks = result.checks as Record<string, unknown>;
+      const expected = REQUIRED_CHECKS.map((key) => key === "no_provider_secret" ? "no_provider_material" : key);
+      if (Object.keys(inputChecks).length !== expected.length
+          || Object.keys(inputChecks).some((key) => !expected.includes(key))
+          || expected.some((key) => typeof inputChecks[key] !== "boolean")) {
+        throw new OpsError("REMOTE_COMMAND_FAILED", "checks de isolamento invalidos");
+      }
+      const checks = Object.fromEntries(expected.map((key) => [key, inputChecks[key]]));
+      const actualOk = Object.values(checks).every((value) => value === true);
+      if (result.ok !== actualOk) {
+        throw new OpsError("REMOTE_COMMAND_FAILED", "checks de isolamento inconsistentes");
+      }
+      return { target: t.id, type: "offline_lab_attestation", ok: actualOk, checks };
     },
   },
 
