@@ -18,6 +18,7 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run build
       - run: node test-dsh-protocol.mjs
+      - run: node test-dsh-runner-gates.mjs
       - run: node test-exec-broker-session-capacity.mjs
       - run: node test-paperclip-semantic.mjs
       - run: node test-docker-candidate-contract.mjs
