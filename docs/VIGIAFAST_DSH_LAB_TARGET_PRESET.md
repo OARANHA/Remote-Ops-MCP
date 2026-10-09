@@ -22,6 +22,13 @@ A baseline resultante é:
 
 Assim, `operator` **não equivale a acesso shell ou Docker genérico**: sem allowlist, a capability tradicional permanece negada.
 
+Além disso, o próprio Agent Mesh deve iniciar com configuração explícita de **device de laboratório**:
+- `VIGIAFAST_DSH_OFFLINE_DEVICE_MODE=1`;
+- `DOCKER_HOST=tcp://127.0.0.1:23751` apontando ao proxy **isolado do laboratório**, nunca ao proxy de produção;
+- nesse modo, o heartbeat do agente anuncia **somente** `vigiafast.dsh.offline_probe`; as operações genéricas de workspace, processo, Docker e managed-admin são recusadas pelo próprio agente;
+- sem esse modo, a invocação da capacidade `vigiafast.dsh.offline_probe` também é recusada;
+- `target_agent_prepare` e `target_agent_apply` exigem que o device ativo continue anunciando a capacidade no heartbeat. Configuração de variável de ambiente e heartbeat são sinais de configuração, **não** prova de isolamento de kernel, daemon Docker ou imagem.
+
 O identificador `vigiafast-dsh-lab` fica **reservado**. Um preset genérico ou administrativo não pode conceder autoridade a esse ID. A preparação exige um device Agent Mesh real, pareado, com heartbeat e **não referenciado por outro target**. A aplicação (`APPROVE adm_...`) verifica novamente a exclusividade e o ambiente, inclusive se outro target foi aprovado enquanto o ticket aguardava autorização. Também é proibido atribuir o device do laboratório a outro target enquanto o laboratório existir.
 
 ## Procedimento futuro, não executar antes do gate operacional
@@ -52,6 +59,8 @@ Usar apenas `vigiafast_dsh_offline_probe`, exigir `offline_lab_attestation.ok=tr
 ## Segurança, CI e rollout
 
 A CI desta PR testa:
+- modo exclusivo do agente, opt-in exato e host de proxy loopback; rejeição de operações genéricas no device mesmo se enviadas pelo control plane;
+- recusa de device que não anunciou a capability no prepare e de device que a perdeu antes do apply;
 - ID de target exatamente reservado e `environment=development`;
 - ausência de poderes genéricos de Docker, shell, escrita ou root;
 - falha de preparação com preset administrativo/ID alternativo;
