@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { rootMountIsReadOnly } from "./labs/dsh-offline/mountinfo.mjs";
 
 const compose = fs.readFileSync("labs/dsh-offline/compose.yaml", "utf8");
 const image = fs.readFileSync("labs/dsh-offline/Dockerfile", "utf8");
@@ -30,7 +31,18 @@ assert.match(image, /^ENTRYPOINT \["node", "\/opt\/vigiafast\/probe\.mjs"\]$/m, 
 assert.doesNotMatch(image, /^RUN\s/m, "no installer, shell setup or download at build");
 assert.doesNotMatch(image, /CHUTES_API_KEY|GITHUB_TOKEN|docker\.sock/i, "no secret or privileged socket in image");
 assert.match(probe, /no_provider_secret:/, "check absence of provider keys");
+assert.match(probe, /rootMountIsReadOnly\(fs\.readFileSync\("\/proc\/self\/mountinfo"/, "root mount flags checked");
 assert.match(probe, /no_docker_socket:/, "check absence of Docker socket");
 assert.match(probe, /loopback_only:/, "check loopback-only net namespace");
 assert.doesNotMatch(probe, /(?:https?:\/\/|fetch\s*\()/i, "probe must not make network requests");
-console.log("offline dsh container contract: PASS (manifest invariants only)");
+// A non-root user receives EACCES from /etc on a writable rootfs.
+// Root mount flags must be checked, never a file-write failure alone.
+const mi = options => `17 1 0:29 / / ${options} - overlay overlay ${options}\n18 17 0:30 / /etc rw,relatime - tmpfs tmpfs rw\n`;
+assert.equal(rootMountIsReadOnly(mi("ro,relatime")), true, "read-only root mount");
+assert.equal(rootMountIsReadOnly(mi("rw,relatime")), false, "writable root must fail");
+assert.equal(rootMountIsReadOnly(mi("ro,rw,relatime")), false, "ambiguous root flags must fail");
+assert.equal(rootMountIsReadOnly(mi("rw,relatime").replace(" / / rw", " / /missing rw")), false, "missing root mount fails");
+assert.equal(rootMountIsReadOnly(mi("ro,relatime") + mi("ro,relatime")), false, "duplicate root mounts fail");
+assert.equal(rootMountIsReadOnly(""), false, "empty mountinfo fails");
+assert.equal(rootMountIsReadOnly(null), false, "invalid mountinfo fails");
+console.log("offline dsh container contract: PASS (manifest and read-only root mount negative tests)");
