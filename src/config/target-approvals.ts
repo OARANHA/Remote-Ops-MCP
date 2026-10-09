@@ -3,7 +3,8 @@ import { OpsError } from "../lib/errors.js";
 import { MANAGED_ADMIN_CAPABILITY } from "../privileged/managed-admin-policy.js";
 import { buildAgentTargetFromPreset, describeTargetCapabilityBaseline, type AgentTargetPreset } from "./capability-baseline.js";
 import { APPROVAL_TTL_MS, newApprovalId, requireApprovalConfirmation, requireLiveDevice } from "./approval-utils.js";
-import { publicTarget, upsertDynamicAgentTarget, type TargetConfig } from "./targets.js";
+import { publicTarget, upsertDynamicAgentTarget, listTargets, type TargetConfig } from "./targets.js";
+import { LAB_TARGET_ID } from "../docker/vigiafast-offline-probe.js";
 
 interface PendingApproval {
   id: string;
@@ -33,6 +34,14 @@ export function prepareAgentTarget(input: {
     throw new OpsError("CAPABILITY_DENIED", "managed-admin exige AUTH_MODE=oauth e AUTH_SECRET forte");
   }
   const device = requireLiveDevice(input.deviceId);
+  if (input.preset === "vigiafast-dsh-offline") {
+    if (input.targetId !== LAB_TARGET_ID || input.environment !== "development") {
+      throw new OpsError("CAPABILITY_DENIED", "laboratorio exige target exato de desenvolvimento");
+    }
+    if (listTargets().some((t) => t.deviceId === input.deviceId && t.id !== input.targetId)) {
+      throw new OpsError("CAPABILITY_DENIED", "laboratorio exige device Agent Mesh exclusivo");
+    }
+  }
   const target = buildAgentTargetFromPreset(input);
   if (input.preset === "managed-admin" && !device.capabilities?.includes(MANAGED_ADMIN_CAPABILITY)) {
     throw new OpsError("CAPABILITY_DENIED", `Agent Mesh device "${input.deviceId}" não anunciou ${MANAGED_ADMIN_CAPABILITY}; instale/ative o broker managed-admin primeiro`);
@@ -44,7 +53,9 @@ export function prepareAgentTarget(input: {
       ? "pinned PostgreSQL readback only; generic Docker/process/write access remains disabled"
       : input.preset === "managed-admin"
         ? "workspace operator + signed managed-admin root broker; no generic sudo/docker group and no break-glass shell"
-        : "static targets are not modified; Docker access remains disabled";
+        : input.preset === "vigiafast-dsh-offline"
+          ? "VIGIAFAST development-only offline probe semantic capability; no workspace, process, Docker, service or admin rights"
+          : "static targets are not modified; Docker access remains disabled";
   const summary =
     `create/update dynamic target ${target.id} -> ${input.deviceId} (${input.environment}, ${input.preset}); ` +
     authority;
@@ -86,6 +97,12 @@ export function applyAgentTargetApproval(input: {
   requireApprovalConfirmation(approval.id, input.confirmation);
 
   const liveDevice = requireLiveDevice(approval.target.deviceId!);
+  if (approval.target.id === LAB_TARGET_ID) {
+    if (approval.target.environment !== "development"
+        || listTargets().some((t) => t.id !== LAB_TARGET_ID && t.deviceId === approval.target.deviceId)) {
+      throw new OpsError("CAPABILITY_DENIED", "device do laboratorio nao e exclusivo ou ambiente e invalido");
+    }
+  }
   if (approval.target.allowedSemanticCapabilities.includes(MANAGED_ADMIN_CAPABILITY) && !liveDevice.capabilities?.includes(MANAGED_ADMIN_CAPABILITY)) {
     throw new OpsError("CAPABILITY_DENIED", `Agent Mesh device "${approval.target.deviceId}" deixou de anunciar ${MANAGED_ADMIN_CAPABILITY}`);
   }
