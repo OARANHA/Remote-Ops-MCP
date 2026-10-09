@@ -4,7 +4,7 @@ import { MANAGED_ADMIN_CAPABILITY } from "../privileged/managed-admin-policy.js"
 import { buildAgentTargetFromPreset, describeTargetCapabilityBaseline, type AgentTargetPreset } from "./capability-baseline.js";
 import { APPROVAL_TTL_MS, newApprovalId, requireApprovalConfirmation, requireLiveDevice } from "./approval-utils.js";
 import { publicTarget, upsertDynamicAgentTarget, listTargets, type TargetConfig } from "./targets.js";
-import { LAB_TARGET_ID } from "../docker/vigiafast-offline-probe.js";
+import { LAB_CAPABILITY, LAB_TARGET_ID } from "../docker/vigiafast-offline-probe.js";
 
 interface PendingApproval {
   id: string;
@@ -46,6 +46,9 @@ export function prepareAgentTarget(input: {
     }
     if (listTargets().some((t) => t.deviceId === input.deviceId && t.id !== input.targetId)) {
       throw new OpsError("CAPABILITY_DENIED", "laboratorio exige device Agent Mesh exclusivo");
+    }
+    if (!device.capabilities?.includes(LAB_CAPABILITY)) {
+      throw new OpsError("CAPABILITY_DENIED", "device do laboratorio nao anunciou capability offline explicitamente");
     }
   }
   const target = buildAgentTargetFromPreset(input);
@@ -108,6 +111,9 @@ export function applyAgentTargetApproval(input: {
     throw new OpsError("CAPABILITY_DENIED", "device do laboratorio nao pode ser reutilizado");
   }
   if (approval.target.id === LAB_TARGET_ID) {
+    if (!liveDevice.capabilities?.includes(LAB_CAPABILITY)) {
+      throw new OpsError("CAPABILITY_DENIED", "device do laboratorio deixou de anunciar capability offline");
+    }
     if (approval.target.environment !== "development"
         || listTargets().some((t) => t.id !== LAB_TARGET_ID && t.deviceId === approval.target.deviceId)) {
       throw new OpsError("CAPABILITY_DENIED", "device do laboratorio nao e exclusivo ou ambiente e invalido");
