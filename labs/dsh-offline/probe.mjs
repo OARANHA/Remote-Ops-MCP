@@ -3,6 +3,7 @@
 // real project, GitHub token or host workspace is used by this program.
 import fs from "node:fs";
 import path from "node:path";
+import { rootMountIsReadOnly } from "./mountinfo.mjs";
 
 function procFlag(name) {
   const status = fs.readFileSync("/proc/self/status", "utf8");
@@ -23,16 +24,9 @@ const checks = {
   no_provider_secret: !Object.keys(process.env).some(k => /(?:API_KEY|TOKEN|PASSWORD|SECRET|CREDENTIAL)/i.test(k)),
   dedicated_home: process.env.HOME === "/tmp",
   telemetry_disabled: process.env.DSH_TELEMETRY_DISABLED === "1",
-  read_only_root: (() => {
-    const probePath = "/etc/vigiafast-dsh-lab-probe";
-    try {
-      fs.writeFileSync(probePath, "should-fail", { flag: "wx" });
-      try { fs.unlinkSync(probePath); } catch {}
-      return false;
-    } catch (error) {
-      return ["EROFS", "EACCES", "EPERM"].includes(error?.code);
-    }
-  })(),
+  // Verify the root mount flags instead of conflating EACCES for the
+  // unprivileged UID with an actually read-only root filesystem.
+  read_only_root: rootMountIsReadOnly(fs.readFileSync("/proc/self/mountinfo", "utf8")),
   writable_ephemeral_tmpfs: (() => {
     const probePath = path.join("/tmp", "vigiafast-dsh-offline-" + process.pid);
     try {
