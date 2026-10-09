@@ -1,0 +1,35 @@
+# Stage A1: verification of an isolated, completely OFFLINE container.
+# This is NOT a DeepSeek Harness runtime; it installs no models or credentials.
+# Do not use `up` on a production host. Run once and remove only with approval.
+services:
+  vigiafast-dsh-offline:
+    profiles: ["manual"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: vigiafast/dsh-offline-probe:local
+    user: "10001:10001"
+    init: true
+    stdin_open: false
+    tty: false
+    read_only: true
+    privileged: false
+    network_mode: "none"
+    cap_drop: ["ALL"]
+    security_opt:
+      - "no-new-privileges:true"
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 32
+    ulimits:
+      nofile:
+        soft: 128
+        hard: 128
+    tmpfs:
+      - "/tmp:rw,nosuid,nodev,noexec,size=16777216,uid=10001,gid=10001"
+    environment:
+      HOME: /tmp
+      DSH_TELEMETRY_DISABLED: "1"
+      NODE_OPTIONS: "--max-old-space-size=128"
+    restart: "no"
+    stop_grace_period: 3s
