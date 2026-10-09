@@ -55,18 +55,18 @@ try {
   state.initStateStore();
   targets.loadRegistry();
 
-  function newDevice(hostname) {
+  function newDevice(hostname, labMode=false) {
     const pairing=state.createPairing({hostname,os:"linux test",agent_version:"test"});
     assert.ok(state.approvePairingByCode(pairing.code));
     const claimed=state.claimPairing(pairing.pairing_id,pairing.poll_token);
     assert.equal(claimed.status,"paired");
     const id=claimed.device.device_id;
-    assert.equal(state.touchDeviceHeartbeat(id,{agent_version:"test",capabilities:["host","workspace"]}),true);
+    assert.equal(state.touchDeviceHeartbeat(id,{agent_version:"test",capabilities:labMode?[LAB_CAPABILITY]:["host","workspace"]}),true);
     return id;
   }
-  const labDevice=newDevice("isolated-lab-test");
+  const labDevice=newDevice("isolated-lab-test",true);
   const sharedDevice=newDevice("other-target-test");
-  const raceDevice=newDevice("racing-target-test");
+  const raceDevice=newDevice("racing-target-test",true);
 
   for(const bad of [
     {targetId:"wrong-lab",deviceId:labDevice,environment:"development"},
@@ -75,12 +75,25 @@ try {
   ])assert.throws(()=>approvals.prepareAgentTarget({actor:"tester",...bad,preset}),/laboratorio exige target exato de desenvolvimento/);
   assert.equal(targets.getTarget(LAB_TARGET_ID),undefined);
 
+  const setLabHeartbeat=(caps)=>state.touchDeviceHeartbeat(labDevice,{agent_version:"test",capabilities:caps});
+  assert.equal(setLabHeartbeat([]),true);
+  assert.throws(
+    ()=>approvals.prepareAgentTarget({actor:"tester",targetId:LAB_TARGET_ID,deviceId:labDevice,environment:"development",preset}),
+    /nao anunciou capability offline/
+  );
+  assert.equal(setLabHeartbeat([LAB_CAPABILITY]),true);
   const p=approvals.prepareAgentTarget({actor:"tester",targetId:LAB_TARGET_ID,deviceId:labDevice,environment:"development",preset});
   assert.match(p.approval_id,/^adm_[a-f0-9]{24}$/);
   assert.equal(p.capability_baseline.process_programs,0);
   assert.equal(p.capability_baseline.semantic_capabilities,1);
   assert.equal(targets.getTarget(LAB_TARGET_ID),undefined,"prepare must not mutate the registry");
   assert.throws(()=>approvals.applyAgentTargetApproval({actor:"tester",approvalId:p.approval_id,confirmation:"APPROVE invalid"}),/confirmação inválida/);
+  assert.equal(setLabHeartbeat([]),true);
+  assert.throws(
+    ()=>approvals.applyAgentTargetApproval({actor:"tester",approvalId:p.approval_id,confirmation:"APPROVE "+p.approval_id}),
+    /deixou de anunciar capability offline/
+  );
+  assert.equal(setLabHeartbeat([LAB_CAPABILITY]),true);
   const applied=approvals.applyAgentTargetApproval({actor:"tester",approvalId:p.approval_id,confirmation:"APPROVE "+p.approval_id});
   assert.equal(applied.applied,true);
   assert.deepEqual(targets.getTarget(LAB_TARGET_ID).allowedSemanticCapabilities,[LAB_CAPABILITY]);
