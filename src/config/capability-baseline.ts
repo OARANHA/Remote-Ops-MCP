@@ -41,6 +41,9 @@ export function buildAgentTargetFromPreset(input: {
   environment: "production" | "staging" | "development";
   preset: AgentTargetPreset;
 }): TargetConfig {
+  if (input.targetId === LAB_TARGET_ID && input.preset !== "vigiafast-dsh-offline") {
+    throw new Error("vigiafast_lab_target_preset_required");
+  }
   const base = {
     id: input.targetId,
     deviceId: input.deviceId,
