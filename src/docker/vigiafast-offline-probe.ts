@@ -84,7 +84,10 @@ export function parseLabAttestation(value: unknown, exitCode: number): LabAttest
   const sanitized: Record<string, boolean> = {};
   for (const key of REQUIRED_CHECKS) {
     if (typeof checks[key] !== "boolean") throw new Error("missing_lab_check");
-    sanitized[key] = checks[key] as boolean;
+    // The ordinary MCP output redactor correctly hides fields named
+    // "secret". Rename this boolean attestation key without leaking the
+    // field or weakening the global redactor.
+    sanitized[key === "no_provider_secret" ? "no_provider_material" : key] = checks[key] as boolean;
   }
   // Explicitly disallow probe claims that disagree with the actual exit code.
   if (obj.ok !== Object.values(sanitized).every(Boolean)) throw new Error("inconsistent_lab_checks");
