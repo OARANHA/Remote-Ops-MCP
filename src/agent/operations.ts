@@ -4,6 +4,8 @@ import { denySecretPath } from "../security/paths.js";
 import { callExecBroker } from "./exec-broker-client.js";
 import { callManagedAdminBroker } from "./managed-admin-broker-client.js";
 import { normalizeManagedAdminTicket } from "../privileged/managed-admin-ticket.js";
+import { LAB_CAPABILITY } from "../docker/vigiafast-offline-probe.js";
+import { isOfflineLabDeviceMode } from "./offline-lab-device.js";
 
 export interface AgentOperation {
   op: string;
@@ -287,6 +289,11 @@ async function executePaperclipSemanticOperation(x: AgentOperation, opts?: ExecO
   } finally { clearTimeout(timer); }
 }
 export async function executeAgentOperation(x: AgentOperation, opts?: ExecOptions): Promise<ExecResult> {
+  // Independently enforce least privilege on the device, not just MCP target.
+  // A lab device cannot execute generic shell/Docker/host operations.
+  const labMode = isOfflineLabDeviceMode();
+  if (labMode && x.op !== LAB_CAPABILITY) throw new Error("offline_lab_device_only");
+  if (!labMode && x.op === LAB_CAPABILITY) throw new Error("offline_lab_device_not_enabled");
   if (x.op === "host.managed_admin") return executeManagedAdminOperation(x, opts);
   if (x.op === "postgres.pinned_readback") return executePostgresPinnedReadbackOperation(x, opts);
   if (x.op.startsWith("paperclip.")) return executePaperclipSemanticOperation(x, opts);

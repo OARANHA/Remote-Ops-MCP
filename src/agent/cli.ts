@@ -5,6 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import WebSocket from "ws";
 import { executeAgentOperation, type AgentOperation } from "./operations.js";
+import { LAB_CAPABILITY } from "../docker/vigiafast-offline-probe.js";
+import { isOfflineLabDeviceMode } from "./offline-lab-device.js";
 
 interface DeviceState {
   control_plane: string;
@@ -19,6 +21,9 @@ const version = "2.0.0-dev";
 const adminBrokerSocket = process.env.WANDORA_ADMIN_BROKER_SOCKET ?? "/run/wandora-ops-admin/admin.sock";
 
 function agentCapabilities(): string[] {
+  // Isolated lab devices must advertise ONLY their single semantic operation,
+  // never the generic Docker, shell, workspace or managed-admin authority.
+  if (isOfflineLabDeviceMode()) return [LAB_CAPABILITY];
   const capabilities = ["host.status","disk.usage","memory.status","uptime","fs.read","workspace.write","process.session","docker.exec","docker.lifecycle","service.lifecycle"];
   try {
     if (fs.statSync(adminBrokerSocket).isSocket()) {

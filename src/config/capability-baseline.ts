@@ -1,7 +1,8 @@
 import { MANAGED_ADMIN_CAPABILITY, MANAGED_ADMIN_DEFAULT_CWDS, MANAGED_ADMIN_DEFAULT_PROGRAMS } from "../privileged/managed-admin-policy.js";
 import type { TargetConfig } from "./targets.js";
+import { LAB_CAPABILITY, LAB_TARGET_ID } from "../docker/vigiafast-offline-probe.js";
 
-export type AgentTargetPreset = "operator-workspace" | "read-only" | "postgres-readback" | "managed-admin";
+export type AgentTargetPreset = "operator-workspace" | "read-only" | "postgres-readback" | "managed-admin" | "vigiafast-dsh-offline";
 
 export const AGENT_WORKSPACE_ROOT = "/opt/wandora/ops-workspace";
 
@@ -40,6 +41,9 @@ export function buildAgentTargetFromPreset(input: {
   environment: "production" | "staging" | "development";
   preset: AgentTargetPreset;
 }): TargetConfig {
+  if (input.targetId === LAB_TARGET_ID && input.preset !== "vigiafast-dsh-offline") {
+    throw new Error("vigiafast_lab_target_preset_required");
+  }
   const base = {
     id: input.targetId,
     deviceId: input.deviceId,
@@ -68,6 +72,24 @@ export function buildAgentTargetFromPreset(input: {
     allowedAdminPrograms: [] as string[],
     allowedAdminCwds: [] as string[],
   };
+
+  if (input.preset === "vigiafast-dsh-offline") {
+    if (input.targetId !== LAB_TARGET_ID || input.environment !== "development") {
+      throw new Error("vigiafast_lab_target_requires_exact_id_and_development");
+    }
+    // Important: this is only a semantic capability, NOT generic host rights.
+    return {
+      ...base,
+      capabilityProfile: "operator",
+      allowedPaths: [],
+      allowedServices: [],
+      allowedServiceActions: [],
+      allowedWritePaths: [],
+      allowedProcessCwds: [],
+      allowedProcessPrograms: [],
+      allowedSemanticCapabilities: [LAB_CAPABILITY],
+    };
+  }
 
   if (input.preset === "managed-admin") {
     return {
