@@ -23,7 +23,7 @@ function fail(code: string): never {
   emit({ type: "failure", code });
   process.exit(1);
 }
-function verifyCheckout(expectedSha: string): void {
+function verifyCheckout(expectedSha: string, isResume: boolean): void {
   if (process.platform !== "linux") throw new Error("linux_required");
   if (fs.realpathSync(process.cwd()) !== fs.realpathSync(ROOT)) throw new Error("invalid_workspace");
   const root = fs.realpathSync(ROOT);
@@ -38,6 +38,14 @@ function verifyCheckout(expectedSha: string): void {
     cwd: ROOT, encoding: "utf8", timeout: 3000, stdio: ["ignore", "pipe", "ignore"],
   }).trim();
   if (sha !== expectedSha) throw new Error("sha_mismatch");
+  // A fresh task must start from a clean, dedicated checkout. On resume,
+  // the session may legitimately have uncommitted edits of its own.
+  if (!isResume) {
+    const dirty = execFileSync("/usr/bin/git", ["status", "--porcelain=v1"], {
+      cwd: ROOT, encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"],
+    });
+    if (dirty.trim()) throw new Error("checkout_dirty");
+  }
   if (!fs.statSync(DSH_BIN).isFile() && !fs.statSync(DSH_BIN).isSymbolicLink()) throw new Error("dsh_missing");
   if (!fs.statSync(PATCH).isFile()) throw new Error("patch_missing");
 }
@@ -77,7 +85,7 @@ async function run(): Promise<void> {
   let request;
   try { request = parseTaskRequest(raw); }
   catch { fail("task_denied"); }
-  try { verifyCheckout(request.expected_sha); }
+  try { verifyCheckout(request.expected_sha, !!request.session_id); }
   catch { fail("checkout_gate_denied"); }
 
   const argv = ["--profile", "headless", "--patch", PATCH, "--json"];
