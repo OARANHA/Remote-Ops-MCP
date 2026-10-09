@@ -34,6 +34,12 @@ export function prepareAgentTarget(input: {
     throw new OpsError("CAPABILITY_DENIED", "managed-admin exige AUTH_MODE=oauth e AUTH_SECRET forte");
   }
   const device = requireLiveDevice(input.deviceId);
+  if (input.targetId === LAB_TARGET_ID && input.preset !== "vigiafast-dsh-offline") {
+    throw new OpsError("CAPABILITY_DENIED", "identificador do laboratorio reservado ao preset governado");
+  }
+  if (input.targetId !== LAB_TARGET_ID && listTargets().some((t) => t.id === LAB_TARGET_ID && t.deviceId === input.deviceId)) {
+    throw new OpsError("CAPABILITY_DENIED", "device do laboratorio nao pode ser reutilizado");
+  }
   if (input.preset === "vigiafast-dsh-offline") {
     if (input.targetId !== LAB_TARGET_ID || input.environment !== "development") {
       throw new OpsError("CAPABILITY_DENIED", "laboratorio exige target exato de desenvolvimento");
@@ -97,6 +103,10 @@ export function applyAgentTargetApproval(input: {
   requireApprovalConfirmation(approval.id, input.confirmation);
 
   const liveDevice = requireLiveDevice(approval.target.deviceId!);
+  if (approval.target.id !== LAB_TARGET_ID
+      && listTargets().some((t) => t.id === LAB_TARGET_ID && t.deviceId === approval.target.deviceId)) {
+    throw new OpsError("CAPABILITY_DENIED", "device do laboratorio nao pode ser reutilizado");
+  }
   if (approval.target.id === LAB_TARGET_ID) {
     if (approval.target.environment !== "development"
         || listTargets().some((t) => t.id !== LAB_TARGET_ID && t.deviceId === approval.target.deviceId)) {
