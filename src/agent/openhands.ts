@@ -60,6 +60,45 @@ async function boundedJson(response: Response): Promise<unknown> {
   try { return JSON.parse(new TextDecoder().decode(result)); }
   catch { throw new Error("openhands_invalid_json"); }
 }
+/**
+ * Resolve the agent using the existing Canvas configuration. The backend returns
+ * cipher-encrypted secret fields; never request plaintext or log this payload.
+ * A saved Agent Profile is preferred when one is active, because it is resolved
+ * entirely on the OpenHands side without forwarding encrypted settings.
+ */
+async function resolveConfiguredAgent(
+  fetcher: Fetcher, key: string, signal: AbortSignal,
+): Promise<Record<string, unknown>> {
+  const response = await fetcher(BASE_URL + "/api/settings", {
+    method: "GET", redirect: "error", signal,
+    headers: {"X-Session-API-Key": key, "X-Expose-Secrets": "encrypted"},
+  });
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) throw new Error("openhands_auth_denied");
+    if (response.status === 429) throw new Error("openhands_rate_limited");
+    throw new Error("openhands_agent_settings_unavailable");
+  }
+  const value = await boundedJson(response);
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("openhands_agent_settings_unavailable");
+  const settings = value as Record<string, unknown>;
+  const profile = settings.active_agent_profile_id;
+  if (profile !== null && profile !== undefined) {
+    if (typeof profile !== "string" || !UUID.test(profile))
+      throw new Error("openhands_agent_settings_unavailable");
+    return {agent_profile_id: profile};
+  }
+  const agent = settings.agent_settings;
+  if (!agent || typeof agent !== "object" || Array.isArray(agent))
+    throw new Error("openhands_agent_settings_unavailable");
+  const llm = (agent as Record<string, unknown>).llm;
+  if (!llm || typeof llm !== "object" || Array.isArray(llm) ||
+      typeof (llm as Record<string, unknown>).model !== "string" ||
+      !(llm as Record<string, string>).model.trim())
+    throw new Error("openhands_agent_settings_unavailable");
+  return {agent_settings: agent, secrets_encrypted: true};
+}
+
 export async function runOpenHandsCommand(
   command: OpenHandsCommand,
   args: Record<string, unknown> = {},
@@ -67,7 +106,7 @@ export async function runOpenHandsCommand(
 ): Promise<Record<string, unknown>> {
   if (!["openhands.health","openhands.list","openhands.status","openhands.result","openhands.start","openhands.stop"].includes(command))
     throw new Error("openhands_operation_denied");
-  let path: string, method = "GET", body: string | undefined;
+  let path: string, method = "GET", body: string | undefined, startTask: string | undefined;
   if (command === "openhands.health") path = "/health";
   else if (command === "openhands.list") {
     const limit = Number(args.limit ?? 10);
@@ -84,13 +123,7 @@ export async function runOpenHandsCommand(
     const task = args.task;
     if (typeof task !== "string" || task.trim().length < 5 || task.length > 4000) throw new Error("invalid_task");
     method = "POST"; path = "/api/conversations";
-    body = JSON.stringify({
-      workspace: {working_dir: WORKSPACE},
-      confirmation_policy: {kind:"AlwaysConfirm"},
-      max_iterations: 20,
-      worktree: false,
-      initial_message: {role:"user", content:[{type:"text",text:task.trim()}]},
-    });
+    startTask = task.trim();
   } else {
     const id = requireUuid(args.conversation_id);
     if (command === "openhands.status") path = `/api/conversations/${id}`;
@@ -108,7 +141,19 @@ export async function runOpenHandsCommand(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(),timeout);
   try {
-    const response = await (deps.fetcher ?? fetch)(BASE_URL + path,{
+    const fetcher = deps.fetcher ?? fetch;
+    if (startTask !== undefined) {
+      const agentSource = await resolveConfiguredAgent(fetcher, credentialValue!, controller.signal);
+      body = JSON.stringify({
+        ...agentSource,
+        workspace: {kind:"LocalWorkspace", working_dir: WORKSPACE},
+        confirmation_policy: {kind:"AlwaysConfirm"},
+        max_iterations: 20,
+        worktree: false,
+        initial_message: {role:"user", content:[{type:"text",text:startTask}], run:true},
+      });
+    }
+    const response = await fetcher(BASE_URL + path,{
       method,redirect:"error",signal:controller.signal,
       headers: credentialValue ? {"X-Session-API-Key":credentialValue, ...(body ? {"Content-Type":"application/json"} : {})} : {},
       ...(body ? {body}:{}),
