@@ -95,3 +95,43 @@ Tests mock the OpenHands API: health, auth, list redaction, fixed workspace, Alw
 - The current Canvas relay systemd unit was last observed active but disabled on reboot. Persist it only via a separate approved action.
 - The DNS-01 resolver was configured but renewal has not been proven over a full renewal lifecycle.
 - No live authenticated list/start/stop test, GitHub token install, agent process deployment, CI result or merge is claimed by this PR.
+
+
+## Sanitized conversation-event diagnostics (proposed PR, NOT deployed)
+
+The read-only MCP tool `openhands_events` uses the existing `openhands.read`
+semantic capability and fixed localhost OpenHands Agent Server. It accepts an
+existing conversation UUID, page size 1–20 and optional bounded page cursor.
+The Agent Mesh implementation calls only
+`GET /api/conversations/{conversation_id}/events/search`. It does not use a
+shell, Docker, filesystem mounts, API credentials from chat or new privileges.
+The existing OpenHands session API key stays exclusively on the Vigia host.
+
+Every upstream event is projected to exactly these fields:
+
+- `kind` and `source`, normalized to short safe labels;
+- `tool_name` for action/observation events only, character-validated;
+- `structured_tool_call` (boolean) for an actual ActionEvent or an assistant
+  MessageEvent carrying structured calls;
+- `has_raw_dsml` (boolean) for assistant MessageEvent text containing the
+  literal DeepSeek DSML tool-call opening marker.
+
+A page also contains the supplied conversation UUID and bounded next-page
+cursor. User/assistant message text, model reasoning, tool arguments, tool
+outputs, file paths, API secrets, arbitrary response fields and raw event IDs
+are **never** forwarded. The bridge rejects malformed pages and stops reading
+responses above 128 KiB; large events therefore fail closed rather than being
+partially shown. Pagination remains explicit; the tool does not bulk-export an
+entire conversation.
+
+**Limits:** this capability establishes whether the OpenHands event log
+contains structured action events versus assistant messages with raw DSML.
+It does **not** capture outbound LiteLLM/Chutes request payloads, verify
+`tool_choice`, determine raw response `finish_reason`, or repair model
+tool calling. Those need a separate, explicitly approved and privacy-reviewed
+instrumentation step if the stored events cannot establish the failure mode.
+
+CI includes offline mocked tests in `test-openhands-bridge.mjs` for allowlisted
+fields, non-disclosure of secret-bearing source objects, pagination and
+authentication denials. Merging or deploying this PR is **not** authorized
+by writing or reviewing these changes.
