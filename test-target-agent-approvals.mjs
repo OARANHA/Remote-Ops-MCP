@@ -134,6 +134,66 @@ try {
   assert.deepEqual(openhandsTarget.allowedDockerActions, []);
   assert.deepEqual(openhandsTarget.allowedAdminPrograms, []);
 
+  const preparedExecute = approvals.prepareAgentTarget({
+    actor: "test-actor",
+    targetId: "vigia-openhands-execute",
+    deviceId,
+    environment: "production",
+    preset: "openhands-execute",
+  });
+  assert.match(preparedExecute.summary, /no generic operator/);
+  assert.equal(targets.getTarget("vigia-openhands-execute"), undefined);
+  assert.throws(
+    () => approvals.applyAgentTargetApproval({
+      actor: "test-actor",
+      approvalId: preparedExecute.approval_id,
+      confirmation: "APPROVE incorrect",
+    }),
+    /confirmação inválida/,
+  );
+  const appliedExecute = approvals.applyAgentTargetApproval({
+    actor: "test-actor",
+    approvalId: preparedExecute.approval_id,
+    confirmation: "APPROVE " + preparedExecute.approval_id,
+  });
+  assert.equal(appliedExecute.applied, true);
+  const executeTarget = targets.getTarget("vigia-openhands-execute");
+  assert.equal(executeTarget?.capabilityProfile, "semantic-operator");
+  assert.deepEqual(executeTarget?.allowedSemanticCapabilities, ["openhands.read","openhands.execute"]);
+  assert.deepEqual(executeTarget?.allowedProcessPrograms, []);
+  assert.deepEqual(executeTarget?.allowedProcessCwds, []);
+  assert.deepEqual(executeTarget?.allowedWritePaths, []);
+  assert.deepEqual(executeTarget?.allowedAdminPrograms, []);
+
+  // Semantic operator must NOT inherit generic operator session commands.
+  const { TOOL_DEFS } = await import("./dist/tools/index.js");
+  const byName = (name) => {
+    const tool = TOOL_DEFS.find((x) => x.name === name);
+    assert.ok(tool, name);
+    return tool;
+  };
+  const ctx = {actor:"test-actor",requestId:"unit-test"};
+  for (const toolName of ["list_processes","read_process_output","send_process_input","kill_process","write_file","service_action"]) {
+    const input = {
+      target:"vigia-openhands-execute",
+      session_id:"ps_" + "1".repeat(24),
+      content:"test",
+      input:"test",
+      path:"/opt/wandora/ops-workspace/test.txt",
+      service:"wandora-ops-agent.service",
+      action:"restart",
+    };
+    await assert.rejects(() => byName(toolName).run(input, ctx), /capability profile operator/);
+  }
+  await assert.rejects(
+    () => byName("openhands_start").run({target:"vigia-openhands-read",task:"synthetic unit test"},ctx),
+    /target de execução semântica dedicado/,
+  );
+  await assert.rejects(
+    () => byName("openhands_start").run({target:"medicspro-agent",task:"synthetic unit test"},ctx),
+    /target de execução semântica dedicado/,
+  );
+
   const preparedPostgres = approvals.prepareAgentTarget({
     actor: "test-actor",
     targetId: "medicspro-db-readback",
