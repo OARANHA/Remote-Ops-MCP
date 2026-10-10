@@ -109,6 +109,31 @@ try {
   });
   assert.equal(targets.getTarget("medicspro-agent")?.capabilityProfile, "read-only");
 
+  const preparedOpenHands = approvals.prepareAgentTarget({
+    actor: "test-actor",
+    targetId: "vigia-openhands-read",
+    deviceId,
+    environment: "production",
+    preset: "openhands-read",
+  });
+  assert.match(preparedOpenHands.summary, /no execute/);
+  assert.equal(targets.getTarget("vigia-openhands-read"), undefined, "prepare must not mutate registry");
+  const appliedOpenHands = approvals.applyAgentTargetApproval({
+    actor: "test-actor",
+    approvalId: preparedOpenHands.approval_id,
+    confirmation: `APPROVE ${preparedOpenHands.approval_id}`,
+  });
+  assert.equal(appliedOpenHands.applied, true);
+  const openhandsTarget = targets.getTarget("vigia-openhands-read");
+  assert.ok(openhandsTarget);
+  assert.equal(openhandsTarget.capabilityProfile, "read-only");
+  assert.deepEqual(openhandsTarget.allowedSemanticCapabilities, ["openhands.read"]);
+  assert.deepEqual(openhandsTarget.allowedPaths, []);
+  assert.deepEqual(openhandsTarget.allowedWritePaths, []);
+  assert.deepEqual(openhandsTarget.allowedProcessPrograms, []);
+  assert.deepEqual(openhandsTarget.allowedDockerActions, []);
+  assert.deepEqual(openhandsTarget.allowedAdminPrograms, []);
+
   const preparedPostgres = approvals.prepareAgentTarget({
     actor: "test-actor",
     targetId: "medicspro-db-readback",
