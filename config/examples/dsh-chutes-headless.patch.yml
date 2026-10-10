@@ -1,0 +1,40 @@
+# Exemplo opt-in para o perfil headless do DeepSeek Harness (Linux).
+# Usar somente com --patch; NAO inserir no profile de producao sem validacao.
+# Chave ausente deliberadamente: injetar CHUTES_API_KEY via secret manager.
+# ID de modelo = ID do gateway Chutes, nao nome de exibicao.
+#
+# DeepSeek Harness: docs/user/guide/providers.md + llm-pi-ai/README.md
+# Chutes: https://chutes.ai/docs/guides/starter-guide
+#
+# ATENCAO: overlays Cordis substituem config integral das linhas referidas.
+# Este patch declara TODO o config necessario aos dois IDs abaixo.
+
+- id: llm-pi-ai
+  config:
+    providers:
+      chutes:
+        displayName: Chutes.ai
+        apiKeyEnv: CHUTES_API_KEY
+        api: openai-completions
+        baseURL: https://llm.chutes.ai/v1
+        defaultInput: [text]
+        compat:
+          supportsDeveloperRole: false
+          maxTokensField: max_tokens
+        retryPolicy:
+          mode: normal
+          maxRetries: 2
+        models:
+          - id: deepseek-ai/DeepSeek-V4-Flash-0731-TEE
+            name: DeepSeek V4 Flash - tarefas de rotina
+          - id: zai-org/GLM-5.1-TEE
+            name: GLM 5.1 - engenharia de codigo
+          - id: Qwen/Qwen3-235B-A22B-Thinking-2507-TEE
+            name: Qwen3 Thinking - analise e revisao
+          - id: moonshotai/Kimi-K2.6-TEE
+            name: Kimi K2.6 - segundo parecer
+
+- id: agent-default-model
+  config:
+    provider: chutes
+    model: deepseek-ai/DeepSeek-V4-Flash-0731-TEE
