@@ -1449,6 +1449,21 @@ const TOOL_DEFS: ToolDef[] = [
     },
   },
   {
+    name: "openhands_events",
+    description: "Diagnóstico somente de leitura: tipos de eventos, presença de chamadas estruturadas e DSML bruto; nunca retorna mensagens, argumentos, resultados ou credenciais. Exige openhands.read.",
+    inputSchema: {
+      target:targetField,
+      conversation_id:z.string().uuid(),
+      limit:z.number().int().min(1).max(20).default(20),
+      page_id:z.string().regex(/^[A-Za-z0-9_=-]{1,256}$/).optional(),
+    },
+    run:async(args)=>{
+      const t=resolveTarget(args.target);
+      requireSemanticCapability(t,"openhands.read");
+      return {target:t.id,...await agentJson(t,"openhands.events",{conversation_id:args.conversation_id,limit:args.limit??20,page_id:args.page_id})};
+    },
+  },
+  {
     name: "openhands_start",
     description: "INICIA tarefa OpenHands com custo de LLM, workspace isolado fixo, limite de 20 iterações e AlwaysConfirm. Só após pedido explícito do proprietário; exige semantic-operator + openhands.execute. NÃO autoriza merge, deploy nem uso de GitHub com escrita.",
     inputSchema: {
@@ -1524,7 +1539,7 @@ const TOOL_DEFS: ToolDef[] = [
 // including unscoped read helpers such as host_status or runtime_summary.
 const OPENHANDS_SEMANTIC_TOOLS = new Set([
   "openhands_health", "openhands_list", "openhands_status",
-  "openhands_result", "openhands_start", "openhands_stop",
+  "openhands_result", "openhands_events", "openhands_start", "openhands_stop",
 ]);
 for (const tool of TOOL_DEFS) {
   const originalRun = tool.run;
