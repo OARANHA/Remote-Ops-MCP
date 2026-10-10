@@ -24,20 +24,78 @@ test("search is bounded, authenticated and returns whitelisted fields only",asyn
   assert.equal(r.items[0].id,id);
   assert.equal(r.next_page_id,"abc");
 });
-test("start enforces AlwaysConfirm, fixed workspace and bounds",async()=>{
-  let req;
-  const r=await runOpenHandsCommand("openhands.start",{task:"Analyze this repository but make no changes"},deps(async(url,opts)=>{
+test("start resolves encrypted Canvas settings without exposing secrets",async()=>{
+  const secret="ciphertext-not-a-plaintext-key";
+  let req, requests=0;
+  const r=await runOpenHandsCommand("openhands.start",{task:"Reply with the synthetic canary marker"},deps(async(url,opts)=>{
+    requests++;
+    if(url.endsWith("/api/settings")) {
+      assert.equal(opts.method,"GET");
+      assert.equal(opts.headers["X-Expose-Secrets"],"encrypted");
+      assert.equal(opts.headers["X-Session-API-Key"],"super-secret-machine-auth-key");
+      assert.equal(opts.redirect,"error");
+      return response({agent_settings:{agent_kind:"openhands",llm:{model:"qwen3",api_key:secret}},active_agent_profile_id:null});
+    }
     assert.equal(url,"http://127.0.0.1:18080/api/conversations");
     assert.equal(opts.method,"POST");
+    assert.equal(opts.headers["X-Expose-Secrets"],undefined);
     req=JSON.parse(opts.body);
     return response({id,title:"Started",execution_status:"idle"});
   }));
+  assert.equal(requests,2);
   assert.equal(r.id,id);
+  assert.equal(JSON.stringify(r).includes(secret),false);
+  assert.equal(req.secrets_encrypted,true);
+  assert.equal(req.agent_settings.llm.api_key,secret);
+  assert.equal(req.agent_settings.llm.model,"qwen3");
   assert.equal(req.confirmation_policy.kind,"AlwaysConfirm");
-  assert.equal(req.workspace.working_dir,"/projects/mcp-coordination-lab");
+  assert.deepEqual(req.workspace,{kind:"LocalWorkspace",working_dir:"/projects/mcp-coordination-lab"});
   assert.equal(req.max_iterations,20);
-  assert.equal(req.initial_message.content[0].text,"Analyze this repository but make no changes");
-  assert.equal(Object.hasOwn(req,"agent_settings"),false);
+  assert.equal(req.worktree,false);
+  assert.equal(req.initial_message.run,true);
+  assert.equal(req.initial_message.content[0].text,"Reply with the synthetic canary marker");
+});
+
+test("start prefers an active saved profile and does not forward settings",async()=>{
+  const profile="22222222-2222-4222-8222-222222222222";
+  let req;
+  const r=await runOpenHandsCommand("openhands.start",{task:"Test without modifying files"},deps(async(url,opts)=>{
+    if(url.endsWith("/api/settings"))
+      return response({active_agent_profile_id:profile,agent_settings:{llm:{model:"qwen3",api_key:"ciphertext"}}});
+    req=JSON.parse(opts.body);
+    return response({id,title:"Profile",execution_status:"idle"});
+  }));
+  assert.equal(r.id,id);
+  assert.equal(req.agent_profile_id,profile);
+  assert.equal("agent_settings" in req,false);
+  assert.equal("secrets_encrypted" in req,false);
+  assert.equal(req.confirmation_policy.kind,"AlwaysConfirm");
+});
+
+test("start fails closed before POST when model settings are missing or malformed",async()=>{
+  for(const settings of [{},{agent_settings:{}},{agent_settings:{llm:{}}},{active_agent_profile_id:"invalid",agent_settings:{llm:{model:"qwen3"}}}]) {
+    let posts=0;
+    await assert.rejects(runOpenHandsCommand("openhands.start",{task:"Synthetic canary task"},deps(async(url)=>{
+      if(url.endsWith("/api/settings"))return response(settings);
+      posts++;return response({id});
+    })),/openhands_agent_settings_unavailable/);
+    assert.equal(posts,0);
+  }
+});
+
+test("start never leaks upstream settings errors or credentials",async()=>{
+  const secret="very-private-key-material";
+  let posts=0;
+  await assert.rejects(runOpenHandsCommand("openhands.start",{task:"Synthetic canary task"},deps(async(url)=>{
+    if(url.endsWith("/api/settings")) return response({detail:secret},503);
+    posts++;return response({id});
+  })),(error)=>error.message==="openhands_agent_settings_unavailable" && !error.message.includes(secret));
+  assert.equal(posts,0);
+  await assert.rejects(runOpenHandsCommand("openhands.start",{task:"Synthetic canary task"},deps(async(url)=>{
+    if(url.endsWith("/api/settings"))return response({detail:secret},401);
+    posts++;return response({id});
+  })),(error)=>error.message==="openhands_auth_denied");
+  assert.equal(posts,0);
 });
 test("stop and result restrict uuid and whitelist outputs",async()=>{
   const commands=[];
