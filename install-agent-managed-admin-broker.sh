@@ -13,6 +13,7 @@ PUBLIC_KEY_FILE="${WANDORA_ADMIN_AUTHORITY_PUBLIC_KEY:-$PUBLIC_KEY_DIR/managed-a
 PUBLIC_KEY_URL="${WANDORA_ADMIN_PUBLIC_KEY_URL:-${CONTROL_PLANE%/}/agent/managed-admin-public-key}"
 ADMIN_CWDS="${WANDORA_ADMIN_CWDS:-/opt/wandora/ops-workspace,/opt/wandora}"
 ADMIN_PROGRAMS="${WANDORA_ADMIN_PROGRAMS:-apt-get,apt,dpkg,systemctl,journalctl,docker,git,curl,wget,install,cp,mv,rm,rmdir,mkdir,chmod,chown,chgrp,ln,tar,unzip,ufw,firewall-cmd,ip,ss,hostnamectl,timedatectl,sysctl,mount,umount,lsblk,df,du}"
+NODE_BIN="${WANDORA_NODE_BIN:-/usr/bin/node}"
 
 log(){ printf '\033[1;34m[wandora-managed-admin]\033[0m %s\n' "$*"; }
 ok(){ printf '\033[1;32m✓\033[0m %s\n' "$*"; }
@@ -23,8 +24,9 @@ die(){ printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 getent group ops-mcp >/dev/null 2>&1 || die "ops-mcp group does not exist; install/pair the agent first"
 test -s "$STATE_FILE" || die "paired agent state missing: $STATE_FILE"
 test -f "$INSTALL_DIR/dist/privileged/managed-admin-broker.js" || die "missing managed admin broker build in $INSTALL_DIR"
+[[ -x "$NODE_BIN" ]] || die "Node.js runtime is not executable: $NODE_BIN"
 
-device_id="$(/usr/bin/node -e 'const fs=require("fs");const s=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));process.stdout.write(String(s.device_id||""));' "$STATE_FILE")"
+device_id="$("$NODE_BIN" -e 'const fs=require("fs");const s=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));process.stdout.write(String(s.device_id||""));' "$STATE_FILE")"
 [[ "$device_id" =~ ^dev_[A-Za-z0-9_-]{8,80}$ ]] || die "invalid paired device_id"
 
 install -d -o root -g root -m 0700 "$ADMIN_STATE_DIR"
@@ -60,7 +62,7 @@ Environment=WANDORA_AGENT_STATE=$STATE_FILE
 Environment=WANDORA_ADMIN_REPLAY_FILE=$ADMIN_STATE_DIR/replay.json
 Environment=WANDORA_ADMIN_CWDS=$ADMIN_CWDS
 Environment=WANDORA_ADMIN_PROGRAMS=$ADMIN_PROGRAMS
-ExecStart=/usr/bin/node $INSTALL_DIR/dist/privileged/managed-admin-broker.js
+ExecStart=$NODE_BIN $INSTALL_DIR/dist/privileged/managed-admin-broker.js
 Restart=on-failure
 RestartSec=2
 RuntimeDirectory=wandora-ops-admin
