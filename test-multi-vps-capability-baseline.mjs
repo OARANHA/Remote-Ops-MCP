@@ -37,6 +37,34 @@ assert.deepEqual(observation.allowedWritePaths, []);
 assert.deepEqual(observation.allowedProcessPrograms, []);
 assert.deepEqual(observation.allowedServiceActions, []);
 
+const openhandsRead = buildAgentTargetFromPreset({
+  targetId: "vigia-openhands-read",
+  deviceId,
+  environment: "production",
+  preset: "openhands-read",
+});
+assert.equal(validateAgentTargetAgainstPreset(openhandsRead, "openhands-read").valid, true);
+assert.equal(openhandsRead.capabilityProfile, "read-only");
+assert.deepEqual(openhandsRead.allowedSemanticCapabilities, ["openhands.read"]);
+assert.deepEqual(openhandsRead.allowedPaths, []);
+assert.deepEqual(openhandsRead.allowedWritePaths, []);
+assert.deepEqual(openhandsRead.allowedProcessPrograms, []);
+assert.deepEqual(openhandsRead.allowedProcessCwds, []);
+assert.deepEqual(openhandsRead.allowedServiceActions, []);
+assert.deepEqual(openhandsRead.allowedDockerContainers, []);
+assert.deepEqual(openhandsRead.allowedDockerExecContainers, []);
+assert.deepEqual(openhandsRead.allowedDockerActions, []);
+assert.deepEqual(openhandsRead.allowedAdminPrograms, []);
+assert.equal(openhandsRead.allowedSemanticCapabilities.includes("openhands.execute"), false);
+const widenedOpenHands = {
+  ...openhandsRead,
+  allowedSemanticCapabilities: ["openhands.read", "openhands.execute"],
+};
+assert.deepEqual(
+  validateAgentTargetAgainstPreset(widenedOpenHands, "openhands-read").differences,
+  ["allowedSemanticCapabilities"],
+);
+
 const postgres = buildAgentTargetFromPreset({
   targetId: "medicspro-db-readback",
   deviceId,
