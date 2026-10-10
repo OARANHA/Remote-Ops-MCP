@@ -290,7 +290,7 @@ const TOOL_DEFS: ToolDef[] = [
       target_id: z.string().regex(/^[a-z0-9][a-z0-9-]{1,39}$/),
       device_id: z.string().regex(/^dev_[A-Za-z0-9_-]{8,80}$/),
       environment: z.enum(["production","staging","development"]).default("production"),
-      preset: z.enum(["operator-workspace","read-only","postgres-readback","managed-admin"]).default("operator-workspace"),
+      preset: z.enum(["operator-workspace","read-only","openhands-read","postgres-readback","managed-admin"]).default("operator-workspace"),
     },
     mutation: true,
     destructive: false,
