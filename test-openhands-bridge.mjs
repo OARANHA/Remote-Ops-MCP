@@ -18,7 +18,7 @@ test("search is bounded, authenticated and returns whitelisted fields only",asyn
     assert.equal(url,"http://127.0.0.1:18080/api/conversations/search?limit=2");
     assert.equal(opts.headers["X-Session-API-Key"],"super-secret-machine-auth-key");
     assert.equal(opts.redirect,"error");
-    return response({items:[{id,title:"MCP test",execution_status:"finished",agent_settings:{llm:{[REDACTED]"}},created_at:"2026-10-09"}],next_page_id:"abc"});
+    return response({items:[{id,title:"MCP test",execution_status:"finished",agent_settings:{llm:{internal_note:"sensitive"}},created_at:"2026-10-09"}],next_page_id:"abc"});
   }));
   assert.equal(JSON.stringify(r).includes("sensitive"),false);
   assert.equal(r.items[0].id,id);
@@ -41,7 +41,7 @@ test("start enforces AlwaysConfirm, fixed workspace and bounds",async()=>{
 });
 test("stop and result restrict uuid and whitelist outputs",async()=>{
   const commands=[];
-  const mock=async(url,opts)=>{commands.push([url,opts.method]);return url.endsWith("agent_final_response")?response({response:"finished",[REDACTED]"}):response({success:true,details:{[REDACTED]"}});};
+  const mock=async(url,opts)=>{commands.push([url,opts.method]);return url.endsWith("agent_final_response")?response({response:"finished",internal_note:"not-returned"}):response({success:true,details:{internal_note:"hidden"}});};
   assert.deepEqual(await runOpenHandsCommand("openhands.result",{conversation_id:id},deps(mock)),{conversation_id:id,response:"finished"});
   assert.deepEqual(await runOpenHandsCommand("openhands.stop",{conversation_id:id},deps(mock)),{conversation_id:id,stop_requested:true});
   assert.equal(commands[1][1],"POST");
