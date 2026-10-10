@@ -16,7 +16,7 @@ export type OpenHandsDependencies = {
 };
 export type OpenHandsCommand =
   | "openhands.health" | "openhands.list" | "openhands.status"
-  | "openhands.result" | "openhands.start" | "openhands.stop";
+  | "openhands.result" | "openhands.events" | "openhands.start" | "openhands.stop";
 
 function requireUuid(value: unknown): string {
   const s = String(value ?? "");
@@ -38,6 +38,47 @@ function projectConversation(value: unknown): Record<string, unknown> {
     updated_at: safeText(x.updated_at, 50) || null,
   };
 }
+
+/**
+ * A deliberately lossy projection of stored OpenHands events.
+ * NEVER return text, thoughts, model arguments, tool inputs, tool outputs,
+ * observation bodies, LLM IDs, or arbitrary upstream fields.
+ */
+const SAFE_KIND = /^[A-Za-z][A-Za-z0-9]{0,63}$/;
+const SAFE_TOOL_NAME = /^[A-Za-z_][A-Za-z0-9_.-]{0,63}$/;
+const SAFE_PAGE_ID = /^[A-Za-z0-9_=-]{1,256}$/;
+function diagnosticToolName(value: unknown): string | null {
+  return typeof value === "string" && SAFE_TOOL_NAME.test(value) ? value : null;
+}
+function projectDiagnosticEvent(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid_openhands_response");
+  const x = value as Record<string, unknown>;
+  const kind = typeof x.kind === "string" && SAFE_KIND.test(x.kind) ? x.kind : "UnknownEvent";
+  const source = x.source === "agent" || x.source === "user" || x.source === "environment" ? x.source : "unknown";
+  const isAction = kind === "ActionEvent";
+  const isObservation = kind === "ObservationEvent" || kind === "AgentErrorEvent" ||
+    kind === "UserRejectObservation";
+  const isAgentMessage = kind === "MessageEvent" && source === "agent";
+  const lm = isAgentMessage && x.llm_message && typeof x.llm_message === "object" && !Array.isArray(x.llm_message)
+    ? x.llm_message as Record<string, unknown> : null;
+  const content = lm?.content;
+  const fragments = Array.isArray(content) ? content : [];
+  const hasRawDsml = isAgentMessage && fragments.some((part) => {
+    const t = typeof part === "string" ? part :
+      part && typeof part === "object" && !Array.isArray(part) ? (part as Record<string, unknown>).text : null;
+    return typeof t === "string" && t.includes("<｜DSML｜tool_calls>");
+  });
+  const toolCalls = lm && Array.isArray(lm.tool_calls) ? lm.tool_calls : [];
+  return {
+    kind,
+    source,
+    tool_name: (isAction || isObservation) ? diagnosticToolName(x.tool_name) : null,
+    structured_tool_call: isAction && !!x.tool_call && typeof x.tool_call === "object" ||
+      (isAgentMessage && toolCalls.length > 0),
+    has_raw_dsml: hasRawDsml,
+  };
+}
+
 async function boundedJson(response: Response): Promise<unknown> {
   const size = response.headers.get("content-length");
   if (size && Number(size) > MAX_RESPONSE_BYTES) throw new Error("openhands_response_too_large");
@@ -104,7 +145,7 @@ export async function runOpenHandsCommand(
   args: Record<string, unknown> = {},
   deps: OpenHandsDependencies = {},
 ): Promise<Record<string, unknown>> {
-  if (!["openhands.health","openhands.list","openhands.status","openhands.result","openhands.start","openhands.stop"].includes(command))
+  if (!["openhands.health","openhands.list","openhands.status","openhands.result","openhands.events","openhands.start","openhands.stop"].includes(command))
     throw new Error("openhands_operation_denied");
   let path: string, method = "GET", body: string | undefined, startTask: string | undefined;
   if (command === "openhands.health") path = "/health";
@@ -128,6 +169,18 @@ export async function runOpenHandsCommand(
     const id = requireUuid(args.conversation_id);
     if (command === "openhands.status") path = `/api/conversations/${id}`;
     else if (command === "openhands.result") path = `/api/conversations/${id}/agent_final_response`;
+    else if (command === "openhands.events") {
+      const limit = Number(args.limit ?? 20);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 20) throw new Error("invalid_limit");
+      const url = new URL(`/api/conversations/${id}/events/search`, BASE_URL);
+      url.searchParams.set("limit", String(limit));
+      if (args.page_id !== undefined) {
+        const pageId = String(args.page_id);
+        if (!SAFE_PAGE_ID.test(pageId)) throw new Error("invalid_page_id");
+        url.searchParams.set("page_id", pageId);
+      }
+      path = url.pathname + url.search;
+    }
     else { method = "POST"; path = `/api/conversations/${id}/goal/stop`; }
   }
   let credentialValue: string | undefined;
@@ -178,6 +231,19 @@ export async function runOpenHandsCommand(
     if (command === "openhands.result") {
       if (!json || typeof json !== "object") throw new Error("invalid_openhands_response");
       return {conversation_id:requireUuid(args.conversation_id),response:safeText((json as Record<string,unknown>).response,4000)};
+    }
+    if (command === "openhands.events") {
+      if (!json || typeof json !== "object" || Array.isArray(json)) throw new Error("invalid_openhands_response");
+      const page = json as Record<string, unknown>;
+      const limit = Number(args.limit ?? 20);
+      if (!Array.isArray(page.items) || page.items.length > limit) throw new Error("invalid_openhands_response");
+      const cursor = page.next_page_id;
+      if (cursor != null && (typeof cursor !== "string" || !SAFE_PAGE_ID.test(cursor))) throw new Error("invalid_openhands_response");
+      return {
+        conversation_id:requireUuid(args.conversation_id),
+        items:page.items.map(projectDiagnosticEvent),
+        next_page_id:cursor ?? null,
+      };
     }
     return {conversation_id:requireUuid(args.conversation_id),stop_requested:true};
   } catch(error) {
