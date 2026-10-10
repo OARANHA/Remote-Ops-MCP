@@ -183,7 +183,14 @@ try {
       service:"wandora-ops-agent.service",
       action:"restart",
     };
-    await assert.rejects(() => byName(toolName).run(input, ctx), /capability profile operator/);
+    await assert.rejects(() => byName(toolName).run(input, ctx), /Target OpenHands semântico não autoriza/);
+  }
+  for (const toolName of ["host_status", "runtime_summary", "target_status", "service_status"]) {
+    await assert.rejects(
+      () => byName(toolName).run({target:"vigia-openhands-execute",service:"wandora-ops-agent.service"},ctx),
+      /Target OpenHands semântico não autoriza/,
+      toolName,
+    );
   }
   await assert.rejects(
     () => byName("openhands_start").run({target:"vigia-openhands-read",task:"synthetic unit test"},ctx),
