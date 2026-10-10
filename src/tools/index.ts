@@ -132,6 +132,12 @@ function requireOperator(t: TargetConfig): void {
   if (t.capabilityProfile !== "operator") throw new OpsError("INVALID_ARGUMENT", `target "${t.id}" não está no capability profile operator`);
 }
 
+function requireOpenHandsExecutor(t: TargetConfig): void {
+  // A dedicated semantic-only profile avoids generic operator process/session access.
+  if (t.capabilityProfile !== "semantic-operator") throw new OpsError("CAPABILITY_DENIED", "OpenHands exige target de execução semântica dedicado");
+  requireSemanticCapability(t, "openhands.execute");
+}
+
 function requireProgram(t: TargetConfig, value: unknown): string {
   const program = String(value ?? "");
   if (!/^[A-Za-z0-9_.+-]{1,80}$/.test(program)) throw new OpsError("INVALID_ARGUMENT", "program inválido");
@@ -290,7 +296,7 @@ const TOOL_DEFS: ToolDef[] = [
       target_id: z.string().regex(/^[a-z0-9][a-z0-9-]{1,39}$/),
       device_id: z.string().regex(/^dev_[A-Za-z0-9_-]{8,80}$/),
       environment: z.enum(["production","staging","development"]).default("production"),
-      preset: z.enum(["operator-workspace","read-only","openhands-read","postgres-readback","managed-admin"]).default("operator-workspace"),
+      preset: z.enum(["operator-workspace","read-only","openhands-read","openhands-execute","postgres-readback","managed-admin"]).default("operator-workspace"),
     },
     mutation: true,
     destructive: false,
@@ -300,7 +306,7 @@ const TOOL_DEFS: ToolDef[] = [
       targetId: String(args.target_id),
       deviceId: String(args.device_id),
       environment: (args.environment ?? "production") as "production"|"staging"|"development",
-      preset: (args.preset ?? "operator-workspace") as "operator-workspace"|"read-only"|"postgres-readback"|"managed-admin",
+      preset: (args.preset ?? "operator-workspace") as "operator-workspace"|"read-only"|"openhands-read"|"openhands-execute"|"postgres-readback"|"managed-admin",
     }),
   },
   {
@@ -1444,7 +1450,7 @@ const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "openhands_start",
-    description: "INICIA tarefa OpenHands com custo de LLM, workspace isolado fixo, limite de 20 iterações e AlwaysConfirm. Só após pedido explícito do proprietário; exige operator + openhands.execute. NÃO autoriza merge, deploy nem uso de GitHub com escrita.",
+    description: "INICIA tarefa OpenHands com custo de LLM, workspace isolado fixo, limite de 20 iterações e AlwaysConfirm. Só após pedido explícito do proprietário; exige semantic-operator + openhands.execute. NÃO autoriza merge, deploy nem uso de GitHub com escrita.",
     inputSchema: {
       target:targetField,
       task:z.string().trim().min(5).max(4000),
@@ -1454,14 +1460,13 @@ const TOOL_DEFS: ToolDef[] = [
     idempotent:false,
     run:async(args)=>{
       const t=resolveTarget(args.target);
-      requireOperator(t);
-      requireSemanticCapability(t,"openhands.execute");
+      requireOpenHandsExecutor(t);
       return {target:t.id,...await agentJson(t,"openhands.start",{task:args.task},30000)};
     },
   },
   {
     name: "openhands_stop",
-    description: "Pede interrupção de uma conversa OpenHands identificada por UUID; exige confirmação exata do ID, operator e openhands.execute.",
+    description: "Pede interrupção de uma conversa OpenHands identificada por UUID; exige confirmação exata do ID, semantic-operator e openhands.execute.",
     inputSchema: {
       target:targetField,
       conversation_id:z.string().uuid(),
@@ -1473,8 +1478,7 @@ const TOOL_DEFS: ToolDef[] = [
     run:async(args)=>{
       if(args.conversation_id!==args.confirm_conversation_id) throw new OpsError("INVALID_ARGUMENT","confirmação do conversation_id diverge");
       const t=resolveTarget(args.target);
-      requireOperator(t);
-      requireSemanticCapability(t,"openhands.execute");
+      requireOpenHandsExecutor(t);
       return {target:t.id,...await agentJson(t,"openhands.stop",{conversation_id:args.conversation_id},20000)};
     },
   },
