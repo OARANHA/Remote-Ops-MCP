@@ -25,6 +25,9 @@ It does **not** provision the API key, grant execute access to the existing
 - Only `openhands_start` and `openhands_stop` accept this dedicated
   profile and the explicit `openhands.execute` capability. An operator
   target and a read-only target are deliberately rejected by these tools.
+- A central MCP tool-name allowlist restricts semantic-operator targets to the
+  six OpenHands operations. It explicitly prevents unrelated read-only tools
+  such as `host_status` and `runtime_summary` from bypassing isolation.
 - The OpenHands backend still has **its own** ability to run tools; target
   allowlists do not sandbox the OpenHands process. Restrict it to a
   disposable dedicated development environment, no customer datasets,
