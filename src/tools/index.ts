@@ -1520,4 +1520,23 @@ const TOOL_DEFS: ToolDef[] = [
   },
 ];
 
+// A semantic-only OpenHands target must not access unrelated MCP tools,
+// including unscoped read helpers such as host_status or runtime_summary.
+const OPENHANDS_SEMANTIC_TOOLS = new Set([
+  "openhands_health", "openhands_list", "openhands_status",
+  "openhands_result", "openhands_start", "openhands_stop",
+]);
+for (const tool of TOOL_DEFS) {
+  const originalRun = tool.run;
+  tool.run = async (args, ctx) => {
+    if (typeof args.target === "string") {
+      const target = getTarget(args.target);
+      if (target?.capabilityProfile === "semantic-operator" && !OPENHANDS_SEMANTIC_TOOLS.has(tool.name)) {
+        throw new OpsError("CAPABILITY_DENIED", "Target OpenHands semântico não autoriza esta ferramenta MCP");
+      }
+    }
+    return originalRun(args, ctx);
+  };
+}
+
 export { TOOL_DEFS };
