@@ -122,3 +122,80 @@ test("large responses are rejected",async()=>{
   const body={items:[],payload:"x".repeat(131200)};
   await assert.rejects(runOpenHandsCommand("openhands.list",{},deps(async()=>response(body))),/openhands_response_too_large/);
 });
+
+test("events: bounded authenticated read returns ONLY safe metadata", async () => {
+  const privateText = "PRIVATE_PROFILE_PROMPT_AND_KEY_MUST_NOT_LEAK";
+  const events = [
+    {
+      kind:"MessageEvent", source:"agent", id:"private-id",
+      llm_message:{content:[{type:"text",text:`Reasoning ${privateText} <｜DSML｜tool_calls>...</｜DSML｜tool_calls>` }], reasoning_content:privateText},
+    },
+    {
+      kind:"ActionEvent", source:"agent", tool_name:"terminal",
+      tool_call:{name:"terminal", arguments:JSON.stringify({command:`echo ${privateText}`})},
+      action:{command:`echo ${privateText}`}, thought:[{text:privateText}],
+    },
+    {
+      kind:"ObservationEvent", source:"environment", tool_name:"terminal",
+      observation:{content:privateText}, error:privateText,
+    },
+    {
+      kind:"MessageEvent", source:"user", llm_message:{content:[{type:"text",text:"<｜DSML｜tool_calls>user input"}]},
+    },
+  ];
+  const r = await runOpenHandsCommand("openhands.events", {conversation_id:id, limit:4}, deps(async(url, opts) => {
+    assert.equal(url, `http://127.0.0.1:18080/api/conversations/${id}/events/search?limit=4`);
+    assert.equal(opts.method, "GET");
+    assert.equal(opts.headers["X-Session-API-Key"], "super-secret-machine-auth-key");
+    assert.equal(opts.redirect, "error");
+    return response({items:events,next_page_id:"cursor_A-1"});
+  }));
+  assert.deepEqual(r, {
+    conversation_id:id,
+    items:[
+      {kind:"MessageEvent",source:"agent",tool_name:null,structured_tool_call:false,has_raw_dsml:true},
+      {kind:"ActionEvent",source:"agent",tool_name:"terminal",structured_tool_call:true,has_raw_dsml:false},
+      {kind:"ObservationEvent",source:"environment",tool_name:"terminal",structured_tool_call:false,has_raw_dsml:false},
+      {kind:"MessageEvent",source:"user",tool_name:null,structured_tool_call:false,has_raw_dsml:false},
+    ],
+    next_page_id:"cursor_A-1",
+  });
+  const sanitized=JSON.stringify(r);
+  assert.equal(sanitized.includes(privateText),false);
+  assert.equal(sanitized.includes("command"),false);
+  assert.equal(sanitized.includes("reasoning"),false);
+  assert.equal(sanitized.includes("PRIVATE"),false);
+});
+
+test("events: pagination is restricted and source metadata cannot inject payloads", async () => {
+  let calls=0;
+  const r = await runOpenHandsCommand("openhands.events",{conversation_id:id,limit:1,page_id:"c_1=-"},deps(async(url)=>{
+    calls++;
+    assert.equal(url,`http://127.0.0.1:18080/api/conversations/${id}/events/search?limit=1&page_id=c_1%3D-`);
+    return response({items:[{kind:"MessageEvent",source:"agent",
+      tool_name:"API_KEY=secret", llm_message:{content:[{type:"text",text:"normal reply"}],tool_calls:[{function:{name:"terminal",arguments:"SENSITIVE"}}]}}],
+      next_page_id:null});
+  }));
+  assert.equal(calls,1);
+  assert.deepEqual(r.items[0],{kind:"MessageEvent",source:"agent",tool_name:null,structured_tool_call:true,has_raw_dsml:false});
+  const noCall=deps(async()=>{throw Error("network must not be touched");});
+  await assert.rejects(runOpenHandsCommand("openhands.events",{conversation_id:"../../etc/passwd"},noCall),/invalid_conversation_id/);
+  for(const limit of [0,21,1.5,NaN]) {
+    await assert.rejects(runOpenHandsCommand("openhands.events",{conversation_id:id,limit},noCall),/invalid_limit/);
+  }
+  for(const page_id of ["../../etc/passwd","?tools=all","a".repeat(257)]) {
+    await assert.rejects(runOpenHandsCommand("openhands.events",{conversation_id:id,page_id},noCall),/invalid_page_id/);
+  }
+});
+
+test("events: malformed pages, excess events, HTTP auth errors and oversized bodies fail closed",async()=>{
+  const urlArgs={conversation_id:id,limit:1};
+  for(const body of [{}, {items:{}}, {items:[{},{}]}, {items:[],next_page_id:"../../secret"}]) {
+    await assert.rejects(runOpenHandsCommand("openhands.events",urlArgs,deps(async()=>response(body))),/invalid_openhands_response/);
+  }
+  const privateText="token-from-upstream-must-not-appear";
+  const denial=runOpenHandsCommand("openhands.events",urlArgs,deps(async()=>response({detail:privateText},401)));
+  await assert.rejects(denial,e=>e.message==="openhands_auth_denied" && !e.message.includes(privateText));
+  const huge=runOpenHandsCommand("openhands.events",urlArgs,deps(async()=>response({items:[],payload:privateText.repeat(9000)})));
+  await assert.rejects(huge,/openhands_response_too_large/);
+});
