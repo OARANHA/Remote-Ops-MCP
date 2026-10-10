@@ -9,6 +9,41 @@ Reuse the existing OAuth-protected Remote Ops MCP, Agent Mesh transport, Target 
 
 Current OpenHands Agent Server was inspected in the running VPS: version **1.53.0**. The real API supports `GET /health`, `GET /api/conversations/search`, `GET /api/conversations/{id}`, `GET /api/conversations/{id}/agent_final_response`, `POST /api/conversations` and `POST /api/conversations/{id}/goal/stop`. The last five require `X-Session-API-Key`. Note: `GET /api/conversations` requires explicit IDs, so it is **not** used for list-all.
 
+## Proposed semantic-only task execution (review gate)
+
+This follow-up proposes the **separately approved** `openhands-execute` target preset.
+It does **not** provision the API key, grant execute access to the existing
+`vigia-openhands-read` target, merge code, or deploy production services.
+
+- New `semantic-operator` capability profile exists to avoid the generic
+  `operator` profile. Generic process session read/input/list/kill actions
+  are guarded by `operator`; exposing those through a shared device would
+  risk cross-target access. The semantic profile intentionally fails that gate.
+- The preset grants only `openhands.read` + `openhands.execute`.
+  Filesystem, process, Docker, systemd, admin, and GitHub target allowlists
+  remain empty. Approval requires OAuth and strong `AUTH_SECRET`.
+- Only `openhands_start` and `openhands_stop` accept this dedicated
+  profile and the explicit `openhands.execute` capability. An operator
+  target and a read-only target are deliberately rejected by these tools.
+- A central MCP tool-name allowlist restricts semantic-operator targets to the
+  six OpenHands operations. It explicitly prevents unrelated read-only tools
+  such as `host_status` and `runtime_summary` from bypassing isolation.
+- The OpenHands backend still has **its own** ability to run tools; target
+  allowlists do not sandbox the OpenHands process. Restrict it to a
+  disposable dedicated development environment, no customer datasets,
+  credentials, CI secrets or GitHub write access. Confirm its real backend
+  filesystem/network privileges and worktree boundaries before use.
+- Backend session API keys authorize the **server**, not an individual
+  tenant. Provision a protected, revocable key locally under
+  `/etc/wandora/openhands/session_api_key` (service user `ops-mcp`,
+  mode 0600), never pass it in a chat or source control; verify rotation and
+  existing Canvas compatibility before configuring it. **No file is
+  provisioned by this PR.**
+- Retain per-task explicit owner authorization, bounded cost/iterations,
+  AlwaysConfirm and human-controlled GitHub merges/deploys.
+  Check whether AlwaysConfirm actions can actually be approved through the
+  existing Canvas UI; this bridge exposes no dedicated approval tool.
+
 ## Security contract
 
 - The bridge only talks to **fixed loopback** `127.0.0.1:18080`; callers cannot choose a URL, port, file, workspace or path.

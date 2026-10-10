@@ -29,8 +29,8 @@ export function prepareAgentTarget(input: {
   preset: AgentTargetPreset;
 }) {
   purge();
-  if (input.preset === "managed-admin" && (env.AUTH_MODE !== "oauth" || !env.AUTH_SECRET || env.AUTH_SECRET.length < 32)) {
-    throw new OpsError("CAPABILITY_DENIED", "managed-admin exige AUTH_MODE=oauth e AUTH_SECRET forte");
+  if ((input.preset === "managed-admin" || input.preset === "openhands-execute") && (env.AUTH_MODE !== "oauth" || !env.AUTH_SECRET || env.AUTH_SECRET.length < 32)) {
+    throw new OpsError("CAPABILITY_DENIED", "perfil privilegiado exige AUTH_MODE=oauth e AUTH_SECRET forte");
   }
   const device = requireLiveDevice(input.deviceId);
   const target = buildAgentTargetFromPreset(input);
@@ -44,6 +44,8 @@ export function prepareAgentTarget(input: {
       ? "pinned PostgreSQL readback only; generic Docker/process/write access remains disabled"
       : input.preset === "openhands-read"
         ? "OpenHands metadata read-only; no execute, Docker, filesystem, process, service or write permissions"
+        : input.preset === "openhands-execute"
+        ? "OpenHands semantic run only, with per-task owner confirmation; no generic operator, Docker, filesystem, process, service, admin or Git operations"
         : input.preset === "managed-admin"
         ? "workspace operator + signed managed-admin root broker; no generic sudo/docker group and no break-glass shell"
         : "static targets are not modified; Docker access remains disabled";

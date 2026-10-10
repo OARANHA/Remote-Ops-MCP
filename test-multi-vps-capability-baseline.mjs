@@ -65,6 +65,26 @@ assert.deepEqual(
   ["allowedSemanticCapabilities"],
 );
 
+const openhandsExecute = buildAgentTargetFromPreset({
+  targetId: "vigia-openhands-execute",
+  deviceId,
+  environment: "production",
+  preset: "openhands-execute",
+});
+assert.equal(validateAgentTargetAgainstPreset(openhandsExecute, "openhands-execute").valid, true);
+assert.equal(openhandsExecute.capabilityProfile, "semantic-operator");
+assert.deepEqual(openhandsExecute.allowedSemanticCapabilities, ["openhands.read", "openhands.execute"]);
+for (const key of [
+  "allowedPaths", "allowedWritePaths", "allowedProcessPrograms", "allowedProcessCwds",
+  "allowedServices", "allowedServiceActions", "allowedDockerContainers",
+  "allowedDockerExecContainers", "allowedDockerActions", "allowedGitRepos",
+  "allowedAdminPrograms", "allowedAdminCwds",
+]) assert.deepEqual(openhandsExecute[key], [], key);
+assert.deepEqual(
+  validateAgentTargetAgainstPreset({...openhandsExecute,allowedWritePaths:["/tmp"]}, "openhands-execute").differences,
+  ["allowedWritePaths"],
+);
+
 const postgres = buildAgentTargetFromPreset({
   targetId: "medicspro-db-readback",
   deviceId,

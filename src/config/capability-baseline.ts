@@ -1,7 +1,7 @@
 import { MANAGED_ADMIN_CAPABILITY, MANAGED_ADMIN_DEFAULT_CWDS, MANAGED_ADMIN_DEFAULT_PROGRAMS } from "../privileged/managed-admin-policy.js";
 import type { TargetConfig } from "./targets.js";
 
-export type AgentTargetPreset = "operator-workspace" | "read-only" | "openhands-read" | "postgres-readback" | "managed-admin";
+export type AgentTargetPreset = "operator-workspace" | "read-only" | "openhands-read" | "openhands-execute" | "postgres-readback" | "managed-admin";
 
 export const AGENT_WORKSPACE_ROOT = "/opt/wandora/ops-workspace";
 
@@ -96,6 +96,21 @@ export function buildAgentTargetFromPreset(input: {
       allowedProcessCwds: [],
       allowedProcessPrograms: [],
       allowedSemanticCapabilities: ["openhands.read"],
+    };
+  }
+
+  if (input.preset === "openhands-execute") {
+    return {
+      ...base,
+      // Deliberately NOT operator: generic process.* helpers are operator-gated.
+      capabilityProfile: "semantic-operator",
+      allowedPaths: [],
+      allowedServices: [],
+      allowedServiceActions: [],
+      allowedWritePaths: [],
+      allowedProcessCwds: [],
+      allowedProcessPrograms: [],
+      allowedSemanticCapabilities: ["openhands.read", "openhands.execute"],
     };
   }
 
