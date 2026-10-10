@@ -1397,6 +1397,88 @@ const TOOL_DEFS: ToolDef[] = [
     },
   },
 
+  // ============ OpenHands Agent Mesh (fixed local backend, opt-in capabilities) ============
+  {
+    name: "openhands_health",
+    description: "Verifica a saúde do OpenHands na VPS Vigia, sem ler chave, sem iniciar agentes. Exige capability openhands.read.",
+    inputSchema: { target: targetField },
+    run: async (args) => {
+      const t = resolveTarget(args.target);
+      requireSemanticCapability(t,"openhands.read");
+      return {target:t.id,...await agentJson(t,"openhands.health")};
+    },
+  },
+  {
+    name: "openhands_list",
+    description: "Lista até 20 conversas OpenHands por página, expondo apenas id, título, status e horários. Exige openhands.read e chave no host.",
+    inputSchema: {
+      target:targetField,
+      limit:z.number().int().min(1).max(20).default(10),
+      page_id:z.string().min(1).max(256).optional(),
+    },
+    run:async(args)=>{
+      const t=resolveTarget(args.target);
+      requireSemanticCapability(t,"openhands.read");
+      return {target:t.id,...await agentJson(t,"openhands.list",{limit:args.limit??10,page_id:args.page_id})};
+    },
+  },
+  {
+    name: "openhands_status",
+    description: "Consulta estado resumido de uma conversa OpenHands pelo UUID; não devolve configurações ou segredos.",
+    inputSchema: {target:targetField,conversation_id:z.string().uuid()},
+    run:async(args)=>{
+      const t=resolveTarget(args.target);
+      requireSemanticCapability(t,"openhands.read");
+      return {target:t.id,...await agentJson(t,"openhands.status",{conversation_id:args.conversation_id})};
+    },
+  },
+  {
+    name: "openhands_result",
+    description: "Obtém somente a resposta final truncada a 4 mil caracteres; o resultado pode conter dados privados e deve ser tratado com cautela.",
+    inputSchema: {target:targetField,conversation_id:z.string().uuid()},
+    run:async(args)=>{
+      const t=resolveTarget(args.target);
+      requireSemanticCapability(t,"openhands.read");
+      return {target:t.id,...await agentJson(t,"openhands.result",{conversation_id:args.conversation_id})};
+    },
+  },
+  {
+    name: "openhands_start",
+    description: "INICIA tarefa OpenHands com custo de LLM, workspace isolado fixo, limite de 20 iterações e AlwaysConfirm. Só após pedido explícito do proprietário; exige operator + openhands.execute. NÃO autoriza merge, deploy nem uso de GitHub com escrita.",
+    inputSchema: {
+      target:targetField,
+      task:z.string().trim().min(5).max(4000),
+    },
+    mutation:true,
+    destructive:false,
+    idempotent:false,
+    run:async(args)=>{
+      const t=resolveTarget(args.target);
+      requireOperator(t);
+      requireSemanticCapability(t,"openhands.execute");
+      return {target:t.id,...await agentJson(t,"openhands.start",{task:args.task},30000)};
+    },
+  },
+  {
+    name: "openhands_stop",
+    description: "Pede interrupção de uma conversa OpenHands identificada por UUID; exige confirmação exata do ID, operator e openhands.execute.",
+    inputSchema: {
+      target:targetField,
+      conversation_id:z.string().uuid(),
+      confirm_conversation_id:z.string().uuid(),
+    },
+    mutation:true,
+    destructive:true,
+    idempotent:false,
+    run:async(args)=>{
+      if(args.conversation_id!==args.confirm_conversation_id) throw new OpsError("INVALID_ARGUMENT","confirmação do conversation_id diverge");
+      const t=resolveTarget(args.target);
+      requireOperator(t);
+      requireSemanticCapability(t,"openhands.execute");
+      return {target:t.id,...await agentJson(t,"openhands.stop",{conversation_id:args.conversation_id},20000)};
+    },
+  },
+
   // ============ resumo ============
   {
     name: "runtime_summary",
