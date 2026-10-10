@@ -97,11 +97,11 @@ export async function runOpenHandsCommand(
     else if (command === "openhands.result") path = `/api/conversations/${id}/agent_final_response`;
     else { method = "POST"; path = `/api/conversations/${id}/goal/stop`; }
   }
-  let [REDACTED] | undefined;
+  let credentialValue: string | undefined;
   if (command !== "openhands.health") {
-    try { [REDACTED] (deps.readKey ?? (() => readFile(KEY_FILE,"utf8")))()).trim(); }
+    try { credentialValue = (await (deps.readKey ?? (() => readFile(KEY_FILE, "utf8")))()).trim(); }
     catch { throw new Error("openhands_auth_unconfigured"); }
-    if (!apiKey || apiKey.length < 16 || apiKey.length > 4096 || /[\r\n\0]/.test(apiKey))
+    if (!credentialValue || credentialValue.length < 16 || credentialValue.length > 4096 || /[\r\n\0]/.test(credentialValue))
       throw new Error("openhands_auth_unconfigured");
   }
   const timeout = Math.min(Math.max(deps.timeoutMs ?? 8000,1000),20000);
@@ -110,7 +110,7 @@ export async function runOpenHandsCommand(
   try {
     const response = await (deps.fetcher ?? fetch)(BASE_URL + path,{
       method,redirect:"error",signal:controller.signal,
-      headers: apiKey ? {"X-Session-API-Key":apiKey, ...(body ? {"Content-Type":"application/json"} : {})} : {},
+      headers: credentialValue ? {"X-Session-API-Key":credentialValue, ...(body ? {"Content-Type":"application/json"} : {})} : {},
       ...(body ? {body}:{}),
     });
     if (!response.ok) {
