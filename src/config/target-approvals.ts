@@ -42,7 +42,9 @@ export function prepareAgentTarget(input: {
   const authority =
     input.preset === "postgres-readback"
       ? "pinned PostgreSQL readback only; generic Docker/process/write access remains disabled"
-      : input.preset === "managed-admin"
+      : input.preset === "openhands-read"
+        ? "OpenHands metadata read-only; no execute, Docker, filesystem, process, service or write permissions"
+        : input.preset === "managed-admin"
         ? "workspace operator + signed managed-admin root broker; no generic sudo/docker group and no break-glass shell"
         : "static targets are not modified; Docker access remains disabled";
   const summary =
