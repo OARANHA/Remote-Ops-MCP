@@ -25,3 +25,7 @@
 - [SDK v1.53.0 — StartConversationRequest](https://github.com/OpenHands/software-agent-sdk/blob/v1.53.0/openhands-sdk/openhands/sdk/conversation/request.py)
 - [SDK v1.53.0 — GET settings e exposição de segredos](https://github.com/OpenHands/software-agent-sdk/blob/v1.53.0/openhands-agent-server/openhands/agent_server/settings_router.py)
 - [Issue #61](https://github.com/OARANHA/Remote-Ops-MCP/issues/61)
+
+## Atualização defensiva proposta — 2026-10-12
+
+A PR de pré-voo rejeita parâmetros não suportados em `openhands.start` (somente `task` é aceito). A rejeição ocorre antes da consulta de configurações ou do POST. Isso não implementa isolamento de workspaces nem valida 60 iterações no runtime. Evidência, limites e sequência de homologação: [OPENHANDS_AUTONOMY_PREFLIGHT_20261012.md](OPENHANDS_AUTONOMY_PREFLIGHT_20261012.md). Status: proposta não implantada; testes locais não executados, CI pendente.
