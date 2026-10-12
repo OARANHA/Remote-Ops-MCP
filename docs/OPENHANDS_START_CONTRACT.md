@@ -8,7 +8,7 @@
 - A implementação anterior de `src/agent/openhands.ts` omitia `agent`, `agent_settings` e `agent_profile_id`. O SDK do Agent Server v1.53.0, usado pelo Agent Canvas v1.26.0, exige um desses três campos (`StartConversationRequest._require_agent`).
 - A correção usa o endpoint existente `GET /api/settings` autenticado. Solicita **apenas exposição criptografada** (`X-Expose-Secrets: encrypted`) e prefere `active_agent_profile_id` quando configurado. Sem perfil ativo, encaminha `agent_settings` criptografado com `secrets_encrypted:true`, deixando a descriptografia exclusivamente ao servidor OpenHands. Nunca solicita valores `plaintext`.
 - Se as configurações de agente ou o modelo não estiverem disponíveis, o adaptador **falha antes do POST**, sem iniciar conversa e sem retornar o conteúdo das configurações ou das mensagens de erro do servidor.
-- A criação mantém `LocalWorkspace` em `/projects/mcp-coordination-lab`, `AlwaysConfirm`, limite de **20** iterações, `worktree:false` e `initial_message.run:true`. Este limite de workspace é um parâmetro da API; não equivale a sandbox ou barreira de isolamento total.
+- A criação mantém `LocalWorkspace` em `/projects/mcp-coordination-lab`, `AlwaysConfirm`, limite de **60** iterações, `worktree:false` e `initial_message.run:true`. Este limite de workspace é um parâmetro da API; não equivale a sandbox ou barreira de isolamento total.
 - A chave de sessão permanece somente no arquivo local protegido do Agent Mesh; não foi copiada para o repositório.
 
 ## Testes e gates

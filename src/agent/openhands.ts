@@ -201,7 +201,7 @@ export async function runOpenHandsCommand(
         ...agentSource,
         workspace: {kind:"LocalWorkspace", working_dir: WORKSPACE},
         confirmation_policy: {kind:"AlwaysConfirm"},
-        max_iterations: 20,
+        max_iterations: 60,
         worktree: false,
         initial_message: {role:"user", content:[{type:"text",text:startTask}], run:true},
       });
