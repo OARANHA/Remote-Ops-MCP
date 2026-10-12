@@ -30,3 +30,9 @@ test("bad thresholds fail closed", () => {
   const thresholds = { ...DEFAULT_THRESHOLDS, disk: { warn: 95, crit: 80 } };
   assert.throws(() => evaluateMeasurement(sample(50), { now, thresholds }), TypeError);
 });
+
+test("network percent unsupported and future timestamps explicit",()=>{
+ assert.equal(evaluateMeasurement(sample(50,"network"),{now}).level,"unknown");
+ assert.equal(evaluateMeasurement(sample(50,"cpu","2026-10-13T00:00:00Z"),{now}).reason,"future");
+ assert.equal(evaluateMeasurement(sample(50,"cpu","not-a-date"),{now}).reason,"invalid");
+});
