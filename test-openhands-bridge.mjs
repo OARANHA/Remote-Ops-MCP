@@ -50,7 +50,7 @@ test("start resolves encrypted Canvas settings without exposing secrets",async()
   assert.equal(req.agent_settings.llm.model,"qwen3");
   assert.equal(req.confirmation_policy.kind,"AlwaysConfirm");
   assert.deepEqual(req.workspace,{kind:"LocalWorkspace",working_dir:"/projects/mcp-coordination-lab"});
-  assert.equal(req.max_iterations,20);
+  assert.equal(req.max_iterations,60);
   assert.equal(req.worktree,false);
   assert.equal(req.initial_message.run,true);
   assert.equal(req.initial_message.content[0].text,"Reply with the synthetic canary marker");
