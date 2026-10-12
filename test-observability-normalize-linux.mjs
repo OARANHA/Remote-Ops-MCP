@@ -6,7 +6,7 @@ test("memory accounts for available and totals",()=>{
  assert.equal(x.find(m=>m.name==="memory.used").value,700);
  assert.equal(x.find(m=>m.name==="memory.total").value,1000);
 });
-test("invalid and zero memory never green",()=>{for(const x of ["","Mem: 0 0 0 0 0 0","Mem: 100 0 0 0 0 500"])assert(x=>x);assert.equal(normalizeMemoryFreeB("Mem: 0 0 0 0 0 0",at)[0].status,"unknown");});
+test("invalid and zero memory never green",()=>{for(const x of ["","Mem: 0 0 0 0 0 0","Mem: 100 0 0 0 0 500"]){assert.equal(normalizeMemoryFreeB(x,at)[0].status,"unknown");}});
 test("df ignores tmpfs and returns highest genuine mount",()=>{
  const v=normalizeDiskDfHP("Filesystem Size Used Avail Use% Mounted on\n/dev/vda1 20G 11G 9G 55% /\ntmpfs 1G 999M 1M 99% /run\n/dev/vdb1 10G 9G 1G 90% /data",at);
  assert.equal(v[0].value,90);
