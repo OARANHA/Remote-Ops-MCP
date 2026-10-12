@@ -199,3 +199,23 @@ test("events: malformed pages, excess events, HTTP auth errors and oversized bod
   const huge=runOpenHandsCommand("openhands.events",urlArgs,deps(async()=>response({items:[],payload:privateText.repeat(9000)})));
   await assert.rejects(huge,/openhands_response_too_large/);
 });
+
+test("start rejects unsupported workspace/branch/cost options before settings lookup or POST",async()=>{
+  for (const extra of [
+    {workspace:"/projects/other"},
+    {working_dir:"/projects/other"},
+    {branch:"feature/other"},
+    {max_iterations:1000},
+    {cost_limit:100},
+    {worktree:true},
+    {confirmation_policy:{kind:"NeverConfirm"}},
+  ]) {
+    let calls=0;
+    await assert.rejects(
+      runOpenHandsCommand("openhands.start",{task:"Synthetic safe task",...extra},
+        deps(async()=>{calls++;return response({status:"ok"});})),
+      /invalid_start_options/
+    );
+    assert.equal(calls,0);
+  }
+});
