@@ -18,7 +18,7 @@ export type HealthFinding = Readonly<{
   level: HealthLevel;
   percentage: number | null;
   observedAt: string;
-  reason: "measured" | "invalid" | "stale" | "missing";
+  reason: "measured" | "invalid" | "stale" | "future" | "missing" | "unsupported";
 }>;
 
 export const DEFAULT_THRESHOLDS: Readonly<Record<HealthSignal, Threshold>> = Object.freeze({
@@ -54,9 +54,10 @@ export function evaluateMeasurement(
   }
   const base = { targetId: sample.targetId, signal: sample.signal, observedAt: sample.observedAt };
   const timestamp = Date.parse(sample.observedAt);
-  if (!Number.isFinite(timestamp) || timestamp > now || now - timestamp > maxAgeMs) {
-    return { ...base, level: "unknown", percentage: null, reason: "stale" };
-  }
+  if (!Number.isFinite(timestamp)) return { ...base, level: "unknown", percentage: null, reason: "invalid" };
+  if (timestamp > now) return { ...base, level: "unknown", percentage: null, reason: "future" };
+  if (now - timestamp > maxAgeMs) return { ...base, level: "unknown", percentage: null, reason: "stale" };
+  if (sample.signal === "network") return { ...base, level: "unknown", percentage: null, reason: "unsupported" };
   if (sample.percentage === null) {
     return { ...base, level: "unknown", percentage: null, reason: "missing" };
   }
