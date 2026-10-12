@@ -161,6 +161,8 @@ export async function runOpenHandsCommand(
     }
     path = url.pathname + url.search;
   } else if (command === "openhands.start") {
+    // Fail closed: ignored options can falsely imply workspace, branch or cost isolation.
+    if (Object.keys(args).some((key) => key !== "task")) throw new Error("invalid_start_options");
     const task = args.task;
     if (typeof task !== "string" || task.trim().length < 5 || task.length > 4000) throw new Error("invalid_task");
     method = "POST"; path = "/api/conversations";
