@@ -35,3 +35,10 @@ Do not execute on a live VPS or control plane. Investigate and fix errors in the
 - T1–T5: **prototypes committed; NOT verified complete**.
 - T6: **verification documentation recorded; full verification NOT performed**.
 - Merge, deploy, Agent Mesh changes, credentials, OAuth, target authority and writes remain explicitly prohibited.
+
+## CI evidence update — 2026-10-12
+
+- Earlier runner/DNS blocker is **superseded for compilation and executed CI tests** by GitHub Actions run [38204814082](https://github.com/OARANHA/Remote-Ops-MCP/actions/runs/38204814082) on commit `694f7f2ef50e1e7dd8532d9d2858069cdd6b4822`.
+- Observed: workflow `completed/success`; job `verify` completed/success. Steps `npm ci --no-audit --no-fund`, `npm run build`, `Verify offline observability contracts and health` (all five test files), existing CI test steps, and `Build production image` all completed/success.
+- This is **not** proof of a witnessed TDD RED→GREEN sequence, full `npm run check` as a separate command, runtime integration or correct production authorization semantics. Existing status above describes historical pre-CI state, not current CI state.
+- JEV v1.13.0 follow-up returned `verify_more` (0.52 probability): request independent review, preserve offline scope and no merge/deploy.
