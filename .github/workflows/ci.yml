@@ -32,6 +32,7 @@ jobs:
       - run: node test-multi-vps-capability-baseline.mjs
       - run: node test-operator-minimal-disclosure.mjs
       - run: node test-target-agent-approvals.mjs
+      - run: node test-deepharness-docker-read-approval.mjs
       - run: node test-managed-admin-noauth.mjs
       - run: node test-managed-admin-ticket.mjs
       - run: node test-managed-admin-approvals.mjs
