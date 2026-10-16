@@ -4,6 +4,7 @@ import { OpsError } from "../lib/errors.js";
 import { assertIdentifier } from "../lib/quote.js";
 import { getTarget, listTargets, publicTarget, targetIds } from "../config/targets.js";
 import { prepareAgentTarget, applyAgentTargetApproval } from "../config/target-approvals.js";
+import { prepareDeepharnessDockerRead, applyDeepharnessDockerRead } from "../config/deepharness-read-approval.js";
 import { describeTargetCapabilityBaseline } from "../config/capability-baseline.js";
 import { prepareManagedAdminAction, consumeManagedAdminApproval } from "../config/managed-admin-approvals.js";
 import type { TargetConfig } from "../config/targets.js";
@@ -337,6 +338,28 @@ const TOOL_DEFS: ToolDef[] = [
     },
   },
 
+  {
+    name: "deepharness_docker_read_prepare",
+    description: "Prepara apenas a leitura Docker de dois contêineres DeepHarness no target deepharness-read. Exige confirmação explícita APPROVE adm_...; não altera o proxy Docker local.",
+    inputSchema: {},
+    mutation: true,
+    destructive: false,
+    idempotent: false,
+    run: async (_args, ctx) => prepareDeepharnessDockerRead(ctx.actor),
+  },
+  {
+    name: "deepharness_docker_read_apply",
+    description: "Aplica uma aprovação de leitura Docker específica do target deepharness-read; confirme somente após o proprietário enviar o código exato. Não concede docker_exec nem ações Docker.",
+    inputSchema: {
+      approval_id: z.string().regex(/^adm_[a-f0-9]{24}$/),
+      confirmation: z.string().min(1).max(80),
+    },
+    mutation: true,
+    destructive: false,
+    idempotent: false,
+    run: async (args, ctx) => applyDeepharnessDockerRead(
+      ctx.actor, String(args.approval_id), String(args.confirmation)),
+  },
   {
     name: "host_admin_prepare",
     description: "Prepara uma ação administrativa root assinada para um target managed-admin. Não executa nada. Retorna adm_... e exige confirmação explícita do usuário.",
