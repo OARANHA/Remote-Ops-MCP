@@ -571,3 +571,73 @@ dispatch using a persisted specific grant, revocation/receipt replay,
 and any actual Lead reply. No existing Portainer stack, agent service,
 OAuth client or public listener was touched. Merging or deploying
 requires separate authorization.
+
+
+## Stage 15 — distinct relay and Agent Mesh identities (Draft review profile)
+
+Stage 14's same-UID/0600-socket idea was rejected during threat review:
+sharing the host `ops-mcp` UID with the container relay could make its
+operator-owned host TLS files readable by an unprivileged agent on the same
+host. **Stage 15 supersedes Stage 14's UID/mode admission policy.**
+
+The proposed isolation boundary is now:
+
+- The relay runs under its own **distinct nonroot numeric UID**, not root,
+  not the host `ops-mcp` UID. The host Agent Mesh service stays `ops-mcp`,
+  not in the Docker group and without access to the relay's credential
+  directories. No UID number is assumed from the host install script.
+- An operator must separately pre-provision
+  `/run/wandora/deepharness-semantic` owned by
+  `<relay-uid>:<ops-mcp-gid>` with setgid directory mode **02710**:
+  the relay owner can create the socket; the agent group can traverse the
+  known directory but cannot list/create files there; all others denied.
+  The relay listens only on `bridge.sock` owned by the relay UID and
+  socket group GID with mode **0660**. Both directories and sockets are
+  lstat/inode-verified, with no pre-existing file replacement.
+- The relay initializer now requires `DSH_UNIX_RELAY_SOCKET_GID` to match
+  the exact numeric `ops-mcp` group ID. The **28server** host receiver,
+  when enabled, requires an independently operator-configured
+  `DSH_AGENT_MESH_RELAY_UID` and `DSH_AGENT_MESH_SOCKET_GID`.
+  It checks that the process itself belongs to the specified group and
+  that the owner is distinct, then checks strict socket and directory
+  owner/group/modes. Client MCP request parameters cannot supply those
+  values. Calls fail closed if the pair is missing or mismatched.
+- The relay's TLS CA/client certificate/private key must be available **only
+  inside the dedicated container**, through individual read-only mounts
+  from protected operator-owned paths. The host agent must not be able to
+  traverse the secrets' parent directories, read any source key file or
+  inspect Docker. This is a mandatory host prerequisite, not automatically
+  guaranteed by Docker bind-mounts.
+- `integrations/deepharness/Dockerfile.agent-mesh-relay.review` defines a
+  small Node 22 candidate image containing only four relay modules. The
+  builder must explicitly supply a **reviewed digest-pinned** Node base
+  image; there is no default image.
+- `integrations/deepharness/agent-mesh-relay.compose.review.yml` is a
+  **separate**, non-active `dsh-relay-review` profile. It requires an
+  immutable candidate image and exact operator UID/GID, explicitly
+  `restart: no`, `read_only: true`, `cap_drop: [ALL]`, no Docker
+  socket, no privileged mode, no ports and **only** the existing external
+  `deepharness_mcp-private` network. By default the relay remains off
+  even if this profile is selected. It mounts only the known Unix socket
+  directory and three individually named TLS files. The main Portainer
+  stack is **unchanged**. CI uses synthetic inactive environment values
+  to run Compose syntax validation only; the syntax gate cannot attest
+  actual UID compatibility, TLS/certificate material, or runtime behavior.
+
+**Operational qualification required, still NO-GO:**
+(1) verify real numeric `ops-mcp` UID/GID from an authorized host
+inspection (systemd unit source reading is denied by the current
+`deepharness-read` allowlist; do not bypass it);
+(2) review a separate relay UID/GID, inherited socket group, secret path
+ownership/traversal and host SELinux/AppArmor restrictions;
+(3) build/verify the digest-pinned sidecar candidate, validate 28server
+container-network DNS and mTLS with deliberately provisioned ephemeral
+certificates in an isolated environment;
+(4) only then adapt the control-plane semantic client to Agent Mesh under
+exact grants and stable request idempotency;
+(5) independently prove official DSH session persistence and a Lead
+reply on a disposable Team;
+(6) obtain explicit production/change authorization for merge,
+certificate provisioning, mount, agent restart or deployment. Neither
+a passing Docker Compose syntax check nor a synthetic `accepted:true`
+receipt is a live DeepHarness integration.
