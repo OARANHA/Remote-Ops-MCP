@@ -1,0 +1,16 @@
+# syntax=docker/dockerfile:1.7
+# REVIEW CANDIDATE ONLY. Supply a separately reviewed, digest-pinned Node 22
+# base image via --build-arg DSH_RELAY_NODE_BASE_IMAGE=node@sha256:...
+# No packages, plugins, credentials, agent tools or Docker socket are installed.
+ARG DSH_RELAY_NODE_BASE_IMAGE
+FROM ${DSH_RELAY_NODE_BASE_IMAGE}
+ENV NODE_ENV=production
+WORKDIR /opt/wandora-dsh-relay
+COPY integrations/deepharness/private-bridge-client.mjs \
+     integrations/deepharness/agent-mesh-unix-relay.mjs \
+     integrations/deepharness/agent-mesh-unix-listener.mjs \
+     integrations/deepharness/agent-mesh-unix-relay-run.mjs ./
+# Review default is non-root. Compose must override with the distinct,
+# operator-verified relay UID and GID, never the host ops-mcp UID.
+USER 65534:65534
+CMD ["node","/opt/wandora-dsh-relay/agent-mesh-unix-relay-run.mjs"]
