@@ -6,6 +6,7 @@ const config={
   DSH_UNIX_RELAY_ENABLED:"1",
   DSH_UNIX_RELAY_WORKSPACE_ID:"lab-1",
   DSH_UNIX_RELAY_LEAD_SESSION_ID:"lead-1",
+  DSH_UNIX_RELAY_SOCKET_GID:String(process.getgid()),
   DSH_BRIDGE_SERVER_FP_SHA256:"aa:".repeat(31)+"aa",
 };
 test("disabled or incomplete runtime performs zero I/O",async()=>{
@@ -15,7 +16,9 @@ test("disabled or incomplete runtime performs zero I/O",async()=>{
   for(const env of [{},{...config,DSH_UNIX_RELAY_ENABLED:"0"},
     {...config,DSH_UNIX_RELAY_WORKSPACE_ID:"../bad"},
     {...config,DSH_BRIDGE_SERVER_FP_SHA256:"00"},
-    {...config,DSH_UNIX_RELAY_LEAD_SESSION_ID:""}]){
+    {...config,DSH_UNIX_RELAY_LEAD_SESSION_ID:""},
+    {...config,DSH_UNIX_RELAY_SOCKET_GID:"0"},
+    {...config,DSH_UNIX_RELAY_SOCKET_GID:"not-a-group"}]){
     await assert.rejects(startDshUnixRelayRuntime({env,...io}),/startup_denied/);
   }
   assert.equal(reads,0);
@@ -43,6 +46,7 @@ test("operator-only startup reads exactly three fixed paths before binding",asyn
   assert.equal(composed.serverFingerprintSha256,config.DSH_BRIDGE_SERVER_FP_SHA256);
   assert.deepEqual(composed.tls.ca,Buffer.from("test-pem"));
   assert.equal(launched.enabled,true);
+  assert.equal(launched.socketGroupId,process.getgid());
   assert.equal(typeof launched.handler,"function");
   assert.equal(Object.hasOwn(launched,"socketPath"),false);
 });
