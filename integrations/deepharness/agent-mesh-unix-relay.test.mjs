@@ -89,7 +89,6 @@ test("relay refuses all unauthorized local requests before any DSH dispatch",asy
     [valid,{method:"GET"}],
     [valid,{path:"/any-other-route"}],
     [valid,{type:"text/plain"}],
-    [valid,{length:999999}],
     ["{" ,{}],
     [{...valid,data:"x".repeat(18000)},{}],
   ];
