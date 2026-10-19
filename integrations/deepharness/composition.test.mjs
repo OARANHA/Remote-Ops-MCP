@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { composeDeepharnessReadWrite } from "./composition.mjs";
+import { createPersistentDshGrantStore } from "./persistent-grant-store.mjs";
 
 const clientId = "client-1", sessionId = "session-0123456789abcdef";
 const principal = Object.freeze({ actor: "oauth:client-1:session-0123", clientId, sessionId });
@@ -38,12 +42,31 @@ function build(overrides = {}) {
       if (!enabled) throw new Error("grant_revoked");
       await submit();
       return { accepted: true, authorizationCheckedAtCommit: true,
-        grantRevision: auth.revision, messageId: "message-1", duplicate: false };
+        grantRevision: auth.revision, receiptId: "receipt-1", duplicate: false };
     },
     ...overrides,
   };
   return { calls, policy: composeDeepharnessReadWrite(deps), revoke() { enabled = false; } };
 }
+
+test("composition uses the durable grant store for an idempotent official DSH prompt", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "dsh-composition-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const store = createPersistentDshGrantStore({ file: join(directory, "grants.json") });
+  const grant = await store.putGrant({ ...principal, ...scope,
+    actions: ["team.read", "chat.read", "lead.instruct"] });
+  const f = build({ lookupCurrentGrant: undefined, withAuthorizedLeadCommit: undefined, grantStore: store });
+  const key = randomUUID();
+  const request = { ...scope, instruction: "Synthetic durable gate test", idempotencyKey: key };
+  const first = await f.policy.sendLeadInstruction(principal, request);
+  const duplicate = await f.policy.sendLeadInstruction(principal, request);
+  assert.equal(first.accepted, true);
+  assert.equal(first.duplicate, false);
+  assert.equal(duplicate.duplicate, true);
+  assert.equal(duplicate.receipt_id, first.receipt_id);
+  assert.equal(f.calls.prompts, 1);
+  assert.ok(grant.revision);
+});
 
 test("end-to-end synthetic chain reads the exact allowed Lead only", async () => {
   const f = build();
@@ -64,7 +87,7 @@ test("end-to-end synthetic chain writes via official user queue, not Team spoofi
   });
   assert.deepEqual(ack, {
     workspace_id: "lab", lead_session_id: "lead-123",
-    message_id: "message-1", accepted: true, duplicate: false,
+    receipt_id: "receipt-1", accepted: true, duplicate: false,
   });
   assert.equal(f.calls.prompts, 1);
   assert.equal(f.calls.commits, 1);

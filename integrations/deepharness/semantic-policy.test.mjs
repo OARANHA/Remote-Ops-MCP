@@ -33,7 +33,7 @@ function fixture(overrides = {}) {
     async commitAuthorizedInstruction(auth) {
       calls.sends++;
       return { accepted: true, authorizationCheckedAtCommit: true,
-        grantRevision: auth.revision, messageId: "message-123", duplicate: false };
+        grantRevision: auth.revision, receiptId: "receipt-123", duplicate: false };
     },
     ...overrides,
   };
@@ -124,7 +124,7 @@ test("reject unsupported, large and malformed write inputs before commit", async
 test("the DSH commit provider must attest atomic grant and revision checks", async () => {
   const f = fixture({ async commitAuthorizedInstruction() {
     f.calls.sends++;
-    return { accepted: true, messageId: "message-123", duplicate: false };
+    return { accepted: true, receiptId: "receipt-123", duplicate: false };
   }});
   await assert.rejects(f.policy.sendLeadInstruction(ctx,
     { ...scope, instruction, idempotencyKey: randomUUID() }), /capability_denied/);
@@ -140,14 +140,14 @@ test("authorized write returns only idempotent acknowledgement, not text", async
       assert.equal(auth.instruction, instruction);
       assert.match(auth.idempotencyKey, /^[0-9a-f-]{36}$/);
       return { accepted: true, authorizationCheckedAtCommit: true,
-        grantRevision: auth.revision, messageId: "message-123", duplicate: true,
+        grantRevision: auth.revision, receiptId: "receipt-123", duplicate: true,
         untrustedSecret: "MUST_NOT_RETURN" };
     },
   });
   const out = await f.policy.sendLeadInstruction(ctx,
     { ...scope, instruction, idempotencyKey: randomUUID() });
   assert.deepEqual(out, { workspace_id: "lab", lead_session_id: "lead-123",
-    message_id: "message-123", accepted: true, duplicate: true });
+    receipt_id: "receipt-123", accepted: true, duplicate: true });
   assert.doesNotMatch(JSON.stringify(out), /MUST_NOT_RETURN|summarize/);
 });
 

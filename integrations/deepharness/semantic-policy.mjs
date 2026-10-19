@@ -100,8 +100,8 @@ export function createDeepharnessSemanticPolicy(dependencies = {}) {
           /[\0]/.test(input.instruction) ||
           typeof input.idempotencyKey !== "string" ||
           !UUID.test(input.idempotencyKey)) deny();
-      // Trusted DSH backend MUST transactionally revalidate the exact
-      // grant/revision at commit and enforce (actor, idempotencyKey) uniqueness.
+      // Trusted write provider MUST revalidate the exact grant/revision at
+      // prompt admission and enforce (caller scope, idempotencyKey) uniqueness.
       // A preflight-only permission check cannot authorize async writes.
       const ack = await commitAuthorizedInstruction(Object.freeze({
         ...auth, instruction: input.instruction, idempotencyKey: input.idempotencyKey,
@@ -109,11 +109,12 @@ export function createDeepharnessSemanticPolicy(dependencies = {}) {
       if (!ack || ack.authorizationCheckedAtCommit !== true ||
           ack.grantRevision !== auth.revision ||
           ack.accepted !== true ||
-          typeof ack.messageId !== "string" || !ID.test(ack.messageId) ||
+          typeof ack.receiptId !== "string" || !ID.test(ack.receiptId) ||
           typeof ack.duplicate !== "boolean") deny();
       return Object.freeze({
         workspace_id: auth.workspaceId, lead_session_id: auth.leadSessionId,
-        message_id: ack.messageId, accepted: true, duplicate: ack.duplicate,
+        // This is the Remote-Ops durable commit receipt, not a DSH event ID.
+        receipt_id: ack.receiptId, accepted: true, duplicate: ack.duplicate,
       });
     },
   });

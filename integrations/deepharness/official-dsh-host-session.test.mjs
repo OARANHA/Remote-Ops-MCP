@@ -49,6 +49,7 @@ function fixture(changes = {}) {
   const registry = { get(x) { return x === workspace && allowed ? { sessionIds: new Set([lead]) } : null; } };
   const gate = async (ctx, submit) => {
     calls.gate++;
+    calls.commitContext = ctx;
     assert.equal(ctx.leadSessionId, lead);
     assert.match(ctx.clientId, /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/);
     assert.match(ctx.sessionId, /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/);
@@ -57,7 +58,7 @@ function fixture(changes = {}) {
     assert.equal(ctx.revision, auth.revision);
     await submit();
     return { accepted: true, authorizationCheckedAtCommit: true,
-      grantRevision: auth.revision, messageId: "msg-1", duplicate: false };
+      grantRevision: auth.revision, receiptId: "receipt-1", duplicate: false };
   };
   const deps = { sessionController: ctr, workspaceRegistry: registry, withAuthorizedLeadCommit: gate, ...changes };
   return { calls, ctr, registry, gate, proj, deps,
@@ -138,7 +139,9 @@ test("official SessionController.prompt gets queue, text and idempotent user req
     ...auth, instruction, idempotencyKey: key,
   });
   assert.deepEqual(r, { accepted: true, authorizationCheckedAtCommit: true,
-    grantRevision: "rev-1", messageId: "msg-1", duplicate: false });
+    grantRevision: "rev-1", receiptId: "receipt-1", duplicate: false });
+  assert.equal(f.calls.commitContext.payloadHash,
+    createHash("sha256").update(instruction, "utf8").digest("hex"));
   assert.equal(f.calls.gate, 1);
   assert.equal(f.calls.prompt, 1);
 });
@@ -190,7 +193,7 @@ test("write rejects bad messages and idempotency keys before commit", async () =
 
 test("gate cannot attest success without a verified durable authorization receipt", async () => {
   const f = fixture({ withAuthorizedLeadCommit: async () => ({ accepted: true,
-    messageId: "msg-1", duplicate: false }) });
+    receiptId: "receipt-1", duplicate: false }) });
   await assert.rejects(f.backend.commitAuthorizedInstruction({
     ...auth, instruction: "Review", idempotencyKey: randomUUID(),
   }), /operation_denied/);

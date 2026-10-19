@@ -23,6 +23,7 @@ jobs:
       - name: Validate pure JS policy (no network, DSH service or secrets)
         run: |
           node --check integrations/deepharness/semantic-policy.mjs
+          node --check integrations/deepharness/persistent-grant-store.mjs
           node --check integrations/deepharness/official-dsh-host-session.mjs
           node --check integrations/deepharness/composition.mjs
           node --test integrations/deepharness/*.test.mjs

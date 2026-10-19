@@ -160,3 +160,63 @@ Continue only with a separately scoped, private host-to-DSH semantic bridge and
 persistent grants/idempotency implementation, then run the authorized synthetic
 canary against a disposable lab session after that endpoint is available.
 Authorization was received; the missing callable lab capability is the blocker.
+
+## Stage 6 — persistent scoped grant and idempotency gate (2026-10-19)
+
+`integrations/deepharness/persistent-grant-store.mjs` adds a single-active-
+instance file-backed grant/receipt store. Grants bind the exact OAuth client,
+session, workspace, Lead and action set. The API does not infer a human
+Keycloak identity from Remote-Ops OAuth; its principal remains the verified
+Remote-Ops client/session tuple. Grant replace/revoke and Lead commits share a
+serialized queue, so a revocation cannot interleave after a commit's current
+grant check and before prompt admission.
+
+Before calling the DSH prompt, the store durably writes a pending idempotency
+record. On acknowledgement it atomically persists a bounded receipt. Retries
+use the same DSH `requestId`; the DSH controller checks inbox and durable
+Session events for that id, so a retry after an acknowledgement loss is
+deduplicated by the official prompt service. The store keeps only a SHA-256
+instruction fingerprint, never the instruction text. It writes a private mode
+0600 file by fsync + rename, and denies malformed/symlink stores. A failed call
+retains its pending intent for a same-key retry; changing the instruction,
+scope or grant revision with that key is denied.
+
+The write response labels its identifier `receipt_id`: it is a Remote-Ops
+commit receipt, not a DSH event/message identifier. `accepted: true` means only
+that the official DSH prompt API acknowledged inbox admission; it does not mean
+the Lead completed the work. Results must be read separately from DSH history.
+
+Focused synthetic tests now cover concurrent duplicate calls, changed-payload
+conflict, revocation serialization, restart recovery, acknowledgement loss,
+private file mode and instruction non-persistence. **36/36 isolated Node tests
+pass.** The durable store can be injected into the existing policy/official-host
+composition, and the adapter passes only a one-way payload hash to it.
+
+### Remaining activation gaps
+
+- The store is not initialized by the Remote-Ops server bootstrap, has no
+  administrator grant-provisioning endpoint/UI, and is not yet part of the
+  live MCP tool registry. No caller can grant itself access through MCP.
+- The connected Wandora runtime's `deepharness-read` target still has a
+  read-only profile, zero semantic capabilities, and zero Docker-exec
+  containers/programs. Safe inspect on `deepharness-web-1` confirms the running
+  immutable image is `ghcr.io/oaranha/deepharness-mcp@sha256:2483c85cc3fbe6172bf284e67859572b8b6b5dc75bfea11ae160298f7202a62f`, started as
+  `/opt/wandora-mcp-verifier/mcp/run-operational.mjs`, on private network
+  `deepharness_mcp-private`; this is a DSH MCP host container, not proof that
+  the official DSH `SessionController` services are reachable from Remote-Ops.
+- The integration tests use in-process fixtures. No database, network bridge,
+  actual running DSH host or persistent DSH inbox was exercised. The file store
+  assumes exactly one active Remote-Ops writer; it is not safe for active-active
+  instances and is not configured in production.
+- No `dsh_*` tools are exposed by the current connected Wandora MCP. No message
+  was sent. Production and any live target changes remain **NO-GO**.
+
+### Next code gate
+
+Implement the separately scoped host-to-DSH transport and server bootstrap
+composition with tests against an isolated official DSH host. Add a private
+administrator path to create/revoke exact grants, without turning MCP callers
+into grant administrators. Then register only the semantic read/write tools
+against that host service, test restart/retry persistence, and prepare the
+separate deployment approval package. No deployment or production Lead write
+is included in this stage.

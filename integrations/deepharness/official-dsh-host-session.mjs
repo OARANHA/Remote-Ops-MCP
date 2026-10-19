@@ -123,12 +123,15 @@ export function createOfficialDshHostSessionBackend(deps = {}) {
           typeof auth.idempotencyKey !== "string" ||
           !UUID.test(auth.idempotencyKey)) deny();
 
-      // This callback is a required, trusted DB-backed *revocation-serialized*
-      // grant + durable idempotency commit gate. It must hold authority while
-      // the callback admits the DSH prompt, and return a persisted receipt.
+      // This callback is a required, trusted persistent *revocation-serialized*
+      // grant + idempotency commit gate. It must hold authority while the
+      // callback admits the DSH prompt, and return a persisted receipt.
       // No default permissive implementation is provided here.
       const receipt = await withAuthorizedLeadCommit(Object.freeze({
         ...scope, action: "lead.instruct", idempotencyKey: auth.idempotencyKey,
+        // Persist a one-way fingerprint for retry conflict detection. The
+        // instruction itself stays only in the trusted DSH prompt call.
+        payloadHash: createHash("sha256").update(auth.instruction, "utf8").digest("hex"),
       }), async () => {
         await team(auth); // recheck exact Lead immediately before prompt admission
         const ack = await sessionController.prompt({
@@ -143,13 +146,13 @@ export function createOfficialDshHostSessionBackend(deps = {}) {
       if (receipt?.accepted !== true ||
           receipt?.authorizationCheckedAtCommit !== true ||
           receipt?.grantRevision !== scope.revision ||
-          typeof receipt?.messageId !== "string" || !ID.test(receipt.messageId) ||
+          typeof receipt?.receiptId !== "string" || !ID.test(receipt.receiptId) ||
           typeof receipt?.duplicate !== "boolean") deny();
       return {
         accepted: true,
         authorizationCheckedAtCommit: true,
         grantRevision: scope.revision,
-        messageId: receipt.messageId,
+        receiptId: receipt.receiptId,
         duplicate: receipt.duplicate,
       };
     },
