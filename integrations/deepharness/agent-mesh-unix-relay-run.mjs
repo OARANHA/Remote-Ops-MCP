@@ -19,7 +19,10 @@ export async function startDshUnixRelayRuntime({
   env=process.env,readFile=systemReadFile,createHandler=createDshAgentMeshUnixRelayOverMtls,
   startListener=startDshUnixRelayListener,
 }={}){
+  const socketGroupId=Number(env.DSH_UNIX_RELAY_SOCKET_GID);
   if(env.DSH_UNIX_RELAY_ENABLED!=="1"||
+     !/^[1-9][0-9]*$/.test(env.DSH_UNIX_RELAY_SOCKET_GID??"")||
+     !Number.isSafeInteger(socketGroupId)||
      !ID.test(env.DSH_UNIX_RELAY_WORKSPACE_ID??"")||
      !ID.test(env.DSH_UNIX_RELAY_LEAD_SESSION_ID??"")||
      !PIN.test(env.DSH_BRIDGE_SERVER_FP_SHA256??""))deny();
@@ -33,7 +36,7 @@ export async function startDshUnixRelayRuntime({
       workspaceId:env.DSH_UNIX_RELAY_WORKSPACE_ID,
       leadSessionId:env.DSH_UNIX_RELAY_LEAD_SESSION_ID,
     });
-    return await startListener({enabled:true,handler});
+    return await startListener({enabled:true,handler,socketGroupId});
   }catch{deny();}
 }
 // Main is never entered from CI imports or the existing Remote-Ops MCP service.
