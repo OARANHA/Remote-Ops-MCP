@@ -24,4 +24,5 @@ jobs:
         run: |
           node --check integrations/deepharness/semantic-policy.mjs
           node --check integrations/deepharness/official-dsh-host-session.mjs
-          node --test integrations/deepharness/semantic-policy.test.mjs integrations/deepharness/official-dsh-host-session.test.mjs
+          node --check integrations/deepharness/composition.mjs
+          node --test integrations/deepharness/*.test.mjs
