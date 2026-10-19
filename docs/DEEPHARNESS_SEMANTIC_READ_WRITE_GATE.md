@@ -277,14 +277,41 @@ service is not reachable from the running Remote-Ops process in verified
 evidence. [source: https://github.com/OARANHA/Remote-Ops-MCP/pull/71; added: 2026-10-19]
 
 The first DSH PR #17 bootstrap CI workflow passed, while its Stage D
-PostgreSQL workflow failed during operational host composition. The failure led
-to a composition correction on head `173144e7eadc9bb61b3c1917e774d7e1045eac0d`;
-the next workflow query returned no runs/statuses yet, so no GREEN result is
-claimed for that correction. Local DSH package tests passed 74/74, focused
-operational host and semantic adapter checks passed 25/25, and Remote-Ops
-semantic integration tests passed 44/44. The Remote-Ops TypeScript build also
-passed after using the workspace dependency installation; the temporary
-dependency link was removed.
+PostgreSQL workflow on head `173144e7eadc9bb61b3c1917e774d7e1045eac0d` failed
+because its disposable composition fixture omitted SessionController. The
+fixture correction passed the PostgreSQL primary job on head
+`1fff568d27670314d009ebe16a509199bdf7a0c5`, but the candidate job then exposed
+the upgrade verifier's hard-coded lab.5 version. Bootstrap CI passed; overall
+Stage D remains RED until the exact packed-version verification change passes.
+Remote-Ops CI #258 and semantic gate #22 passed for head
+`944792f987dae971c2a12998bda8cdb399e6661a`.
+
+## Stage 9 — opt-in Remote-Ops MCP tools (2026-10-19)
+
+Remote-Ops now has a code path for the proposed tools `dsh_list_teams`,
+`dsh_get_team_status`, `dsh_list_tasks`, `dsh_read_lead_chat`, and
+`dsh_send_lead_instruction`. Registration stays off unless the operator sets
+`DSH_SEMANTIC_ENABLED=1`; that mode rejects `AUTH_MODE=noauth`, requires an
+exact pinned DSH server fingerprint, and loads fixed client cert/key/CA files.
+The runtime image includes only the semantic integration modules needed by
+that opt-in path. The existing generic target operations gain no Docker or
+shell permission.
+
+`dsh_list_teams` enumerates only current `team.read` grants for the verified
+OAuth client/session and requested workspace, then reauthorizes each Lead read.
+Status/tasks, chat and instructions go through the same action-separated grant
+policy. `mcp:read` OAuth metadata by itself is not a Team grant or write
+authorization. This OAuth client/session tuple is an application-level caller
+identity, not proof of an individual Keycloak human subject.
+
+The grant store is persistent, starts empty and assumes exactly one active
+Remote-Ops process. There is still no reviewed grant-administration command or
+production credential/grant file; its secure runtime mount and restart/revoke
+procedure remain deployment prerequisites. No DSH tools are exposed in the
+current production connection, no grant has been created, and no Lead message
+has been sent. Local verification: Remote-Ops TypeScript build and 48/48
+semantic tests passed before the last documentation/CI-gate edits; rerun on
+the final commit. Production remains **NO-GO**.
 
 ### Remaining activation gates
 

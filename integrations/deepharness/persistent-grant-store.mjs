@@ -177,6 +177,19 @@ export function createPersistentDshGrantStore({ file, audit = () => {}, now = Da
       return Object.freeze({ ...identity, actions: [...grant.actions], revision: grant.revision });
     },
 
+    async listCurrentLeadGrants(input) {
+      if (!isObject(input)) denied();
+      const { actor, clientId, sessionId, workspaceId, action } = input;
+      if (![actor, clientId, sessionId, workspaceId].every(validId) ||
+          actor !== `oauth:${clientId}:${sessionId.slice(0, 12)}` || action !== "team.read") denied();
+      return Object.freeze(Object.values(state.grants)
+        .filter(grant => grant.revokedAt === null && grant.actor === actor &&
+          grant.clientId === clientId && grant.sessionId === sessionId &&
+          grant.workspaceId === workspaceId && grant.actions.includes(action))
+        .map(grant => Object.freeze({workspaceId:grant.workspaceId,
+          leadSessionId:grant.leadSessionId,revision:grant.revision})));
+    },
+
     async withAuthorizedLeadCommit(input, submit) {
       return serialize(async () => {
         const identity = identityOf(input);

@@ -12,7 +12,7 @@ const ctx = Object.freeze({
 const scope = Object.freeze({ workspaceId: "lab", leadSessionId: "lead-123" });
 const instruction = "Lead, summarize the synthetic lab tasks.";
 function fixture(overrides = {}) {
-  const calls = { grants: 0, reads: 0, chats: 0, sends: 0 };
+  const calls = { grants: 0, reads: 0, chats: 0, sends: 0, lists: 0 };
   let enabled = true, revision = "revision-1";
   const deps = {
     async lookupCurrentGrant(identity) {
@@ -35,6 +35,12 @@ function fixture(overrides = {}) {
       return { accepted: true, authorizationCheckedAtCommit: true,
         grantRevision: auth.revision, receiptId: "receipt-123", duplicate: false };
     },
+    async listCurrentLeadGrants(input) {
+      calls.lists++;
+      return input.workspaceId === scope.workspaceId
+        ? [{workspaceId:scope.workspaceId,leadSessionId:scope.leadSessionId,revision:"revision-1"}]
+        : [];
+    },
     ...overrides,
   };
   return {
@@ -45,6 +51,17 @@ function fixture(overrides = {}) {
 
 test("without a complete trusted backend, fails closed", () => {
   assert.throws(() => createDeepharnessSemanticPolicy({}), /capability_denied/);
+});
+
+test("Lead discovery enumerates grants only and rechecks each Lead before returning it",async()=>{
+  const f=fixture();
+  assert.deepEqual(await f.policy.listTeams(ctx,{workspaceId:scope.workspaceId}),[
+    {workspace:scope.workspaceId,tasks:[]},
+  ]);
+  assert.equal(f.calls.lists,1);
+  assert.equal(f.calls.reads,1);
+  assert.equal(f.calls.grants,2);
+  await assert.rejects(f.policy.listTeams(ctx,{workspaceId:scope.workspaceId,leadSessionId:"untrusted"}),/capability_denied/);
 });
 
 test("no authenticated client/session means zero backend reads and writes", async () => {

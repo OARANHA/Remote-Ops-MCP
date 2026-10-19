@@ -23,6 +23,7 @@ export function composeDeepharnessReadWrite(deps = {}) {
     });
   return createDeepharnessSemanticPolicy({
     lookupCurrentGrant,
+    listCurrentLeadGrants: grantStore?.listCurrentLeadGrants,
     readAuthorizedTeam: auth => host.readAuthorizedTeam(auth),
     readAuthorizedChat: auth => host.readAuthorizedChat(auth),
     commitAuthorizedInstruction: auth => host.commitAuthorizedInstruction(auth),

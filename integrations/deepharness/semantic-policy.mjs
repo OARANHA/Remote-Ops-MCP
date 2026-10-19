@@ -54,7 +54,7 @@ function validateGrant(grant, principal, scope, action) {
 
 export function createDeepharnessSemanticPolicy(dependencies = {}) {
   const { lookupCurrentGrant, readAuthorizedTeam, readAuthorizedChat,
-          commitAuthorizedInstruction } = dependencies;
+          commitAuthorizedInstruction, listCurrentLeadGrants } = dependencies;
   if (typeof lookupCurrentGrant !== "function" ||
       typeof readAuthorizedTeam !== "function" ||
       typeof readAuthorizedChat !== "function" ||
@@ -77,7 +77,27 @@ export function createDeepharnessSemanticPolicy(dependencies = {}) {
     if (fresh.revision !== expected.revision) deny();
   }
 
-  return Object.freeze({
+  const operations = {
+    async listTeams(trustedContext, input) {
+      const principal = principalOf(trustedContext);
+      if (!input || typeof input !== "object" || Array.isArray(input) ||
+          Object.keys(input).some(key => key !== "workspaceId")) deny();
+      const workspaceId = identifier(input?.workspaceId);
+      if (typeof listCurrentLeadGrants !== "function") deny();
+      const grants = await listCurrentLeadGrants(Object.freeze({ ...principal, workspaceId, action: "team.read" }));
+      if (!Array.isArray(grants) || grants.length > 1000) deny();
+      const leads = grants.map(grant => {
+        if (!grant || grant.workspaceId !== workspaceId || !identifier(grant.leadSessionId) ||
+            typeof grant.revision !== "string" || !REV.test(grant.revision)) deny();
+        return grant.leadSessionId;
+      });
+      if (new Set(leads).size !== leads.length) deny();
+      const teams = [];
+      for (const leadSessionId of leads) {
+        teams.push(await operations.readTeam(trustedContext, { workspaceId, leadSessionId }));
+      }
+      return teams;
+    },
     async readTeam(trustedContext, input) {
       const auth = await authority(trustedContext, input, "team.read");
       // DSH backend must return a lossy bounded Team projection, no raw secrets.
@@ -117,5 +137,6 @@ export function createDeepharnessSemanticPolicy(dependencies = {}) {
         receipt_id: ack.receiptId, accepted: true, duplicate: ack.duplicate,
       });
     },
-  });
+  };
+  return Object.freeze(operations);
 }

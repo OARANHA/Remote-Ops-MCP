@@ -35,6 +35,20 @@ test("grant is exact to OAuth client/session, workspace, Lead, and actions", asy
   }
 });
 
+test("Lead discovery enumerates only active team.read grants for the exact OAuth caller and workspace",async t=>{
+  const f=await fixture();t.after(()=>rm(f.directory,{recursive:true,force:true}));
+  await f.store.putGrant({...identity,leadSessionId:"lead-2",actions:["team.read"]});
+  await f.store.putGrant({...identity,workspaceId:"other-workspace",leadSessionId:"lead-3",actions:["team.read"]});
+  const caller={actor:identity.actor,clientId:identity.clientId,sessionId:identity.sessionId,
+    workspaceId:identity.workspaceId,action:"team.read"};
+  assert.deepEqual((await f.store.listCurrentLeadGrants(caller)).map(grant=>grant.leadSessionId),["lab-lead","lead-2"]);
+  assert.deepEqual(await f.store.listCurrentLeadGrants({...caller,clientId:"other-client",sessionId:"other-session",
+    actor:"oauth:other-client:other-sessio"}),[]);
+  assert.deepEqual(await f.store.listCurrentLeadGrants({...caller,workspaceId:"other-workspace"}).then(rows=>rows.map(x=>x.leadSessionId)),["lead-3"]);
+  await f.store.revokeGrant({...identity,leadSessionId:"lead-2"});
+  assert.deepEqual((await f.store.listCurrentLeadGrants(caller)).map(grant=>grant.leadSessionId),["lab-lead"]);
+});
+
 test("parallel duplicate commit sends once and returns the durable receipt", async t => {
   const f = await fixture(); t.after(() => rm(f.directory, { recursive: true, force: true }));
   const idempotencyKey = randomUUID();
