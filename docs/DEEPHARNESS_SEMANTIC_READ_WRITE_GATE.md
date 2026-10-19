@@ -18,8 +18,9 @@ changing target authority or exposing a listener.
 - Target deepharness-read exists on 28server with read-only profile and Docker
   read on exactly two DSH containers. No Docker exec, semantic or write authority.
 - DSH Draft PR #4 has an Agent Team read model, not a proven Lead write endpoint.
-- Remote-Ops bearer middleware knows oauthClientId and oauthSessionId, but the
-  MCP ToolCtx currently receives only actor and requestId.
+- Remote-Ops bearer middleware knows oauthClientId and oauthSessionId; this
+  PR forwards these verified request fields into MCP ToolCtx (still optional
+  and denied by policy unless a trusted grant backend is wired).
 - Existing Remote-Ops OAuth uses the mcp:read scope even for older mutation
   tools, and its shared-password login does NOT establish a Keycloak human sub.
   This scope alone must NEVER authorize Lead chat writes.
