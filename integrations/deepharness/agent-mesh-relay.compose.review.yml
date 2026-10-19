@@ -1,0 +1,64 @@
+# DRAFT ONLY; never combined with the running DSH Portainer stack.
+# This profile is inert until an operator explicitly selects the file/profile,
+# supplies immutable image digest, exact numeric UID/GIDs and approved secrets.
+services:
+  dsh-agent-mesh-relay-review:
+    profiles: ["dsh-relay-review"]
+    image: ${DSH_RELAY_IMAGE_DIGEST:?Use a reviewed sha256-pinned relay candidate image}
+    pull_policy: never
+    init: true
+    restart: "no"
+    user: "${DSH_RELAY_UID:?Distinct numeric relay UID required}:${DSH_RELAY_PRIMARY_GID:?Relay primary GID required}"
+    group_add:
+      - "${DSH_AGENT_OPS_GID:?Exact ops-mcp group GID required}"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 64
+    mem_limit: 192m
+    cpus: 0.5
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777
+    environment:
+      DSH_UNIX_RELAY_ENABLED: "${DSH_RELAY_OPERATOR_ENABLE:-0}"
+      DSH_UNIX_RELAY_WORKSPACE_ID: "${DSH_RELAY_WORKSPACE_ID:?Exact lab workspace required}"
+      DSH_UNIX_RELAY_LEAD_SESSION_ID: "${DSH_RELAY_LEAD_SESSION_ID:?Exact lab Lead required}"
+      DSH_UNIX_RELAY_SOCKET_GID: "${DSH_AGENT_OPS_GID:?Exact ops-mcp group GID required}"
+      DSH_BRIDGE_SERVER_FP_SHA256: "${DSH_RELAY_SERVER_FP_SHA256:?Pinned TLS server fingerprint required}"
+    volumes:
+      - type: bind
+        source: /run/wandora/deepharness-semantic
+        target: /run/wandora/deepharness-semantic
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${DSH_RELAY_CA_FILE:?Reviewed relay CA file required}
+        target: /run/secrets/dsh-bridge-ca.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${DSH_RELAY_CLIENT_CERT_FILE:?Reviewed relay certificate file required}
+        target: /run/secrets/dsh-bridge-client-cert.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${DSH_RELAY_CLIENT_KEY_FILE:?Reviewed relay key file required}
+        target: /run/secrets/dsh-bridge-client-key.pem
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      - dsh-private
+    logging:
+      driver: local
+      options:
+        max-size: 5m
+        max-file: "2"
+networks:
+  dsh-private:
+    external: true
+    name: deepharness_mcp-private
