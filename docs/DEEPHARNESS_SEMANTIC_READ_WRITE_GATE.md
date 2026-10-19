@@ -519,3 +519,55 @@ were `in_progress` on PR #71 head
 `33361fb8079a8e5655bd7b26a3eeed765e147667` at time of inspection.
 Do not infer GREEN from test code or parent-commit results.
 Production stays **NO-GO**.
+
+
+## Stage 14 — opt-in private Unix relay listener and runtime (Draft-only, 2026-10-19)
+
+After CI #278 and semantic policy #42 completed SUCCESS on PR #71 commit
+`fe69739f7543c0dacc7b2cbd2385df3ffad85035`, add separate inert,
+testable runtime modules. No deployment or enabled services.
+
+- `integrations/deepharness/agent-mesh-unix-listener.mjs` exposes
+  `startDshUnixRelayListener` only to an explicitly calling owner.
+  It requires an owner-only (0700), pre-provisioned, non-symlink
+  directory, a non-root process UID, and an unused fixed Unix socket path.
+  It neither creates a directory nor unlinks an existing endpoint.
+  On success the socket is 0600, owner-verified, inode-checked, with
+  bounded HTTP connection/request limits; shutdown avoids unlinking a
+  path replaced by another inode. No TCP listener is constructed.
+  The fixed production path remains
+  `/run/wandora/deepharness-semantic/bridge.sock`.
+- `integrations/deepharness/agent-mesh-unix-relay-run.mjs` is a distinct
+  script requiring `DSH_UNIX_RELAY_ENABLED=1` and exact operator-owned
+  `DSH_UNIX_RELAY_WORKSPACE_ID`,
+  `DSH_UNIX_RELAY_LEAD_SESSION_ID`, and
+  `DSH_BRIDGE_SERVER_FP_SHA256`. It reads exactly three configured-in-image
+  secret paths (`/run/secrets/dsh-bridge-{ca,client-cert,client-key}.pem`)
+  and constructs the existing hostname/SNI/certificate-pinned mTLS client.
+  Nothing in the MCP request can change identity, target, socket path or
+  certificate. Importing it does nothing; no environment variables are set
+  in any production runtime by this PR.
+- `agent-mesh-unix-listener.test.mjs` verifies denial by default,
+  nonroot and directory ownership checks, pre-existing-file refusal,
+  actual Unix socket and close. `agent-mesh-unix-relay-run.test.mjs`
+  checks no I/O without opt-in, fixed TLS material paths and no bind on
+  missing secrets. Both execute entirely in disposable CI.
+
+**Critical deployment compatibility gate (unresolved):** the 28server
+host receiver currently accepts sockets owned by root or its own
+`ops-mcp` UID. The draft listener requires owner-only directory and
+socket mode 0600. Therefore an eventual relay container must run under
+a **reviewed matching UID**, on a private mount accessible by the host
+agent, without giving the agent access to the container's private
+mTLS key files. Do not silently assume Node image's UID 1000 matches
+the host service. Verify numeric UID and mount/namespace ownership in
+an isolated candidate, rather than changing the target's allowlist,
+using privileged Docker, or relaxing socket mode.
+
+**Not yet qualified:** a sidecar image or Compose profile, approved
+socket directory provisioning, UID mapping, secrets provisioning,
+a real mTLS request across the DSH private Docker network, agent WSS
+dispatch using a persisted specific grant, revocation/receipt replay,
+and any actual Lead reply. No existing Portainer stack, agent service,
+OAuth client or public listener was touched. Merging or deploying
+requires separate authorization.
