@@ -288,42 +288,57 @@ Remote-Ops CI #258 and semantic gate #22 passed for head
 
 ## Stage 9 — opt-in Remote-Ops MCP tools (2026-10-19)
 
-Remote-Ops now has a code path for the proposed tools `dsh_list_teams`,
+Remote-Ops registers the five semantic tools `dsh_list_teams`,
 `dsh_get_team_status`, `dsh_list_tasks`, `dsh_read_lead_chat`, and
-`dsh_send_lead_instruction`. Registration stays off unless the operator sets
-`DSH_SEMANTIC_ENABLED=1`; that mode rejects `AUTH_MODE=noauth`, requires an
-exact pinned DSH server fingerprint, and loads fixed client cert/key/CA files.
-The runtime image includes only the semantic integration modules needed by
-that opt-in path. The existing generic target operations gain no Docker or
-shell permission.
+`dsh_send_lead_instruction` only when `DSH_SEMANTIC_ENABLED=1`. Startup rejects
+`AUTH_MODE=noauth`, requires fixed client certificate/key/CA files, and pins
+the exact DSH server fingerprint. `dsh_list_teams` discovers only current
+`team.read` grants for the verified OAuth client/session and requested
+workspace, then reauthorizes each Lead. Status/tasks, chat and instructions
+use action-separated grants. `mcp:read` alone authorizes no DSH operation.
+The OAuth client/session tuple is an application caller identity, not proof of
+an individual Keycloak human subject.
 
-`dsh_list_teams` enumerates only current `team.read` grants for the verified
-OAuth client/session and requested workspace, then reauthorizes each Lead read.
-Status/tasks, chat and instructions go through the same action-separated grant
-policy. `mcp:read` OAuth metadata by itself is not a Team grant or write
-authorization. This OAuth client/session tuple is an application-level caller
-identity, not proof of an individual Keycloak human subject.
+The persistent grant store starts empty and assumes exactly one active
+Remote-Ops process. There is no reviewed grant-administration command or
+provisioned grant file. The tools exist in the Draft branch but are absent from
+the live Wandora connection; no grant or Lead message has been created. Local
+verification on the current code: TypeScript build GREEN, semantic tests
+50/50 GREEN, Docker scope 5/5 GREEN, candidate contract and compose wiring
+GREEN. The current head CI #259 and semantic gate #23 passed. Production
+remains **NO-GO**.
 
-The grant store is persistent, starts empty and assumes exactly one active
-Remote-Ops process. There is still no reviewed grant-administration command or
-production credential/grant file; its secure runtime mount and restart/revoke
-procedure remain deployment prerequisites. No DSH tools are exposed in the
-current production connection, no grant has been created, and no Lead message
-has been sent. Local verification: Remote-Ops TypeScript build and 48/48
-semantic tests passed before the last documentation/CI-gate edits; rerun on
-the final commit. Production remains **NO-GO**.
+## Stage 10 — real local mTLS transport test (2026-10-19)
+
+`private-bridge-client.tls.integration.test.mjs` exercises the Remote-Ops
+client over a real local HTTPS socket with mutual TLS. It creates a throwaway
+CA, server certificate and client certificate in a temporary directory,
+requires the client certificate at the server, verifies the fixed DSH hostname
+and route, posts a bounded semantic instruction, and proves that a wrong
+server-certificate pin is rejected. The production client still fixes its
+hostname, port and route; only the injected test transport routes to an
+ephemeral loopback port.
+
+This validates the transport and pin checks across a real TLS handshake. It
+does not exercise the DSH HTTP handler, actual SessionController, durable
+session history, Lead response, or production private network. The new test
+passed locally with the existing semantic suite: **50/50**. Production remains
+**NO-GO**.
 
 ### Remaining activation gates
 
-- Complete the Remote-Ops server bootstrap, dynamic MCP tool registration and
-  exact grant discovery/provisioning path; keep all tools absent or denied
-  until the trusted bridge and grant store are initialized.
-- Reconcile PR #17's dependency on PR #13; confirm its workflows are green.
-- From a disposable DSH host, admit one laboratory instruction through the
-  actual SessionController, restart/reopen the Session, and verify its durable
-  user message plus later Lead response.
+- Reconcile the DSH dependency stack: PRs #8–#13 are all open Draft and
+  unmerged; PR #17 depends on #13. Their associated CI runs and PR #17's
+  bootstrap #474 and Stage D #18 passed, but this does not authorize merge.
+- Add a separately reviewed provisioning/revocation path for exact
+  client/session/workspace/Lead/action grants. It must not allow a caller to
+  grant itself access.
+- On a disposable DSH host, admit an instruction through the actual
+  SessionController, restart/reopen the Session, and verify the durable user
+  message plus later Lead response.
 - Verify the fixed private DNS route is reachable only through the intended
-  internal network. No production route, credential or target was changed.
+  internal network and prepare certificate/runtime enablement for a lab-only
+  canary. No production route, credential, grant, or target was changed.
 
 Production remains **NO-GO**. No message has been sent to a production or
 laboratory Lead from this implementation.
