@@ -1,14 +1,32 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import {mkdtemp,chmod,rm} from "node:fs/promises";
+import {mkdtemp,chmod,rm,lstat} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {executeDshAgentOperation} from "./dist/agent/deepharness.js";
 import {executeAgentOperation} from "./dist/agent/operations.js";
 
 const id="4db3b83c-5abc-4aa3-9270-9715e3d34e38";
-const env={DSH_AGENT_MESH_ENABLED:"1",DSH_AGENT_MESH_WORKSPACE_ID:"lab-1",DSH_AGENT_MESH_LEAD_SESSION_ID:"lead-1"};
+const env={
+  DSH_AGENT_MESH_ENABLED:"1",DSH_AGENT_MESH_WORKSPACE_ID:"lab-1",
+  DSH_AGENT_MESH_LEAD_SESSION_ID:"lead-1",
+  DSH_AGENT_MESH_RELAY_UID:String(process.getuid()+1),
+  DSH_AGENT_MESH_SOCKET_GID:String(process.getgid()),
+};
+// The ephemeral CI socket is owned by the runner UID, not a deployed relay.
+// Only test metadata is synthesized to exercise the distinct-identity policy.
+async function isolatedRelayStat(path){
+  const original=await lstat(path);
+  const isDir=original.isDirectory();
+  return {
+    isDirectory:()=>isDir,isSocket:()=>original.isSocket(),
+    isSymbolicLink:()=>original.isSymbolicLink(),
+    uid:Number(env.DSH_AGENT_MESH_RELAY_UID),
+    gid:Number(env.DSH_AGENT_MESH_SOCKET_GID),
+    mode:(original.mode&~0o7777)|(isDir?0o2710:0o660),
+  };
+}
 const task=(operation,args={})=>({op:"deepharness.semantic",args:{operation,workspaceId:"lab-1",...args}});
 const denied=value=>{assert.equal(value.code,1);assert.equal(value.stdout,"");assert.equal(value.stderr,"deepharness_agent_mesh_unavailable");};
 async function serve(handler){
@@ -57,7 +75,7 @@ test("local Unix relay carries only fixed route and filters other Lead teams",as
     res.end(JSON.stringify({result}));
   });
   t.after(relay.close);
-  const deps={env,socketPath:relay.socket};
+  const deps={env,socketPath:relay.socket,lstat:isolatedRelayStat};
   const teams=await executeDshAgentOperation(task("listTeams"),{},deps);
   assert.equal(teams.code,0);
   assert.deepEqual(JSON.parse(teams.stdout).map(v=>v.leadSessionId),["lead-1"]);
@@ -96,7 +114,7 @@ test("relay response metadata, bounds and write acknowledgement are checked inde
     res.end(JSON.stringify(answer));
   });
   t.after(relay.close);
-  const deps={env,socketPath:relay.socket};
+  const deps={env,socketPath:relay.socket,lstat:isolatedRelayStat};
   const operation=task("sendLeadInstruction",{leadSessionId:"lead-1",requestId:id,text:"synthetic"});
   denied(await executeDshAgentOperation(operation,{},deps));
   answer={result:{accepted:true,requestId:id,extra:"leak"}};
@@ -125,7 +143,7 @@ test("full synthetic receiver-to-local-relay contract crosses actual Unix socket
   });
   const relay=await serve(handler);
   t.after(relay.close);
-  const deps={env,socketPath:relay.socket};
+  const deps={env,socketPath:relay.socket,lstat:isolatedRelayStat};
   const list=await executeDshAgentOperation(task("listTeams"),{},deps);
   assert.equal(list.code,0);
   assert.equal(JSON.parse(list.stdout)[0].leadSessionId,"lead-1");
@@ -138,4 +156,37 @@ test("full synthetic receiver-to-local-relay contract crosses actual Unix socket
   assert.equal(forwarded.every(x=>x.workspaceId==="lab-1"&&
     (!Object.hasOwn(x,"leadSessionId")||x.leadSessionId==="lead-1")),true);
   assert.equal(forwarded.every(x=>!Object.hasOwn(x,"token")&&!Object.hasOwn(x,"hostname")),true);
+});
+
+
+test("real same-UID socket is rejected without distinct verified relay identity",async t=>{
+  const relay=await serve((_req,res)=>res.end('{"result":[]}'));
+  t.after(relay.close);
+  const res=await executeDshAgentOperation(task("listTeams"),{},{
+    env,socketPath:relay.socket,
+  });
+  denied(res);
+});
+test("socket metadata with forged UID, group or directory mode is rejected",async t=>{
+  const relay=await serve((_req,res)=>res.end('{"result":[]}'));
+  t.after(relay.close);
+  const cases=[
+    {...env,DSH_AGENT_MESH_RELAY_UID:String(process.getuid())},
+    {...env,DSH_AGENT_MESH_SOCKET_GID:"0"},
+    {...env,DSH_AGENT_MESH_SOCKET_GID:"1234567"},
+  ];
+  for(const attempt of cases){
+    denied(await executeDshAgentOperation(task("listTeams"),{},{
+      env:attempt,socketPath:relay.socket,lstat:isolatedRelayStat,
+    }));
+  }
+  for(const field of ["uid","gid","mode"]){
+    const forged=async path=>{
+      const original=await isolatedRelayStat(path);
+      return {...original,[field]:field==="mode"?0o777:1234567};
+    };
+    denied(await executeDshAgentOperation(task("listTeams"),{},{
+      env,socketPath:relay.socket,lstat:forged,
+    }));
+  }
 });
