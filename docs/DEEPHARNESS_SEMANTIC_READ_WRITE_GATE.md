@@ -100,3 +100,18 @@ means the DSH inbox accepted text, not the agent executed or completed it.
 
 Tests are synthetic dependency-injected fixtures, not installation or live
 chat evidence. The new CI gate runs both policy and official-host tests.
+
+## Stage 3 — end-to-end synthetic composition (2026-10-19)
+
+The new integrations/deepharness/composition.mjs wires the fail-closed
+Remote-Ops OAuth/session grant checks to the pinned official DSH
+SessionController host adapter. Both independent and composed synthetic unit
+tests verify scoped Team/chat reads and one queued Lead instruction.
+The fixture substitutes a trusted durable grant transaction; no real DB or
+DSH service is invoked. Only an audited PostgreSQL grant/commit provider
+with revocation serialization and durable idempotent receipts can qualify
+production writes. Even if CI is green, neither OAuth client identity
+forwarding nor these unit fixtures prove a human Keycloak subject mapping.
+The existing MCP endpoint continues to expose exactly its previous tools:
+no new dsh_* tools are registered until the host Agent Mesh bridge, human
+identity mapping and explicit write grants are installed and canary-tested.
