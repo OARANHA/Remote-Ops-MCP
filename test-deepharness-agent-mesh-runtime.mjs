@@ -108,3 +108,34 @@ test("relay response metadata, bounds and write acknowledgement are checked inde
   ctype="application/json";answer={result:"x".repeat(262145)};
   denied(await executeDshAgentOperation(task("listTeams"),{},deps));
 });
+
+test("full synthetic receiver-to-local-relay contract crosses actual Unix socket, not Docker",async t=>{
+  const {createDshAgentMeshUnixRelayHandler}=await import("./integrations/deepharness/agent-mesh-unix-relay.mjs");
+  const forwarded=[];
+  const handler=createDshAgentMeshUnixRelayHandler({
+    workspaceId:"lab-1",leadSessionId:"lead-1",
+    postJson:async operation=>{
+      forwarded.push(operation);
+      if(operation.operation==="sendLeadInstruction")
+        return {accepted:true,requestId:operation.requestId};
+      if(operation.operation==="listTeams")
+        return [{leadSessionId:"lead-1",members:[],tasks:[]}];
+      throw Error("unapproved fixture operation");
+    },
+  });
+  const relay=await serve(handler);
+  t.after(relay.close);
+  const deps={env,socketPath:relay.socket};
+  const list=await executeDshAgentOperation(task("listTeams"),{},deps);
+  assert.equal(list.code,0);
+  assert.equal(JSON.parse(list.stdout)[0].leadSessionId,"lead-1");
+  const ack=await executeDshAgentOperation(task("sendLeadInstruction",{
+    leadSessionId:"lead-1",requestId:id,text:"synthetic no model",
+  }),{},deps);
+  assert.equal(ack.code,0);
+  assert.deepEqual(JSON.parse(ack.stdout),{accepted:true,requestId:id});
+  assert.deepEqual(forwarded.map(x=>x.operation),["listTeams","sendLeadInstruction"]);
+  assert.equal(forwarded.every(x=>x.workspaceId==="lab-1"&&
+    (!Object.hasOwn(x,"leadSessionId")||x.leadSessionId==="lead-1")),true);
+  assert.equal(forwarded.every(x=>!Object.hasOwn(x,"token")&&!Object.hasOwn(x,"hostname")),true);
+});
