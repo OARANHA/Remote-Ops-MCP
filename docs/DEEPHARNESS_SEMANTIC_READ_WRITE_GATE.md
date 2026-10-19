@@ -118,6 +118,27 @@ no new dsh_* tools are registered until the host Agent Mesh bridge, human
 identity mapping and explicit write grants are installed and canary-tested.
 
 
+## 2026-10-19 Stage 5 — preserve full caller identity in DSH retry keys
+
+The OAuth middleware's audit actor contains only the first 12 characters of the
+session ID. The official host adapter now also requires the verified full
+`clientId` and `sessionId`, and validates that the actor matches that identity.
+The trusted commit provider receives both full identifiers, so its durable
+idempotency key can be scoped to the actual OAuth client/session tuple.
+
+For DSH's official `SessionController.prompt`, the adapter derives a stable
+`requestId` as `mcp_<sha256>` over the actor, full client/session IDs, workspace,
+Lead and caller idempotency UUID. This preserves a retry ID for the same scoped
+caller while separating identical caller UUIDs across sessions or Leads. The
+original UUID remains the idempotency key passed to the trusted commit provider.
+This prevents collisions in the DSH prompt dedupe key; it does **not** implement
+the missing persistent provider or prove concurrent uniqueness by itself.
+
+Focused isolated Node tests: **11/11 pass**. CI and policy gate for PR head
+`feace0e31e4c9a3fefb11861525f493c28704072` were queued at last check. No live
+DSH endpoint, registered MCP tool or synthetic message is available yet.
+
+
 ## 2026-10-19 Stage 4 — authorization and lab endpoint reconciliation
 
 The owner explicitly authorized development and one synthetic instruction to
