@@ -11,6 +11,7 @@ BROKER_SERVICE_FILE="/etc/systemd/system/$BROKER_SERVICE_NAME"
 EXEC_SOCKET="${WANDORA_EXEC_BROKER_SOCKET:-/run/wandora-ops-exec/exec.sock}"
 EXEC_PROGRAMS="${WANDORA_EXEC_PROGRAMS:-bash,sh,git,node,npm,npx,pnpm,python3,curl,wget,jq,grep,sed,awk,find,head,tail,cat,wc,make}"
 EXEC_MAX_SESSIONS="${WANDORA_EXEC_MAX_SESSIONS:-48}"
+NODE_BIN="${WANDORA_NODE_BIN:-/usr/bin/node}"
 
 log() { printf '\033[1;34m[wandora-exec]\033[0m %s\n' "$*"; }
 ok() { printf '\033[1;32m✓\033[0m %s\n' "$*"; }
@@ -20,6 +21,7 @@ die() { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 [[ "$EXEC_MAX_SESSIONS" =~ ^[0-9]+$ ]] && (( EXEC_MAX_SESSIONS >= 1 && EXEC_MAX_SESSIONS <= 256 )) || die "WANDORA_EXEC_MAX_SESSIONS must be an integer between 1 and 256"
 test -f "$INSTALL_DIR/dist/exec/broker.js" || die "missing $INSTALL_DIR/dist/exec/broker.js"
 getent group "$EXEC_GROUP" >/dev/null 2>&1 || die "group $EXEC_GROUP does not exist"
+[[ -x "$NODE_BIN" ]] || die "Node.js runtime is not executable: $NODE_BIN"
 
 if ! id "$EXEC_USER" >/dev/null 2>&1; then
   log "Creating isolated execution user $EXEC_USER..."
@@ -43,7 +45,7 @@ Type=simple
 User=$EXEC_USER
 Group=$EXEC_GROUP
 WorkingDirectory=$INSTALL_DIR
-ExecStart=/usr/bin/node $INSTALL_DIR/dist/exec/broker.js
+ExecStart=$NODE_BIN $INSTALL_DIR/dist/exec/broker.js
 Restart=on-failure
 RestartSec=2
 RuntimeDirectory=wandora-ops-exec
