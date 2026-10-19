@@ -430,3 +430,41 @@ IP was blocked by the platform. That specific change was **not applied** and
 must not be recreated through another write route. This Stage 11 design uses
 existing Agent Mesh as a prospective control-plane hop, not a workaround
 claimed to be installed. No live Lead messages or semantic tool calls occurred.
+
+## Stage 12 — disabled 28server Agent Mesh receiver (Draft, 2026-10-19)
+
+`src/agent/deepharness.ts` now implements a *host-side* receiver for the
+exact Agent Mesh operation `deepharness.semantic`; `src/agent/operations.ts`
+dispatches only that named operation to the receiver. It remains **off by
+default** and fails closed unless the operator supplies all three trusted
+host-side values: `DSH_AGENT_MESH_ENABLED=1`,
+`DSH_AGENT_MESH_WORKSPACE_ID` and `DSH_AGENT_MESH_LEAD_SESSION_ID`.
+Values cannot be set by the MCP caller; the receiver requires the exact
+workspace/Lead, validates five operations and rejects extra request fields.
+A `listTeams` reply is filtered to the host-authorized Lead.
+
+The only proposed local transport is the fixed Unix-domain socket
+`/run/wandora/deepharness-semantic/bridge.sock`. The receiver refuses a
+missing/non-socket/symlink endpoint, untrusted owner, and world-accessible
+socket/directory. Calls use the fixed `/wandora/dsh-bridge/v1` route and
+bounded HTTP JSON exchange. No network listener, Docker access, TCP
+forwarder, relay, filesystem writer, certificate/secret, grant administrator
+or runtime setting is provisioned. Requests to the socket **do not themselves
+establish mTLS**; the separately approved relay must authenticate the local
+caller and establish certificate-pinned mTLS to the private DSH handler.
+Existing Remote-Ops mTLS private-client code remains unchanged.
+
+`test-deepharness-agent-mesh-runtime.mjs` exercises default refusal,
+wrong workspace/Lead, invalid and oversized content, absent socket,
+strict response metadata and a throwaway owner-controlled AF_UNIX HTTP
+server. The main CI runs it after the TypeScript build; failures must be
+fixed before further integration. This tests the *local receiver*, **not**
+Agent Mesh end-to-end dispatch, a verified mTLS relay, a durable actual Lead
+instruction or a production endpoint. The connected Remote-Ops
+`DSH_SEMANTIC_ENABLED` tool bootstrap still selects its existing
+unreachable cross-VPS hostname, so additional reviewed control-plane
+transport composition is required before any canary.
+
+**NO-GO:** no source merge, relay install, agent restart, grants change,
+MCP tool activation, Docker network change or Lead message is authorized
+by this code-only Draft stage.
