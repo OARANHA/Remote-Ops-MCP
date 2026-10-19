@@ -12,6 +12,7 @@ import { getTransport } from "../transport.js";
 import { assertConfiguredPath, resolveCheckedGitRepo, resolveCheckedPath, resolveCheckedProcessCwd } from "../security/paths.js";
 import { dispatchAgentOperation } from "../agent/gateway.js";
 import { redactText, redactObject } from "../security/redact.js";
+import { filterDockerListByAllowlist } from "../security/docker-list-scope.js";
 import type { ExecResult } from "../ssh/pool.js";
 import { effectiveTargetEnabled } from "../state/store.js";
 import { portainerStatus, portainerEndpoints, portainerStacks, portainerStack, updatePortainerStackEnv, redeployPortainerGitStack, createPortainerGitStack, startPortainerStack, stopPortainerStack, deletePortainerStack } from "../portainer/client.js";
@@ -509,6 +510,9 @@ const TOOL_DEFS: ToolDef[] = [
     inputSchema: { target: targetField },
     run: async (args) => {
       const t = resolveTarget(args.target);
+      if (t.allowedDockerContainers.length === 0) {
+        return { target: t.id, count: 0, containers: [] };
+      }
       const T = await tr(t);
       const res = await T.exec(["docker", "ps", "-a", "--format", "{{json .}}"]);
       if (res.code !== 0) dockerAccessError(res);
@@ -524,7 +528,8 @@ const TOOL_DEFS: ToolDef[] = [
             return { raw: redactText(l) };
           }
         });
-      return { target: t.id, count: containers.length, containers };
+      const scoped = filterDockerListByAllowlist(containers, t.allowedDockerContainers);
+      return { target: t.id, count: scoped.length, containers: scoped };
     },
   },
   {

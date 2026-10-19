@@ -220,3 +220,35 @@ into grant administrators. Then register only the semantic read/write tools
 against that host service, test restart/retry persistence, and prepare the
 separate deployment approval package. No deployment or production Lead write
 is included in this stage.
+
+## Stage 7 — scope Docker inventory metadata (2026-10-19)
+
+Live read-only reconciliation found that `docker_list` returned the host's full
+`docker ps -a` inventory without applying `allowedDockerContainers`. The
+`deepharness-read` target status allowlists inspection of two named DSH
+containers, while the live inventory response also disclosed a third unrelated
+container's name, image, state and port metadata. This did not grant inspect,
+exec or write access to that third container, but it exceeded the target's
+declared container-list scope.
+
+The MCP tool now returns only inventory rows whose names are explicitly in the
+target allowlist; an empty list returns no rows without querying Docker, and
+`*` is the only full-inventory grant. A regression test exercises both the
+filter and the actual `docker_list` ToolDef against a mock target. This is a
+least-privilege fix; it does not change the live target configuration or grant
+any DSH semantic capability.
+
+Focused test: `test-docker-list-scope.mjs`, **5/5 GREEN**. TypeScript build:
+**GREEN**. `npm run check` passed the build, general end-to-end checks, pairing,
+installer, capability baseline, minimal disclosure, target approval and DSH
+read approval gates, then stopped at the existing sandbox restriction where
+AF_UNIX socket creation fails with `listen EPERM` in the execution-broker test.
+No privilege escalation was used. CI remains the full-suite gate.
+
+Current authorization boundary remains unchanged: the installed DSH private
+MCP handler evidenced in PR #4 accepts mTLS plus its own OAuth bearer and only
+registers `dsh_read_agent_team`. It is not yet a callable bridge from the
+existing Wandora OAuth session, and no `dsh_*` tools are registered here.
+Next implementation must add a dedicated fixed semantic Agent Mesh operation
+and a matching DSH private service interface, without shell or a second OAuth
+application; production remains **NO-GO**.

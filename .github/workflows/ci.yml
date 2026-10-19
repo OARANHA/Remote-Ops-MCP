@@ -18,6 +18,7 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run build
       - run: node --experimental-strip-types --test test-openhands-bridge.mjs
+      - run: node --experimental-strip-types --test test-docker-list-scope.mjs
       - run: node test-exec-broker-session-capacity.mjs
       - run: node test-paperclip-semantic.mjs
       - run: node test-docker-candidate-contract.mjs
