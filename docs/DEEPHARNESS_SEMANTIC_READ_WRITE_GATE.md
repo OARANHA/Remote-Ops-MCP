@@ -362,3 +362,71 @@ broaden the `deepharness-read` Docker target. Neither OAuth reuse nor a
 GREEN PR authorizes production networking/deployment.
 
 No tunnel, DNS, endpoint or permission was installed in this check.
+
+
+## Stage 11 — Agent Mesh local semantic transport review (2026-10-19; Draft, not activated)
+
+**Verified topology and identity.** Existing ChatGPT → Remote-Ops OAuth
+connection runs on `wandora-vps-01`; Agent Mesh's outbound authenticated WSS
+already reaches `28server` (host `wandora-ops-agent.service` active). The
+`deepharness-read` target is **read-only** and reports
+`allowedSemanticCapabilities=[]`. Live `deepharness-web-1` runs with
+`HostConfig.NetworkMode=deepharness_mcp-private` and
+`PortBindings={}`; the semantic handler, when enabled in a future reviewed
+image, would bind to the internal `deepharness-mcp-backend:3443` Docker alias.
+**Important:** Agent Mesh connects to the **host** but provides no demonstrated
+access to this Docker-private TLS endpoint. No host-network, public ingress,
+generic Docker exec, or direct access can be inferred.
+
+**New inert code:** `integrations/deepharness/agent-mesh-contract.mjs` and
+`agent-mesh-contract.test.mjs` define a strict two-way envelope for the *five*
+reviewed operations (listTeams, getTeamStatus, listTasks, readLeadChat,
+sendLeadInstruction). Unknown keys, URLs, ports, hostnames, target choices,
+credentials, actor/grant assertions, shell commands, invalid IDs, oversized
+messages, bad request IDs and invalid histories fail closed. The wrapper carries
+only operation-specific workspace/Lead identifiers and constrained text when
+required. It has no outbound networking, certificates, listener, agent command
+registration, runtime bootstrap wiring or grant provisioning. The existing
+`DSH_SEMANTIC_ENABLED` default-off runtime stays unchanged.
+
+**Separate implementation and approval gates, in order:**
+
+1. **Local reachability design:** qualify a dedicated fixed endpoint accessed
+   by the *28server agent process* without exposing the DSH Docker listener to
+   the public internet. A candidate is an operator-managed restricted
+   AF_UNIX-to-private-network relay associated only with the reviewed DSH
+   container network and handler path. This is an architecture candidate, not a
+   deployed or selected implementation. Validate its Linux permissions,
+   compartment boundaries, process lifetime, certificate trust and negative
+   reachability before choosing it. Do not rely on an unverified container IP,
+   broad host-network access or an unpinned TCP forward.
+2. **Host enforcement:** only a named `deepharness.semantic` Agent Mesh
+   operation may use the reviewed local path. Add independent allowlisting and
+   opt-in on the **28server** agent; the control plane's OAuth grant must not
+   become a self-issued host capability. Never provide arbitrary argv,
+   filesystem access, host/URL override, certificate bytes, or Docker authority
+   in the MCP request. Preserve fixed mTLS server name, certificate/CA pinning
+   and exactly scoped handler operations.
+3. **Control-plane authorization:** after verifying the OAuth client/session
+   tuple, persist and recheck exact workspace/Lead/action grants and revocation
+   at dispatch/commit using the existing restricted store. Transport admission
+   and `{accepted:true}` are not proof that a model processed the instruction.
+   No added OAuth application or inherited `deepharness-read` privileges.
+4. **Disposable gates:** test the Agent Mesh WSS-hop using mocked/throwaway
+   identities, fail-closed host operation handling, TLS peer mismatch,
+   unavailable local relay, denied/revoked/mismatched grants, bounded response,
+   idempotent retry, *official* DSH session durable replay and independent
+   answer readback. The successful DSH rc.2 Bootstrap #492 / Stage D #36
+   proves a cold **synthetic** JSONL/SessionQuery read; it does not prove Lead
+   response or live cross-VPS traffic.
+5. **Promotion gate:** reviewed source/artifact provenance, explicit operator
+   configuration, short-lived per-service credentials, rollback and **separate
+   user approval** for any Portainer/agent/relay activation. Production
+   `deepharness-read` stays untouched throughout Draft development.
+
+**Do not confuse code prepared with live functionality.** A prior attempt to
+change the fixed Remote-Ops mTLS client to accept an operator-specified private
+IP was blocked by the platform. That specific change was **not applied** and
+must not be recreated through another write route. This Stage 11 design uses
+existing Agent Mesh as a prospective control-plane hop, not a workaround
+claimed to be installed. No live Lead messages or semantic tool calls occurred.
