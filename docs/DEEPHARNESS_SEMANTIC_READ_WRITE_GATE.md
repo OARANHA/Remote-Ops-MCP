@@ -342,3 +342,23 @@ passed locally with the existing semantic suite: **50/50**. Production remains
 
 Production remains **NO-GO**. No message has been sent to a production or
 laboratory Lead from this implementation.
+
+## Cross-VPS transport blocker — verified 2026-10-19
+
+Live read-only host status identifies the connected Wandora target as
+`wandora-vps-01` and the DeepHarness target as `28server`. The Remote-Ops
+mTLS client is fixed to `deepharness-mcp-backend:3443`; this is a Docker-local
+alias on the DeepHarness internal network, **not a proven route from the
+Wandora VPS**. The inspected DSH container publishes no Docker ports.
+Registering `dsh_*` on Remote-Ops without a proven cross-VPS private route
+would expose unusable tool names, not real DSH access.
+
+**Mandatory deployment gate:** a separately approved restricted inter-VPS
+private tunnel/overlay/relay with end-to-end pinned mTLS to the DSH semantic
+handler. Verify DNS, routing, TLS peer fingerprint, exact operation policy,
+revocation, idempotency and negative cross-workspace access in a disposable
+environment first. The private link must not expose the DSH port publicly or
+broaden the `deepharness-read` Docker target. Neither OAuth reuse nor a
+GREEN PR authorizes production networking/deployment.
+
+No tunnel, DNS, endpoint or permission was installed in this check.
