@@ -64,7 +64,7 @@ export function createOfficialDshHostSessionBackend(deps = {}) {
       }));
       const tasks = view.tasks.map(t => ({
         id: id(t.id), status: scalarText(t.status, 32),
-        title: scalarText(t.title, 240),
+        subject: scalarText(t.subject, 240),
         description: scalarText(t.description, 500),
       }));
       return { workspace_id: scope.workspaceId,
