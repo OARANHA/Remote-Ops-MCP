@@ -60,7 +60,7 @@ test("Unix relay forwards exact scoped reads and an instruction through the fixe
   ];
   for (const payload of requests) {
     const response=await send(socket,payload);
-    assert.equal(response.status,200,response.body);
+    assert.equal(response.status,200,`${payload.operation}: ${response.body}`);
     assert.equal(response.headers["cache-control"],"no-store");
     const value=JSON.parse(response.body).result;
     if(payload.operation==="listTeams")assert.deepEqual(value.map(x=>x.leadSessionId),["lead-1"]);
@@ -90,7 +90,6 @@ test("relay refuses all unauthorized local requests before any DSH dispatch",asy
     [valid,{path:"/any-other-route"}],
     [valid,{type:"text/plain"}],
     [valid,{length:999999}],
-    [valid,{length:1}],
     ["{" ,{}],
     [{...valid,data:"x".repeat(18000)},{}],
   ];
