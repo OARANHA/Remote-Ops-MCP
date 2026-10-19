@@ -2,8 +2,9 @@
 
 Status 2026-10-19: Draft engineering only; NO-GO for production.
 Owner authorized development of reading and writing through the existing ChatGPT
-Wandora MCP. This does not authorize sending real messages, deploying a stack,
-changing target authority or exposing a listener.
+Wandora MCP, plus one synthetic instruction to a verified laboratory Lead when
+a scoped lab endpoint is available. This does not authorize production Lead
+messages, deployment, target-authority changes or exposing a listener.
 
 ## Requested capabilities
 
@@ -115,3 +116,26 @@ forwarding nor these unit fixtures prove a human Keycloak subject mapping.
 The existing MCP endpoint continues to expose exactly its previous tools:
 no new dsh_* tools are registered until the host Agent Mesh bridge, human
 identity mapping and explicit write grants are installed and canary-tested.
+
+
+## 2026-10-19 Stage 4 — authorization and lab endpoint reconciliation
+
+The owner explicitly authorized development and one synthetic instruction to
+a verified laboratory Lead. This authorization does not authorize production
+Lead messages, deployment or privilege expansion.
+
+The current ChatGPT MCP tool registry exposes only the existing
+`deepharness-read` Docker-read prepare/apply actions. It exposes no semantic
+`dsh_*` operation and no laboratory DSH endpoint. The target remains read-only
+with zero semantic capabilities. No synthetic instruction was sent.
+
+DeepHarness PR #4 remains Draft and is based on a non-main branch. Its proposed
+read-only MCP connector uses its own OAuth/Keycloak flow; it does not provide a
+ready write bridge for the existing Remote-Ops MCP and is not being adopted as
+an implicit dependency.
+
+**Decision:** keep production NO-GO and preserve `deepharness-read` unchanged.
+Continue only with a separately scoped, private host-to-DSH semantic bridge and
+persistent grants/idempotency implementation, then run the authorized synthetic
+canary against a disposable lab session after that endpoint is available.
+Authorization was received; the missing callable lab capability is the blocker.
