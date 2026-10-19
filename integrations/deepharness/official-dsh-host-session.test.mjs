@@ -50,8 +50,9 @@ function fixture(changes = {}) {
   const gate = async (ctx, submit) => {
     calls.gate++;
     assert.equal(ctx.leadSessionId, lead);
-    assert.equal(ctx.clientId, auth.clientId);
-    assert.equal(ctx.sessionId, auth.sessionId);
+    assert.match(ctx.clientId, /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/);
+    assert.match(ctx.sessionId, /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/);
+    assert.equal(ctx.actor, `oauth:${ctx.clientId}:${ctx.sessionId.slice(0, 12)}`);
     assert.equal(ctx.action, "lead.instruct");
     assert.equal(ctx.revision, auth.revision);
     await submit();
