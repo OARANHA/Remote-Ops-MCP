@@ -25,5 +25,7 @@ jobs:
           node --check integrations/deepharness/semantic-policy.mjs
           node --check integrations/deepharness/persistent-grant-store.mjs
           node --check integrations/deepharness/official-dsh-host-session.mjs
+          node --check integrations/deepharness/private-bridge-backend.mjs
+          node --check integrations/deepharness/private-bridge-client.mjs
           node --check integrations/deepharness/composition.mjs
           node --test integrations/deepharness/*.test.mjs

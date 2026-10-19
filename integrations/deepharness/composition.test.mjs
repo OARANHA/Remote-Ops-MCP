@@ -68,6 +68,28 @@ test("composition uses the durable grant store for an idempotent official DSH pr
   assert.ok(grant.revision);
 });
 
+test("composition routes authorized reads and writes through the pinned semantic client",async t=>{
+  const directory=await mkdtemp(join(tmpdir(),"dsh-private-composition-"));
+  t.after(()=>rm(directory,{recursive:true,force:true}));
+  const store=createPersistentDshGrantStore({file:join(directory,"grants.json")});
+  await store.putGrant({...principal,...scope,actions:["team.read","chat.read","lead.instruct"]});
+  const calls=[],client={
+    async getTeamStatus(input){calls.push(["team",input]);return {leadSessionId:"lead-123",
+      members:[{id:"lead-123",role:"lead",name:"Lead",phase:"active"}],
+      tasks:[{id:"task-1",revision:1,subject:"Work",description:"",status:"pending",
+        blockedBy:[],writeScopes:[],writeScopeWarnings:[],ready:true}]};},
+    async readLeadChat(input){calls.push(["chat",input]);return {messages:[{role:"assistant",text:"done"}],hasMore:false};},
+    async sendLeadInstruction(input){calls.push(["send",input]);return {accepted:true,requestId:input.requestId};},
+  };
+  const policy=composeDeepharnessReadWrite({grantStore:store,privateBridgeClient:client});
+  assert.equal((await policy.readTeam(principal,scope)).lead_session_id,"lead-123");
+  assert.deepEqual((await policy.readChat(principal,{...scope,limit:1})).messages,
+    [{role:"assistant",text:"done"}]);
+  const ack=await policy.sendLeadInstruction(principal,{...scope,instruction:"go",idempotencyKey:randomUUID()});
+  assert.equal(ack.accepted,true);assert.equal(calls.filter(([op])=>op==="send").length,1);
+  assert.equal(calls.filter(([op])=>op==="team").length,2);
+});
+
 test("end-to-end synthetic chain reads the exact allowed Lead only", async () => {
   const f = build();
   const result = await f.policy.readTeam(principal, scope);

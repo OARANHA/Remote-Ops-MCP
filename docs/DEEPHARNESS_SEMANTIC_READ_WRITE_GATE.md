@@ -65,9 +65,9 @@ are NOT supplied and this PR does NOT register MCP tools.
    DSH SessionController.prompt acknowledges inbox admission, not model
    completion; its idempotent requestId precheck does not itself prove a
    durable uniqueness constraint under concurrent submissions.
-2. Use the verified Remote-Ops OAuth client/session tuple as the call principal;
-   create exact workspace/Lead/action grants through a separate administrator
-   path. Never infer an individual Keycloak subject from Remote-Ops OAuth.
+2. Bind the Remote-Ops authenticated session to a separately verified individual
+   Keycloak subject and exact per-workspace/per-Lead read/send grants; propagate
+   clientId/sessionId into ToolCtx after reviewed changes.
 3. Create a dedicated restricted Agent Mesh semantic bridge on 28server to a
    protected local DSH interface with host-side allowlists. Preserve existing
    read-only target; no docker.sock, docker exec, shell, all-workspace grant,
@@ -114,8 +114,8 @@ with revocation serialization and durable idempotent receipts can qualify
 production writes. Even if CI is green, neither OAuth client identity
 forwarding nor these unit fixtures prove a human Keycloak subject mapping.
 The existing MCP endpoint continues to expose exactly its previous tools:
-no new dsh_* tools are registered until the host Agent Mesh bridge and explicit
-workspace/Lead/action grants are installed and canary-tested.
+no new dsh_* tools are registered until the host Agent Mesh bridge, human
+identity mapping and explicit write grants are installed and canary-tested.
 
 
 ## 2026-10-19 Stage 5 — preserve full caller identity in DSH retry keys
@@ -145,13 +145,10 @@ The owner explicitly authorized development and one synthetic instruction to
 a verified laboratory Lead. This authorization does not authorize production
 Lead messages, deployment or privilege expansion.
 
-The current ChatGPT MCP tool registry exposes no semantic `dsh_*` operation.
-The running DSH Web container starts the private MCP host and mounts its mTLS
-server key, certificate chain and CA. Its operational configuration binds the
-backend listener on port 3443 inside `deepharness_mcp-private`; Docker publishes
-no port. The Wandora `deepharness-read` target remains read-only with zero
-semantic capabilities, and no authenticated Agent Mesh transport/client identity
-to that listener is configured or proven. No synthetic instruction was sent.
+The current ChatGPT MCP tool registry exposes only the existing
+`deepharness-read` Docker-read prepare/apply actions. It exposes no semantic
+`dsh_*` operation and no laboratory DSH endpoint. The target remains read-only
+with zero semantic capabilities. No synthetic instruction was sent.
 
 DeepHarness PR #4 remains Draft and is based on a non-main branch. Its proposed
 read-only MCP connector uses its own OAuth/Keycloak flow; it does not provide a
@@ -159,10 +156,9 @@ ready write bridge for the existing Remote-Ops MCP and is not being adopted as
 an implicit dependency.
 
 **Decision:** keep production NO-GO and preserve `deepharness-read` unchanged.
-Continue with a fixed-operation Agent Mesh transport to the existing private
-mTLS host interface, persistent grants/idempotency and exact owner-admin grant
-provisioning. Preserve the read-only target. Run the authorized synthetic
-canary only against a disposable lab session after the transport is tested.
+Continue only with a separately scoped, private host-to-DSH semantic bridge and
+persistent grants/idempotency implementation, then run the authorized synthetic
+canary against a disposable lab session after that endpoint is available.
 Authorization was received; the missing callable lab capability is the blocker.
 
 ## Stage 6 — persistent scoped grant and idempotency gate (2026-10-19)
@@ -257,29 +253,50 @@ Next implementation must add a dedicated fixed semantic Agent Mesh operation
 and a matching DSH private service interface, without shell or a second OAuth
 application; production remains **NO-GO**.
 
+## Stage 8 — fixed private semantic bridge and Remote-Ops adapter (2026-10-19)
 
-## Stage 8 — current workflow and private transport reconciliation (2026-10-19)
+DeepHarness PR #17 adds an opt-in `/wandora/dsh-bridge/v1` route on the
+existing DSH private mTLS listener, stacked on Draft PR #13. It uses the
+official WorkspaceRegistry and SessionController projection, history-page and
+prompt APIs. The handler pins one exact Remote-Ops client certificate
+fingerprint, accepts only the five semantic operations, limits request and
+response sizes, and audits operation/outcome without content or identifiers.
+The existing OAuth MCP route remains read-only. The endpoint is disabled by
+default; no client certificate, runtime setting, grant or live session was
+configured. [source: https://github.com/OARANHA/deepharness/pull/17; added: 2026-10-19]
 
-PR #71 remains open, Draft and unmerged at head
-`70f0246a8d0b7b27c1e6cd08ad1e2994fe7ed5e9`. CI run #256 and the DeepHarness
-semantic read-write policy gate #20 both completed successfully. These workflows
-validate repository checks; they do not activate the integration.
+The Remote-Ops branch now has a fixed mTLS requester for the private DNS
+service, a strict semantic client and a backend adapter that composes with the
+existing persistent grant/idempotency store. It removes OAuth identity claims
+from the DSH request, rechecks the Lead before commit, derives a stable UUID
+request ID, pins the DSH server certificate, and rejects mismatched or oversized
+replies. Tests cover all five fixed operations, pin mismatch, exact path/host,
+grant-backed reads and writes, and commit revalidation. These files are not yet
+used by server bootstrap or registered in the MCP tool catalog, and the private
+service is not reachable from the running Remote-Ops process in verified
+evidence. [source: https://github.com/OARANHA/Remote-Ops-MCP/pull/71; added: 2026-10-19]
 
-A fresh safe container inspection confirms `deepharness-web-1` runs the
-operational DSH MCP host image on `deepharness_mcp-private`. The host mounts
-its backend TLS server key/chain and CA and is configured to listen on private
-backend port 3443. Docker has no published port binding. This is an existing
-mTLS host interface, but not a callable bridge from the Wandora Agent Mesh:
-the current target is read-only with zero semantic capabilities, and no
-authenticated agent transport/client identity or grant provisioning is wired.
+The first DSH PR #17 bootstrap CI workflow passed, while its Stage D
+PostgreSQL workflow failed during operational host composition. The failure led
+to a composition correction on head `173144e7eadc9bb61b3c1917e774d7e1045eac0d`;
+the next workflow query returned no runs/statuses yet, so no GREEN result is
+claimed for that correction. Local DSH package tests passed 74/74, focused
+operational host and semantic adapter checks passed 25/25, and Remote-Ops
+semantic integration tests passed 44/44. The Remote-Ops TypeScript build also
+passed after using the workspace dependency installation; the temporary
+dependency link was removed.
 
-The Remote-Ops OAuth client/session is the current call principal; it is not an
-individual Keycloak subject. Separate administrator-provisioned grants must
-bind that exact principal to workspace, Lead and action. No production target
-or credentials changed, and no instruction was sent. Production remains
-**NO-GO**.
+### Remaining activation gates
 
-The next implementation must connect fixed semantic operations to the private
-mTLS host service and prove read/write behavior against a disposable official
-DSH host. Do not create an HTTP-to-shell adapter, broaden the read target, or
-treat an mTLS server certificate as a client credential.
+- Complete the Remote-Ops server bootstrap, dynamic MCP tool registration and
+  exact grant discovery/provisioning path; keep all tools absent or denied
+  until the trusted bridge and grant store are initialized.
+- Reconcile PR #17's dependency on PR #13; confirm its workflows are green.
+- From a disposable DSH host, admit one laboratory instruction through the
+  actual SessionController, restart/reopen the Session, and verify its durable
+  user message plus later Lead response.
+- Verify the fixed private DNS route is reachable only through the intended
+  internal network. No production route, credential or target was changed.
+
+Production remains **NO-GO**. No message has been sent to a production or
+laboratory Lead from this implementation.
