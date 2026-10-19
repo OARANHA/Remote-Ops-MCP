@@ -7,6 +7,8 @@
  * SessionController.prompt is a human user-prompt; TeamService.sendMessage
  * requires an actual Team-member Agent and is intentionally NOT used.
  */
+import { createHash } from "node:crypto";
+
 const DENIED = "deepharness_host_operation_denied";
 function deny() { throw new Error(DENIED); }
 const ID = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
@@ -15,13 +17,24 @@ function id(x) { if (typeof x !== "string" || !ID.test(x)) deny(); return x; }
 function obj(x) { if (!x || typeof x !== "object" || Array.isArray(x)) deny(); return x; }
 function scalarText(s, max) { return typeof s === "string" ? s.slice(0, max) : ""; }
 
+function dshRequestId(scope, idempotencyKey) {
+  const input = JSON.stringify([
+    scope.actor, scope.clientId, scope.sessionId,
+    scope.workspaceId, scope.leadSessionId, idempotencyKey,
+  ]);
+  return "mcp_" + createHash("sha256").update(input).digest("hex");
+}
+
 function authority(auth) {
   obj(auth);
   const workspaceId = id(auth.workspaceId);
   const leadSessionId = id(auth.leadSessionId);
   const revision = id(auth.revision);
   const actor = id(auth.actor);
-  return { workspaceId, leadSessionId, revision, actor };
+  const clientId = id(auth.clientId);
+  const sessionId = id(auth.sessionId);
+  if (actor !== `oauth:${clientId}:${sessionId.slice(0, 12)}`) deny();
+  return { workspaceId, leadSessionId, revision, actor, clientId, sessionId };
 }
 
 export function createOfficialDshHostSessionBackend(deps = {}) {
@@ -119,7 +132,7 @@ export function createOfficialDshHostSessionBackend(deps = {}) {
       }), async () => {
         await team(auth); // recheck exact Lead immediately before prompt admission
         const ack = await sessionController.prompt({
-          requestId: auth.idempotencyKey,
+          requestId: dshRequestId(scope, auth.idempotencyKey),
           sessionId: scope.leadSessionId,
           mode: "queue",
           content: [{ type: "text", text: auth.instruction }],
