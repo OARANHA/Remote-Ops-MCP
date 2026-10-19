@@ -45,5 +45,19 @@ jobs:
       - run: node test-managed-admin-control-plane-e2e.mjs
       - run: node test-postgres-readback.mjs
       - run: node test-postgres-readback-proxy.mjs
+      - name: Validate opt-in DSH relay review Compose syntax (no containers)
+        env:
+          DSH_RELAY_IMAGE_DIGEST: ghcr.io/oaranha/ci-synthetic-dsh-relay@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          DSH_RELAY_UID: "12022"
+          DSH_RELAY_PRIMARY_GID: "12022"
+          DSH_AGENT_OPS_GID: "12021"
+          DSH_RELAY_OPERATOR_ENABLE: "0"
+          DSH_RELAY_WORKSPACE_ID: ci-synthetic-lab
+          DSH_RELAY_LEAD_SESSION_ID: ci-synthetic-lead
+          DSH_RELAY_SERVER_FP_SHA256: "aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa"
+          DSH_RELAY_CA_FILE: /ci-not-present/ca.pem
+          DSH_RELAY_CLIENT_CERT_FILE: /ci-not-present/cert.pem
+          DSH_RELAY_CLIENT_KEY_FILE: /ci-not-present/key.pem
+        run: docker compose --profile dsh-relay-review -f integrations/deepharness/agent-mesh-relay.compose.review.yml config --quiet
       - name: Build production image
         run: docker build -t remote-ops-mcp:ci .
