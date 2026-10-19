@@ -468,3 +468,54 @@ transport composition is required before any canary.
 **NO-GO:** no source merge, relay install, agent restart, grants change,
 MCP tool activation, Docker network change or Lead message is authorized
 by this code-only Draft stage.
+
+
+## Stage 13 — private Unix relay handler (Draft only; 2026-10-19)
+
+Following **GREEN** CI #270 and semantic gate #34 at PR #71 commit
+`9a19e19629fd34018f5dcb13266c2a418754888e`, a new **inert**
+`integrations/deepharness/agent-mesh-unix-relay.mjs` module implements
+a constrained HTTP-over-Unix request handler. It is **not** a running
+daemon, a socket creator, an active listener, a Docker network change,
+an Agent Mesh grant, an OAuth application or production configuration.
+
+The handler accepts only the exact path `/wandora/dsh-bridge/v1`, POST,
+bounded JSON with `Content-Length`, the five allowed DSH semantic
+operations, and the operator-configured workspace and Lead. It rejects
+extra arguments, requested destinations, grants, identities and arbitrary
+commands. `listTeams` results are filtered again by the configured
+Lead, and the response size is bounded. Errors are generic and must
+not disclose an upstream TLS failure or instruction content.
+
+The separate factory `createDshAgentMeshUnixRelayOverMtls` composes
+the **existing**, unchanged fixed-address, CA-trusted, certificate-pinned
+mTLS requester. It does not construct or activate a network listener;
+the necessary dedicated relay runtime/container and reviewed operator
+settings have not been built or deployed. No alternative TCP/IP routing
+change was made to the previously blocked client code.
+
+`agent-mesh-unix-relay.test.mjs` covers requests sent over a *real
+ephemeral Unix socket* against a synthetic DSH backend, including
+wrong Lead/workspace, invalid inputs, non-JSON responses, excess
+payloads and response leakage. The main CI now also tests host receiver
+→ this relay over a throwaway Unix socket with an in-memory DSH stub.
+These gates **do not** validate the container-bound mTLS hop,
+true identity mapping, deployed grant provisioning, actual SessionController
+prompt execution or a real Lead answer.
+
+**Deployment and integration gates still outstanding:** create a
+reviewed non-root/least-privileged sidecar attached only to the DSH
+private Docker network, choose and enforce socket owner/group/mode
+consistent with the `ops-mcp` agent, bind-mount only the private
+socket directory, supply pinned mTLS material via separately approved
+secrets, verify listener identity, validate real mTLS and exact
+revocation/idempotency on a disposable DSH Lead, and modify the
+control-plane transport only behind an independent semantic target
+grant. Preserve existing `deepharness-read` target unchanged.
+A request accepted by an inbox is not proof of model completion.
+
+**Current CI checkpoint:** Remote-Ops CI #273 and semantic policy #37
+were `in_progress` on PR #71 head
+`33361fb8079a8e5655bd7b26a3eeed765e147667` at time of inspection.
+Do not infer GREEN from test code or parent-commit results.
+Production stays **NO-GO**.
