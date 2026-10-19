@@ -19,8 +19,8 @@ const OP="deepharness.semantic";
 const MAX_REQUEST=16_384,MAX_RESPONSE=262_144;
 const ID=/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const deny=():never=>{throw Error("deepharness_agent_mesh_denied");};
-const unavailable=():never=>{throw Error("deepharness_agent_mesh_unavailable");};
+function deny():never {throw Error("deepharness_agent_mesh_denied");}
+function unavailable():never {throw Error("deepharness_agent_mesh_unavailable");}
 const record=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==="object"&&!Array.isArray(v);
 function exact(v:unknown,keys:string[]):asserts v is Record<string,unknown>{
   if(!record(v)||Object.keys(v).length!==keys.length||
