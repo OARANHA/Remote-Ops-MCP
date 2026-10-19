@@ -13,24 +13,28 @@ const validSocketPath=x=>typeof x==="string"&&x.startsWith("/")&&
   !x.split("/").includes("..")&&x.length<256;
 
 /**
- * Requires a pre-provisioned owner-only socket directory (0700) and an
- * exact operator enable bit. Never creates directories or removes a
+ * Requires a pre-provisioned relay-owned setgid directory (02710),
+ * with execute-only group access for the ops-mcp agent. Relay UID and
+ * agent group GID must differ; no TLS secrets are exposed via this directory.
+ * Requires an exact operator enable bit. Never creates directories or removes a
  * pre-existing socket. A separate approved deployment must arrange that
  * the host Agent Mesh identity can reach this socket.
  */
 export async function startDshUnixRelayListener({
-  enabled=false,handler,socketPath=DSH_RELAY_SOCKET,
+  enabled=false,handler,socketPath=DSH_RELAY_SOCKET,socketGroupId,
   getUid=()=>process.getuid?.(),getDirInfo=lstat,createServer=createHttpServer,
   chmodSocket=chmod,removeSocket=unlink,
 }={}){
   if(enabled!==true||typeof handler!=="function"||!validSocketPath(socketPath))deny();
   const uid=getUid();
-  if(!Number.isSafeInteger(uid)||uid<=0)deny();
+  if(!Number.isSafeInteger(uid)||uid<=0||
+     !Number.isSafeInteger(socketGroupId)||socketGroupId<=0)deny();
   const dir=socketPath.slice(0,socketPath.lastIndexOf("/"));
   let directory;
   try{directory=await getDirInfo(dir);}catch{deny();}
   if(!directory.isDirectory()||directory.isSymbolicLink?.()||
-     directory.uid!==uid||(directory.mode&0o777)!==0o700)deny();
+     directory.uid!==uid||directory.gid!==socketGroupId||
+     (directory.mode&0o7777)!==0o2710)deny();
 
   // The binding must never replace a pre-existing socket, symlink or file.
   try {await getDirInfo(socketPath);deny();}
@@ -52,12 +56,12 @@ export async function startDshUnixRelayListener({
     });
     created=true;
     const info=await getDirInfo(socketPath);
-    if(!info.isSocket()||info.isSymbolicLink?.()||info.uid!==uid)deny();
+    if(!info.isSocket()||info.isSymbolicLink?.()||info.uid!==uid||info.gid!==socketGroupId)deny();
     ownInode=info.ino;
-    await chmodSocket(socketPath,0o600);
+    await chmodSocket(socketPath,0o660);
     const verified=await getDirInfo(socketPath);
-    if(!verified.isSocket()||verified.uid!==uid||verified.ino!==ownInode||
-       (verified.mode&0o777)!==0o600)deny();
+    if(!verified.isSocket()||verified.uid!==uid||verified.gid!==socketGroupId||
+       verified.ino!==ownInode||(verified.mode&0o777)!==0o660)deny();
   }catch{
     await new Promise(resolve=>{if(server.listening)server.close(()=>resolve());else resolve();});
     if(created&&ownInode!==undefined){
