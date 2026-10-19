@@ -151,7 +151,7 @@ test("full OAuth session is required and DSH retry IDs are principal-scoped", as
 
   const key = randomUUID();
   const ids = [];
-  for (const identity of [auth, auth, { ...auth, sessionId: "session-abcdef0123456789" }]) {
+  for (const identity of [auth, auth, { ...auth, actor: "oauth:client-1:session-abcd", sessionId: "session-abcdef0123456789" }]) {
     const local = fixture({ sessionController: { ...f.ctr, async prompt(req) {
       ids.push(req.requestId);
       return { accepted: true };
