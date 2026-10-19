@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import test from "node:test";
 import { createOfficialDshHostSessionBackend } from "./official-dsh-host-session.mjs";
 
@@ -7,6 +7,7 @@ const lead = "lead-123";
 const workspace = "lab";
 const auth = Object.freeze({
   actor: "oauth:client-1:session-0123",
+  clientId: "client-1", sessionId: "session-0123456789abcdef",
   workspaceId: workspace, leadSessionId: lead,
   revision: "rev-1",
 });
@@ -49,6 +50,8 @@ function fixture(changes = {}) {
   const gate = async (ctx, submit) => {
     calls.gate++;
     assert.equal(ctx.leadSessionId, lead);
+    assert.equal(ctx.clientId, auth.clientId);
+    assert.equal(ctx.sessionId, auth.sessionId);
     assert.equal(ctx.action, "lead.instruct");
     assert.equal(ctx.revision, auth.revision);
     await submit();
@@ -123,7 +126,10 @@ test("official SessionController.prompt gets queue, text and idempotent user req
   const instruction = "Review the synthetic Team status.";
   const original = f.ctr.prompt;
   f.ctr.prompt = async (req, signal) => {
-    assert.deepEqual(req, { requestId: key, sessionId: lead,
+    const expected = "mcp_" + createHash("sha256").update(JSON.stringify([
+      auth.actor, auth.clientId, auth.sessionId, workspace, lead, key,
+    ])).digest("hex");
+    assert.deepEqual(req, { requestId: expected, sessionId: lead,
       mode: "queue", content: [{ type: "text", text: instruction }] });
     return original(req, signal);
   };
@@ -134,6 +140,28 @@ test("official SessionController.prompt gets queue, text and idempotent user req
     grantRevision: "rev-1", messageId: "msg-1", duplicate: false });
   assert.equal(f.calls.gate, 1);
   assert.equal(f.calls.prompt, 1);
+});
+
+
+test("full OAuth session is required and DSH retry IDs are principal-scoped", async () => {
+  const f = fixture();
+  await assert.rejects(f.backend.readAuthorizedTeam({ ...auth, sessionId: undefined }), /operation_denied/);
+  await assert.rejects(f.backend.readAuthorizedTeam({ ...auth, actor: "oauth:client-1:another-ses" }), /operation_denied/);
+  assert.equal(f.calls.projections, 0);
+
+  const key = randomUUID();
+  const ids = [];
+  for (const identity of [auth, auth, { ...auth, sessionId: "session-abcdef0123456789" }]) {
+    const local = fixture({ sessionController: { ...f.ctr, async prompt(req) {
+      ids.push(req.requestId);
+      return { accepted: true };
+    } } });
+    await local.backend.commitAuthorizedInstruction({
+      ...identity, instruction: "Synthetic retry test", idempotencyKey: key,
+    });
+  }
+  assert.equal(ids[0], ids[1], "retry by same caller and scope must keep the DSH requestId");
+  assert.notEqual(ids[0], ids[2], "another OAuth session must not collide on DSH requestId");
 });
 
 test("no fake DSH message or Team member impersonation if scope revoked", async () => {
