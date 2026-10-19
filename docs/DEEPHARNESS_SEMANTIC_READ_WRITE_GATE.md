@@ -49,8 +49,21 @@ are NOT supplied and this PR does NOT register MCP tools.
 
 ## Remaining gates (all NOT yet complete)
 
-1. Verify official pinned DSH 0.2.1-alpha.2 contracts for chat history and
-   Lead instruction, without guessing method names or hijacking Web cookies.
+1. Pin the official DSH 0.2.1-alpha.2 source contract and qualify it on
+   the actually installed DSH runtime (source adapter now written, runtime
+   qualification **not yet done**): upstream commit
+   d743267388641bc76f17c45ce8b4c231aed1d32c;
+   packages/api/session-controller/src/index.ts exposes ctx.sessionController
+   and @Remote('prompt') / @Remote('projections') / inspect;
+   packages/api/session-controller/src/commands.ts handles a user prompt
+   with mode 'queue' and durable requestId; AgentTeamService.sendMessage
+   requires an actual Team Agent sender and must **not** be used here.
+   The draft official-dsh-host-session.mjs adapts those methods, maps
+   bounded Team/task/chat fields and calls prompt under a required injected
+   withAuthorizedLeadCommit callback. This code is **not** a deployed backend.
+   DSH SessionController.prompt acknowledges inbox admission, not model
+   completion; its idempotent requestId precheck does not itself prove a
+   durable uniqueness constraint under concurrent submissions.
 2. Bind the Remote-Ops authenticated session to a separately verified individual
    Keycloak subject and exact per-workspace/per-Lead read/send grants; propagate
    clientId/sessionId into ToolCtx after reviewed changes.
@@ -69,3 +82,21 @@ are NOT supplied and this PR does NOT register MCP tools.
 
 Rollback: revert this Draft PR; no production services are modified.
 Current status: read/write semantic contract prepared, NOT connected/live.
+
+## 2026-10-19 Stage 2 — official host binding code only
+
+Source: packages/api/session-controller/src/index.ts, commands.ts, types.ts
+and packages/experimental/agent-team/src/types.ts at pinned upstream commit.
+The adapter uses official SessionController.projections (the Lead Team
+projection), inspect (durable Session events) and prompt (user-message queue).
+A Team projection and workspace membership check are additional checks, not
+proof of human authorization. Only explicit current grants may authorize.
+The actual DSH-side withAuthorizedLeadCommit provider is intentionally
+unimplemented: it must serialize revocation and idempotent delivery and
+produce a durable receipt. If not supplied, the adapter constructor denies.
+Do not fake authorizationCheckedAtCommit; DSH SessionController.prompt does
+not provide a transactional PostgreSQL grant check by itself. Acknowledgement
+means the DSH inbox accepted text, not the agent executed or completed it.
+
+Tests are synthetic dependency-injected fixtures, not installation or live
+chat evidence. The new CI gate runs both policy and official-host tests.
