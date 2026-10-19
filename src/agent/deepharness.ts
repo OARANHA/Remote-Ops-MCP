@@ -61,21 +61,33 @@ function validatedPayload(value:unknown,env:NodeJS.ProcessEnv):{operation:Semant
   if(Buffer.byteLength(body,"utf8")>MAX_REQUEST)deny();
   return {operation:op,body,leadId:expectedLead};
 }
-type SocketStat={isSocket:()=>boolean;isDirectory:()=>boolean;uid:number;mode:number};
+type SocketStat={isSocket:()=>boolean;isDirectory:()=>boolean;isSymbolicLink?:()=>boolean;uid:number;gid:number;mode:number};
 type Dependencies={
   env?:NodeJS.ProcessEnv;
   socketPath?:string; // test-only injection; not sourced from request, CLI or options
   lstat?:(path:string)=>Promise<SocketStat>;
   request?:typeof http.request;
 };
-async function requireLocalSocket(socket:string,stat:(path:string)=>Promise<SocketStat>):Promise<void>{
+async function requireLocalSocket(
+  socket:string,stat:(path:string)=>Promise<SocketStat>,env:NodeJS.ProcessEnv,
+):Promise<void>{
   try {
+    const relayUidText=env.DSH_AGENT_MESH_RELAY_UID??"";
+    const groupText=env.DSH_AGENT_MESH_SOCKET_GID??"";
+    if(!/^[1-9][0-9]*$/.test(relayUidText)||!/^[1-9][0-9]*$/.test(groupText))unavailable();
+    const relayUid=Number(relayUidText),socketGid=Number(groupText),agentUid=process.getuid?.();
+    if(!Number.isSafeInteger(relayUid)||!Number.isSafeInteger(socketGid)||
+       !Number.isSafeInteger(agentUid)||agentUid===0||agentUid===relayUid)unavailable();
+    const agentGroups=[process.getgid?.(),...(process.getgroups?.()??[])];
+    if(!agentGroups.includes(socketGid))unavailable();
     const folder=await stat(dirname(socket));
     const target=await stat(socket);
-    const uid=process.getuid?.();
-    const trusted=(owner:number)=>owner===0||(uid!==undefined&&owner===uid);
-    if(!folder.isDirectory()||!trusted(folder.uid)||(folder.mode&0o002)!==0||
-       !target.isSocket()||!trusted(target.uid)||(target.mode&0o007)!==0)unavailable();
+    if(!folder.isDirectory()||folder.isSymbolicLink?.()||
+       folder.uid!==relayUid||folder.gid!==socketGid||
+       (folder.mode&0o7777)!==0o2710||
+       !target.isSocket()||target.isSymbolicLink?.()||
+       target.uid!==relayUid||target.gid!==socketGid||
+       (target.mode&0o777)!==0o660)unavailable();
   } catch { unavailable(); }
 }
 function sanitize(operation:SemanticOperation,leadId:string,result:unknown):unknown {
@@ -137,7 +149,7 @@ export async function executeDshAgentOperation(
     if(env.DSH_AGENT_MESH_ENABLED!=="1")unavailable();
     const {operation,body,leadId}=validatedPayload(request,env);
     const socket=dependencies.socketPath??SOCKET;
-    await requireLocalSocket(socket,dependencies.lstat??lstat);
+    await requireLocalSocket(socket,dependencies.lstat??lstat,env);
     const ms=Math.min(Math.max(opts.timeoutMs??10_000,1000),30_000);
     const result=await postSocket(socket,body,ms,dependencies.request??http.request);
     if(operation==="sendLeadInstruction"){
