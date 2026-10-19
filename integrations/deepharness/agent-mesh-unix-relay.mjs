@@ -12,7 +12,7 @@ import {createDshMtlsRequester,createDshPrivateBridgeClient,DSH_BRIDGE_PATH} fro
 const MAX_REQUEST=16_384;
 const MAX_RESPONSE=262_144;
 const ID=/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
-const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i;
+const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isRecord=x=>x!==null&&typeof x==="object"&&!Array.isArray(x);
 const id=x=>typeof x==="string"&&ID.test(x);
 const reject=res=>{
