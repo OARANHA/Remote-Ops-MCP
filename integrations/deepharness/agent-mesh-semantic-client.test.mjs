@@ -38,13 +38,15 @@ test("only a separate fixed named development semantic Agent Mesh target qualifi
     {...target,allowedWritePaths:["/tmp"]},
     {...target,allowedProcessPrograms:["node"]},
     {...target,allowedServices:["docker"]},
+    {...target,allowedGitRepos:["OARANHA/deepharness"]},
+    {...target,allowedPaths:["/etc"]},
     null,
   ];
   for(const x of bad)assert.throws(()=>validateDshSemanticAgentTarget(x),noAccess);
 });
 test("five bounded operations dispatch on the exact trusted device with no OAuth credentials",async()=>{
   const calls=[];
-  const client=createDshPrivateBridgeClientOverAgentMesh({target,
+  const client=createDshPrivateBridgeClientOverAgentMesh({target,lookupCurrentTarget:()=>target,
     async dispatchAgentOperation(deviceId,envelope,opts){
       calls.push({deviceId,envelope,opts});
       const args=envelope.args;
@@ -81,7 +83,7 @@ test("five bounded operations dispatch on the exact trusted device with no OAuth
 });
 test("reject malformed, overbroad, untrusted semantic envelopes before remote dispatch",async()=>{
   let dispatched=0;
-  const post=createDshAgentMeshSemanticRequester({target,
+  const post=createDshAgentMeshSemanticRequester({target,lookupCurrentTarget:()=>target,
     async dispatchAgentOperation(){dispatched++;return ok([]);},
   });
   for(const arg of [
@@ -108,11 +110,27 @@ test("Agent Mesh offline, denied, timeout, oversized, malformed or truncated rep
   ];
   for(const action of bad){
     const post=createDshAgentMeshSemanticRequester({
-      target,async dispatchAgentOperation(){return action();},
+      target,lookupCurrentTarget:()=>target,async dispatchAgentOperation(){return action();},
     });
     await assert.rejects(post(input),noAccess);
   }
   assert.throws(()=>createDshAgentMeshSemanticRequester({
-    target,dispatchAgentOperation:async()=>ok([]),timeoutMs:120000,
+    target,lookupCurrentTarget:()=>target,dispatchAgentOperation:async()=>ok([]),timeoutMs:120000,
   }),noAccess);
+});
+
+test("disabled or reassigned semantic lab target is rejected at dispatch time",async()=>{
+  let current=target,dispatched=0;
+  const post=createDshAgentMeshSemanticRequester({
+    target,lookupCurrentTarget:()=>current,
+    dispatchAgentOperation:async()=>{dispatched++;return ok([]);},
+  });
+  assert.deepEqual(await post({operation:"listTeams",workspaceId:"lab-1"}),[]);
+  current={...target,enabled:false};
+  await assert.rejects(post({operation:"listTeams",workspaceId:"lab-1"}),noAccess);
+  current={...target,deviceId:"dev_other_agent_12345678"};
+  await assert.rejects(post({operation:"listTeams",workspaceId:"lab-1"}),noAccess);
+  current={...target,allowedSemanticCapabilities:[]};
+  await assert.rejects(post({operation:"listTeams",workspaceId:"lab-1"}),noAccess);
+  assert.equal(dispatched,1);
 });
