@@ -683,3 +683,64 @@ UID/GID, group-only socket access, dedicated sidecar image and private
 Docker DNS, real cert provisioning, server trust, OAuth/grant revocation,
 idempotency, official DSH services and Lead response readback.
 **PR #71 and DSH PR #17 remain Draft; no production activation.**
+
+
+## Stage 17 — dedicated control-plane Agent Mesh semantic lab path (Draft only; 2026-10-19)
+
+The **Stage 16 CI #296 and Semantic Policy #60** were independently
+verified `completed/success` at PR #71 commit
+`bb8bc5664c9d7b07d42194dfd469d182c204aae2`. This validated only
+the *disposable synthetic* HTTP-over-Unix + pinned mutual TLS chain.
+
+**Control-plane gap addressed in code:** the existing DSH tool bootstrap
+still attempted direct HTTPS to Docker-only
+`deepharness-mcp-backend:3443` from `wandora-vps-01`. The already-paired
+outbound Agent Mesh WSS hop is the appropriate control-plane transport
+when the DSH service runs on `28server`. The new module
+`integrations/deepharness/agent-mesh-semantic-client.mjs` wraps the
+existing fixed five-operation private bridge API with **exactly one**
+`deepharness.semantic` Agent Mesh envelope. It does not alter
+`private-bridge-client.mjs`, its pinned host/SNI, or production DNS.
+
+**Independent target identity, NOT the current read-only target:** only
+a trusted Target Registry record with `id=deepharness-semantic-lab`,
+`transport=agent`, `environment=development`,
+`capabilityProfile=semantic-operator`, `enabled=true`, one
+`allowedSemanticCapabilities=["deepharness.semantic"]`, a valid
+`deviceId`, and **no unrelated paths, Docker, service, process or
+admin capabilities** is accepted. `deepharness-read` stays unchanged.
+No dynamic target was created or authorized by this PR.
+
+`integrations/deepharness/composition.mjs` reuses the exact existing
+OAuth client/session and `grantStore` policy via
+`composeDeepharnessReadWriteOverAgentMesh`. The existing five `dsh_*`
+tool definitions remain behind `DSH_SEMANTIC_ENABLED=1`; the new
+explicit selection requires `AUTH_MODE=oauth`,
+`DSH_SEMANTIC_TRANSPORT=agent-mesh-lab` and
+`DSH_SEMANTIC_AGENT_TARGET_ID=deepharness-semantic-lab`. Without all
+of these, no Agent Mesh tools are enabled. The target is loaded from
+the registry on the **server**, never supplied by the ChatGPT caller.
+The legacy mTLS mode remains separately available as before; its
+certificate bytes never enter the Agent Mesh envelope.
+
+`agent-mesh-semantic-client.test.mjs` tests exact target allowlisting,
+bounded five-operation dispatch, absence of OAuth claims from the
+envelope, denial of Docker/host capabilities, rejected agent errors,
+truncated results and malformed JSON. The synthetic integration
+`agent-mesh-semantic-policy.integration.test.mjs` composes the real
+persistent grant store with Agent Mesh transport, proving a granted
+read, chat, one idempotent synthetic instruction, duplicate delivery
+receipt, revocation and denial of a forged OAuth session without any
+backend call. This is still **not a real Agent Mesh device call** and
+does not confirm that the target has been provisioned in live state.
+
+**Critical production NO-GO:** The installed `28server` agent and
+DeepHarness container remain unchanged. The sidecar mTLS listener is
+not installed or running; real host UID/GID and private socket
+access have not been established. No operator target, Lab Lead grant,
+TLS secrets, service restart, Portainer change, merge or Lead message
+was performed. Even after a GREEN CI, the next required proof is a
+separately authorized, isolated disposable canary with reviewed
+artifacts and explicitly scoped grants, followed by independent DSH
+reply readback. Never call an inbox `accepted:true` receipt a Lead
+completion or broaden `deepharness-read`.
