@@ -28,14 +28,22 @@ function run(command,args){
   return execFileSync(command,args,{encoding:"utf8",timeout:5000,maxBuffer:65536}).trim();
 }
 function inspectContainer(name){
-  const parsed=JSON.parse(run("docker",["inspect",name]));
-  if(!Array.isArray(parsed)||parsed.length!==1)throw Error("invalid_inspect");
-  return parsed[0];
+  // Project only three nonsecret metadata fields; never load Config.Env,
+  // labels, tokens, mounts or container command into this process.
+  const template='{{.Name}}|{{.Config.User}}|{{range $name,$net := .NetworkSettings.Networks}}{{if eq $name "deepharness_mcp-private"}}{{json $net.Aliases}}{{end}}{{end}}';
+  const output=run("docker",["inspect","--format",template,name]);
+  const fields=output.split("|");
+  if(fields.length!==3)throw Error("invalid_inspect");
+  const aliases=fields[2]?JSON.parse(fields[2]):null;
+  return {Name:fields[0],Config:{User:fields[1]},
+    NetworkSettings:{Networks:aliases?{[NETWORK]:{Aliases:aliases}}:{}}};
 }
 function inspectNetwork(){
-  const parsed=JSON.parse(run("docker",["network","inspect",NETWORK]));
-  if(!Array.isArray(parsed)||parsed.length!==1)throw Error("invalid_network");
-  return parsed[0];
+  const output=run("docker",["network","inspect","--format",
+    "{{.Name}}|{{.Internal}}",NETWORK]);
+  const fields=output.split("|");
+  if(fields.length!==2||!["true","false"].includes(fields[1]))throw Error("invalid_network");
+  return {Name:fields[0],Internal:fields[1]==="true"};
 }
 export function evaluateDshRelayHostPreflight(o={}){
   const checks=[],record=(name,ok,detail)=>checks.push({name,ok,detail});
