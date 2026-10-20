@@ -44,7 +44,7 @@ test("actual durable OAuth grant policy routes only scoped work over trusted sem
     throw Error("unlisted_operation");
   };
   const policy=composeDeepharnessReadWriteOverAgentMesh({
-    grantStore,target,dispatchAgentOperation,
+    grantStore,target,lookupCurrentTarget:()=>target,dispatchAgentOperation,
   });
   const team=await policy.readTeam(caller,scope);
   assert.equal(team.lead_session_id,scope.leadSessionId);
@@ -81,10 +81,11 @@ test("wrong target, another OAuth session and missing exact grant deny without A
   let forwarded=0;
   const dispatchAgentOperation=async()=>{forwarded++;return successful({});};
   assert.throws(()=>composeDeepharnessReadWriteOverAgentMesh({
-    grantStore:store,target:{...target,id:"deepharness-read"},dispatchAgentOperation,
+    grantStore:store,target:{...target,id:"deepharness-read"},
+    lookupCurrentTarget:()=>target,dispatchAgentOperation,
   }),/unavailable/);
   const policy=composeDeepharnessReadWriteOverAgentMesh({
-    grantStore:store,target,dispatchAgentOperation,
+    grantStore:store,target,lookupCurrentTarget:()=>target,dispatchAgentOperation,
   });
   await assert.rejects(policy.readTeam({...caller,sessionId:"forged-session"},scope),/capability_denied/);
   await assert.rejects(policy.readTeam(caller,{...scope,leadSessionId:"other-lead"}),/capability_denied/);
