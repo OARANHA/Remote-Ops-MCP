@@ -366,3 +366,51 @@ via GitHub, CLI, logs ou chat.
 **A ativação continua NO-GO**. O build da imagem candidata não
 altera Agent Mesh, os serviços DeepHarness nem os grants.
 
+
+## Stage 21 readback — imagem candidata local qualificada sem rebuild (2026-10-20)
+
+O proprietário executou somente `--verify-existing` no `root@28server`
+após ter constatado anteriormente que a primeira execução havia
+passado do `docker build` e falhado na consulta opcional
+`.Config.ExposedPorts` do Docker. **Não houve segunda compilação**.
+
+Saída observada do operador:
+
+```text
+DSH_RELAY_IMAGE_ID=sha256:35582d3b80a56174086d229793ef8e99d2e39c773cc682d58a8f652283c306d2
+DSH_RELAY_SOURCE_SHA=cafa1e2d80f2272f78d64aaf1f6a4865892f9875
+DSH_RELAY_BUILD=EXISTING_VERIFIED
+DSH_RELAY_IMAGE_TAG=local/wandora-dsh-agent-mesh-relay:review-c06724c97d57
+DSH_RELAY_RUNTIME=NOT_STARTED_BY_SCRIPT
+DSH_RELAY_DEPLOY=NOT_PERFORMED
+```
+
+O script de verificação já corrigido (**checkout `cafa1e2d`**) confirmou
+a imagem local com OS/arquitetura linux/amd64, `Config.User=65534:65534`,
+comando Node esperado, nenhum `ExposedPorts` declarado e ID SHA256.
+**A tag é `review-c06724c97d57` porque a imagem foi compilada usando
+o checkout original `c06724c9`, não o checkout da correção.**
+`DSH_RELAY_SOURCE_SHA` neste readback identifica a revisão do script de
+verificação, não garante que a imagem tenha sido compilada com esse
+commit. A correção de ARG Dockerfile e da inspeção ocorreu somente
+após o build: não repetir download nem build por este motivo.
+
+A CI do checkout corretivo `cafa1e2d`: workflow CI #337 run
+`39374805362` e Policy #101 run `39374805328` conferidos
+`completed/success`. A PR #71 continua Draft, sem merge.
+
+**Importante:** `DSH_RELAY_IMAGE_ID` é o identificador local da
+imagem, não um digest de manifesto `repo@sha256` publicado.
+Não adicionar essa tag local diretamente a uma configuração Portainer,
+não emitir `compose up`, não promover a imagem nem provisionar grants.
+O usuário apenas confirmou que **o script não iniciou o relay nem fez
+deploy**; um teste de inexistência de qualquer runtime deve ser
+conferido separadamente, quando aprovado.
+
+Próximo gate físico, com **autorização separada**: conferir e, se
+aprovado, provisionar SOMENTE o diretório Unix exclusivo
+`/run/wandora/deepharness-semantic` com dono UID 995 / grupo
+GID 987 / modo 02710, socket ainda AUSENTE, sem compartilhar chave TLS.
+Também permanecem pendentes a validação do pin TLS do servidor e a
+confiança exata no fingerprint do certificado cliente no backend.
+
