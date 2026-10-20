@@ -33,7 +33,7 @@ test("cached image policy denies all mutable, untrusted or wrong-platform candid
 });
 test("review-only Dockerfile copies exactly the Node-builtin relay runtime",()=>{
   const file=FILE("Dockerfile.agent-mesh-relay.review");
-  assert.match(file,/^ARG DSH_RELAY_NODE_BASE_IMAGE=docker\\.io\\/library\\/node@sha256:efd0ab5780c2d9ab1f0f869571a00d5edb17793bff4cce4a2792e3eb0ffc7562$/m);
+  assert.ok(file.includes("ARG DSH_RELAY_NODE_BASE_IMAGE=docker.io/library/node@sha256:efd0ab5780c2d9ab1f0f869571a00d5edb17793bff4cce4a2792e3eb0ffc7562"),"base ARG must have the pinned audited digest");
   assert.match(file,/^FROM \$\{DSH_RELAY_NODE_BASE_IMAGE\}$/m);
   assert.match(file,/^USER 65534:65534$/m);
   for(const entry of ["private-bridge-client.mjs","agent-mesh-unix-relay.mjs",
@@ -74,9 +74,9 @@ test("reviewed candidate script only pulls pinned base and builds disconnected; 
   assert.match(script,/--approved-pull-and-build/);
   assert.match(script,/--verify-existing/);
   assert.match(script,/DSH_RELAY_BUILD=EXISTING_VERIFIED/);
-  assert.match(script,/cfg\\.get\\("ExposedPorts"\\)/,"missing ExposedPorts must be accepted");
+  assert.ok(script.includes('cfg.get("ExposedPorts")'),"missing ExposedPorts must be accepted");
   assert.match(script,/python3 -c/,"metadata parsed as JSON instead of a missing-key Go template");
-  assert.doesNotMatch(script,/\\.Config\\.ExposedPorts\\}\}/,"no unsafe direct Go template access");
+  assert.equal(script.includes(".Config.ExposedPorts}}"),false,"no unsafe direct Go template access");
   assert.match(script,/hostname.*28server/);
   assert.match(script,/docker pull --platform linux\/amd64 "\$BASE"/);
   assert.match(script,/node@sha256:efd0ab5780c2d9ab1f0f869571a00d5edb17793bff4cce4a2792e3eb0ffc7562/);
