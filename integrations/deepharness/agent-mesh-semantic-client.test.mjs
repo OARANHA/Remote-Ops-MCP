@@ -30,7 +30,7 @@ test("only a separate fixed named development semantic Agent Mesh target qualifi
     {...target,capabilityProfile:"operator"},
     {...target,enabled:false},
     {...target,deviceId:""},
-    {...target,deviceId:"dev_too_short"},
+    {...target,deviceId:"dev_tiny"},
     {...target,allowedSemanticCapabilities:[]},
     {...target,allowedSemanticCapabilities:["deepharness.semantic","host.managed_admin"]},
     {...target,allowedSemanticCapabilities:["host.status"]},
