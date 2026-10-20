@@ -26,8 +26,19 @@ jobs:
         run: node test-deepharness-semantic-target-approval.mjs
       - name: Verify disabled DeepHarness Agent Mesh local receiver and synthetic Unix relay
         run: node --test test-deepharness-agent-mesh-runtime.mjs
-      - name: Verify full disposable Agent Mesh AF_UNIX plus pinned mutual TLS chain
-        run: node --test test-deepharness-agent-mesh-mtls-chain.mjs
+      - name: Checkout the exact reviewed DSH semantic adapter and handler (CI only)
+        uses: actions/checkout@v4
+        with:
+          repository: OARANHA/deepharness
+          ref: 9c1ac05bf9a0a3fa2ef9f95a3248f156c3fa5d15
+          path: .ci-dsh-reviewed
+          persist-credentials: false
+      - name: Verify full disposable Agent Mesh Unix/mTLS chain against actual reviewed DSH handler
+        env:
+          DSH_CROSSREPO_SOURCE_SHA: 9c1ac05bf9a0a3fa2ef9f95a3248f156c3fa5d15
+        run: |
+          test "$(git -C .ci-dsh-reviewed rev-parse HEAD)" = "$DSH_CROSSREPO_SOURCE_SHA"
+          node --test test-deepharness-agent-mesh-mtls-chain.mjs
       - run: node test-exec-broker-session-capacity.mjs
       - run: node test-paperclip-semantic.mjs
       - run: node test-docker-candidate-contract.mjs
