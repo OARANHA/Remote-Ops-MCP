@@ -27,6 +27,7 @@ export function validateDshSemanticAgentTarget(target) {
      target.allowedSemanticCapabilities.length!==1||
      target.allowedSemanticCapabilities[0]!==CAPABILITY||
      ![
+       "allowedPaths","allowedGitRepos",
        "allowedDockerContainers","allowedDockerExecContainers",
        "allowedDockerExecPrograms","allowedDockerActions","allowedDockerImageLoadRoots",
        "allowedDockerCandidateImagePrefixes","allowedDockerCandidateNetworks",
