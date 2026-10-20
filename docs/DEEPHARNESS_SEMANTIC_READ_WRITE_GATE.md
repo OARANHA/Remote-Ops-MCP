@@ -806,3 +806,37 @@ Agent Mesh service installation, exact scoped DSH grant and an
 authorized disposable Lead canary require separate operational
 evidence and explicit owner approval. A GREEN for these offline tests
 will not mean ChatGPT can instruct a live Lead yet.
+
+
+## Stage 19 — approved preparation only; runtime activation remains NO-GO
+
+On 2026-10-20 the owner approved **preparation of a controlled
+installation plan with rollback**, explicitly reserving real runtime
+activation, target/grant changes and Lead instructions for later
+approvals. This is not permission to create an operator account, socket,
+mount secrets, install/launch a container, restart Agent Mesh or alter
+the running Portainer stack.
+
+Operator-verified `28server`: host `ops-mcp` UID=999 GID=987;
+DSH Web and MCP proxy users=1000:1000; both on internal
+`deepharness_mcp-private`; Web publishes the fixed private DNS alias
+`deepharness-mcp-backend`. Relay directory and socket are absent.
+None of this verifies actual TCP 3443 mTLS acceptability or Agent Mesh
+WSS status; prior calls to the read-only target timed out.
+
+The standalone operator **dry-run** preflight
+`integrations/deepharness/relay-host-preflight.mjs` checks only fixed
+identity, network, container and Unix metadata via read-only commands,
+never reads key/secret content, and never modifies the host. Associated
+tests are `relay-host-preflight.test.mjs` and are included in the
+existing `integrations/deepharness/*.test.mjs` CI glob.
+An unselected dedicated relay UID produces `NO_GO` as expected;
+`PREPARE_ONLY` is explicitly *not* deploy authority.
+
+**Canonical operations plan:** see
+[`docs/DEEPHARNESS_RELAY_CONTROLLED_PREINSTALLATION.md`](DEEPHARNESS_RELAY_CONTROLLED_PREINSTALLATION.md)
+for verified vs unknown facts, UID/GID reservations, 02710/0660
+permissions, isolated immutable sidecar image, TLS/PKI gate,
+Agent Mesh availability, explicit staged approvals, negative
+security gates, and per-service rollback. No production change
+is part of this Draft commit.
