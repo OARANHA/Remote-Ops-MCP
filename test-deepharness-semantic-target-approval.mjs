@@ -73,6 +73,11 @@ try{
     "allowedDockerExecContainers","allowedAdminPrograms","allowedAdminCwds"]){
     assert.deepEqual(target[key],[],key);
   }
+  assert.equal(state.effectiveTargetEnabled(target.id,target.enabled),true);
+  state.setTargetEnabled(target.id,false,"synthetic lab revocation");
+  assert.equal(state.effectiveTargetEnabled(target.id,target.enabled),false);
+  state.setTargetEnabled(target.id,true,"synthetic lab reenable");
+  assert.equal(state.effectiveTargetEnabled(target.id,target.enabled),true);
   assert.equal(targets.getTarget("original-read-only")?.capabilityProfile,"read-only");
   assert.equal(targets.getTarget("original-read-only")?.transport,"mock");
   console.log("DSH_LAB_TARGET_APPROVAL=GREEN");
