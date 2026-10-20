@@ -59,7 +59,9 @@ export async function loadDeepharnessToolDefs() {
       // never from MCP tool parameters, read-only deepharness-read, or OAuth.
       const target=getTarget("deepharness-semantic-lab");
       policy=composeDeepharnessReadWriteOverAgentMesh({
-        grantStore,target,dispatchAgentOperation,
+        grantStore,target,
+        lookupCurrentTarget:()=>getTarget("deepharness-semantic-lab"),
+        dispatchAgentOperation,
       });
     }else{
       const pin=process.env.DSH_BRIDGE_SERVER_FP_SHA256;
