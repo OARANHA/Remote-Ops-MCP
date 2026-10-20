@@ -1,7 +1,7 @@
 /** MCP tool surface for the existing Remote-Ops OAuth session. */
 import {readFile} from "node:fs/promises";
 import {z} from "zod";
-import {composeDeepharnessReadWriteOverMtls} from "./composition.mjs";
+import {composeDeepharnessReadWriteOverMtls,composeDeepharnessReadWriteOverAgentMesh} from "./composition.mjs";
 import {createPersistentDshGrantStore} from "./persistent-grant-store.mjs";
 
 const ID=z.string().min(1).max(256);
@@ -39,17 +39,40 @@ export function createDeepharnessToolDefs(policy) {
 export async function loadDeepharnessToolDefs() {
   if(process.env.DSH_SEMANTIC_ENABLED!=="1")return [];
   if(process.env.AUTH_MODE==="noauth")deny();
-  const pin=process.env.DSH_BRIDGE_SERVER_FP_SHA256;
-  if(typeof pin!=="string"||!/^([0-9a-f]{2}:){31}[0-9a-f]{2}$/i.test(pin))deny();
+  const transport=process.env.DSH_SEMANTIC_TRANSPORT??"mtls";
+  if(!["mtls","agent-mesh-lab"].includes(transport))deny();
+  // A separate lab target must be operator-provisioned and explicitly named.
+  if(transport==="agent-mesh-lab"&&(
+    process.env.AUTH_MODE!=="oauth"||
+    process.env.DSH_SEMANTIC_AGENT_TARGET_ID!=="deepharness-semantic-lab"
+  ))deny();
   runtimePromise??=(async()=>{
-    const [ca,cert,key]=await Promise.all([
-      readFile("/app/secrets/dsh-bridge-ca.pem"),
-      readFile("/app/secrets/dsh-bridge-client-cert.pem"),
-      readFile("/app/secrets/dsh-bridge-client-key.pem"),
-    ]);
     const grantStore=createPersistentDshGrantStore({file:"/app/data/deepharness-grants.json",
       audit:event=>console.log(JSON.stringify({ts:new Date().toISOString(),level:"info",source:"dsh-grant-store",...event}))});
-    const policy=composeDeepharnessReadWriteOverMtls({tls:{ca,cert,key},serverFingerprintSha256:pin,grantStore});
+    let policy;
+    if(transport==="agent-mesh-lab"){
+      const [{getTarget},{dispatchAgentOperation}]=await Promise.all([
+        import("../../dist/config/targets.js"),
+        import("../../dist/agent/gateway.js"),
+      ]);
+      // The target is resolved only from the trusted server-side registry,
+      // never from MCP tool parameters, read-only deepharness-read, or OAuth.
+      const target=getTarget("deepharness-semantic-lab");
+      policy=composeDeepharnessReadWriteOverAgentMesh({
+        grantStore,target,dispatchAgentOperation,
+      });
+    }else{
+      const pin=process.env.DSH_BRIDGE_SERVER_FP_SHA256;
+      if(typeof pin!=="string"||!/^([0-9a-f]{2}:){31}[0-9a-f]{2}$/i.test(pin))deny();
+      const [ca,cert,key]=await Promise.all([
+        readFile("/app/secrets/dsh-bridge-ca.pem"),
+        readFile("/app/secrets/dsh-bridge-client-cert.pem"),
+        readFile("/app/secrets/dsh-bridge-client-key.pem"),
+      ]);
+      policy=composeDeepharnessReadWriteOverMtls({
+        tls:{ca,cert,key},serverFingerprintSha256:pin,grantStore,
+      });
+    }
     return createDeepharnessToolDefs(policy);
   })().catch(error=>{runtimePromise=undefined;throw error;});
   return runtimePromise;
