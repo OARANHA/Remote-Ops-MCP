@@ -51,17 +51,21 @@ export async function loadDeepharnessToolDefs() {
       audit:event=>console.log(JSON.stringify({ts:new Date().toISOString(),level:"info",source:"dsh-grant-store",...event}))});
     let policy;
     if(transport==="agent-mesh-lab"){
-      const [{getTarget},{dispatchAgentOperation}]=await Promise.all([
+      const [{getTarget},{dispatchAgentOperation},{effectiveTargetEnabled}]=await Promise.all([
         import("../../dist/config/targets.js"),
         import("../../dist/agent/gateway.js"),
+        import("../../dist/state/store.js"),
       ]);
-      // The target is resolved only from the trusted server-side registry,
-      // never from MCP tool parameters, read-only deepharness-read, or OAuth.
-      const target=getTarget("deepharness-semantic-lab");
+      // Always evaluate both registry and the independently revocable
+      // runtime overlay; a disabled lab target must not dispatch through
+      // a previously cached OAuth session.
+      const lookupCurrentTarget=()=>{
+        const entry=getTarget("deepharness-semantic-lab");
+        return entry&&effectiveTargetEnabled(entry.id,entry.enabled)?entry:undefined;
+      };
+      const target=lookupCurrentTarget();
       policy=composeDeepharnessReadWriteOverAgentMesh({
-        grantStore,target,
-        lookupCurrentTarget:()=>getTarget("deepharness-semantic-lab"),
-        dispatchAgentOperation,
+        grantStore,target,lookupCurrentTarget,dispatchAgentOperation,
       });
     }else{
       const pin=process.env.DSH_BRIDGE_SERVER_FP_SHA256;
