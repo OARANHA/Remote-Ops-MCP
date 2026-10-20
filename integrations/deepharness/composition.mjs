@@ -44,10 +44,10 @@ export function composeDeepharnessReadWriteOverMtls({tls,serverFingerprintSha256
  * by the exact same persistent semantic policy on every read/write.
  */
 export function composeDeepharnessReadWriteOverAgentMesh({
-  target,dispatchAgentOperation,...deps
+  target,lookupCurrentTarget,dispatchAgentOperation,...deps
 }={}) {
   const privateBridgeClient=createDshPrivateBridgeClientOverAgentMesh({
-    target,dispatchAgentOperation,
+    target,lookupCurrentTarget,dispatchAgentOperation,
   });
   return composeDeepharnessReadWrite({...deps,privateBridgeClient});
 }
