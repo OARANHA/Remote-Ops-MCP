@@ -840,3 +840,39 @@ permissions, isolated immutable sidecar image, TLS/PKI gate,
 Agent Mesh availability, explicit staged approvals, negative
 security gates, and per-service rollback. No production change
 is part of this Draft commit.
+
+
+## Gate de integração cruzada com handler real DeepHarness — 2026-10-20
+
+A PR #71 agora exercita o **código real revisado** do backend semântico do
+DeepHarness, não apenas um servidor HTTPS que devolve respostas sintéticas.
+O workflow de CI `.github/workflows/ci.yml` faz checkout da fonte pública
+`OARANHA/deepharness` no SHA **exato e fixado**
+`9c1ac05bf9a0a3fa2ef9f95a3248f156c3fa5d15` em
+`.ci-dsh-reviewed/`; valida `git rev-parse HEAD` antes do teste e exclui
+este checkout do Git e do contexto de build Docker.
+
+O teste `test-deepharness-agent-mesh-mtls-chain.mjs` chama, em ambiente
+efêmero CI, os exportados reais `createDshSemanticBridge` e
+`createPrivateSemanticHttpHandler` dessa revisão, através dos componentes
+reais Wandora **Agent Mesh receiver → socket Unix → relay → HTTPS mTLS
+pinned → handler/bridge DeepHarness**. Usa CA e certificados temporários
+gerados localmente. Confirma projeção do Lead sintético, admissão de um
+prompt somente textual com `requestId` e rejeição do fingerprint TLS
+incorreto antes de encaminhar para o backend. O `SessionController`
+e o registro do workspace são **fixtures explícitas de teste**, e não
+persistência oficial nem um Lead vivo. Não há modelo, rede externa,
+segredo operacional, grant real ou alteração da VPS.
+
+**Critério e limite de evidência:** só marcar o novo gate como GREEN se
+o workflow `CI` da PR #71 concluir SUCCESS no mesmo SHA revisado. A
+separada workflow `DeepHarness semantic read-write policy gate` não
+substitui este teste. Mesmo GREEN não libera o relay, a configuração
+`semanticBridge.enabled`, os `dsh_*` nem uma instrução a Lead real.
+Para ativação futura, exigir certificado cliente pinado pelo DSH,
+fingerprint confiável do servidor no relay, socket com proprietário/grupo
+revisados, target `deepharness-semantic-lab` diferente do
+`deepharness-read`, identidade e grants exatos, além de readback
+independente após admissão de uma instrução de laboratório aprovada.
+
+O DeepHarness da stack 90 permanece protegido por fluxo separado.
