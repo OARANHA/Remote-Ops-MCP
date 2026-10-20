@@ -1,4 +1,5 @@
-# syntax=docker/dockerfile:1.7
+# Built with Dockerfile's built-in syntax; do not resolve an extra unpinned
+# external BuildKit frontend while qualifying a digest-pinned Node 22 base.
 # REVIEW CANDIDATE ONLY. Supply a separately reviewed, digest-pinned Node 22
 # base image via --build-arg DSH_RELAY_NODE_BASE_IMAGE=node@sha256:...
 # No packages, plugins, credentials, agent tools or Docker socket are installed.
