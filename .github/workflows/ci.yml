@@ -22,6 +22,8 @@ jobs:
       - run: node --test integrations/deepharness/*.test.mjs
       - name: Verify disabled DeepHarness Agent Mesh local receiver and synthetic Unix relay
         run: node --test test-deepharness-agent-mesh-runtime.mjs
+      - name: Verify full disposable Agent Mesh AF_UNIX plus pinned mutual TLS chain
+        run: node --test test-deepharness-agent-mesh-mtls-chain.mjs
       - run: node test-exec-broker-session-capacity.mjs
       - run: node test-paperclip-semantic.mjs
       - run: node test-docker-candidate-contract.mjs
