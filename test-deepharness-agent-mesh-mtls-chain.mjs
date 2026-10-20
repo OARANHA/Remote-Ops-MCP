@@ -11,7 +11,8 @@ import {X509Certificate} from "node:crypto";
 import {execFileSync} from "node:child_process";
 import {mkdtemp,readFile,writeFile,chmod,lstat,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
-import {join} from "node:path";
+import {join,resolve} from "node:path";
+import {pathToFileURL} from "node:url";
 import {createDshMtlsRequester,DSH_BRIDGE_HOST,DSH_BRIDGE_PORT,DSH_BRIDGE_PATH} from
   "./integrations/deepharness/private-bridge-client.mjs";
 import {createDshAgentMeshUnixRelayHandler} from
@@ -61,27 +62,53 @@ test("synthetic Agent Mesh -> Unix -> actual pinned mutual TLS with a wrong-pin 
   try{
     await chmod(dir,0o700);
     const certificates=await ephemeralTls(dir);
-    const received=[];
+    // Import the actual reviewed DSH bridge and HTTPS handler at one pinned SHA.
+    // The official SessionController is still a fixture (no DSH model or daemon).
+    const sourceSha="9c1ac05bf9a0a3fa2ef9f95a3248f156c3fa5d15";
+    assert.equal(process.env.DSH_CROSSREPO_SOURCE_SHA,sourceSha);
+    const dshRoot=resolve(".ci-dsh-reviewed");
+    const {createDshSemanticBridge}=await import(pathToFileURL(join(dshRoot,
+      "integrations/chatgpt-mcp/adapters/dsh-semantic-bridge.mjs")).href);
+    const {createPrivateSemanticHttpHandler}=await import(pathToFileURL(join(dshRoot,
+      "integrations/chatgpt-mcp/adapters/private-semantic-http-handler.mjs")).href);
+    const received=[],queued=[];
+    const workspace={id:scope.workspaceId,sessionIds:[scope.leadSessionId,"ungranted"]};
+    const controller={
+      async projections({sessionId}) {
+        assert.ok(workspace.sessionIds.includes(sessionId));
+        return {kind:"sequenced",asOfSeq:0,values:{agentTeam:{
+          members:[{id:sessionId,name:"CI synthetic Lead",role:"lead",phase:"active"}],
+          tasks:[],
+        }}};
+      },
+      async page(){return {records:[],hasMore:false};},
+      async prompt(request){
+        queued.push(request);
+        return {accepted:true};
+      },
+    };
+    const bridge=createDshSemanticBridge({
+      workspaceRegistry:{get:id=>id===workspace.id?workspace:undefined},
+      sessionController:controller,
+    });
+    const tracedBridge=Object.fromEntries(["listTeams","getTeamStatus","listTasks",
+      "readLeadChat","sendLeadInstruction"].map(operation=>[
+      operation,async input=>{
+        received.push({operation,...input});
+        return bridge[operation](input);
+      },
+    ]));
+    const clientPin=new X509Certificate(certificates.clientCert).fingerprint256;
+    const handler=createPrivateSemanticHttpHandler({
+      bridge:tracedBridge,clientFingerprintSha256:clientPin,
+      audit:event=>{
+        assert.deepEqual(Object.keys(event).sort(),["operation","outcome"]);
+      },
+    });
     backend=https.createServer({
       key:certificates.serverKey,cert:certificates.serverCert,ca:certificates.ca,
       requestCert:true,rejectUnauthorized:true,
-    },async(req,res)=>{
-      assert.equal(req.method,"POST");
-      assert.equal(req.url,DSH_BRIDGE_PATH);
-      assert.equal(req.socket.authorized,true);
-      const chunks=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));
-      const input=JSON.parse(Buffer.concat(chunks).toString("utf8"));
-      received.push(input);
-      const result=input.operation==="listTeams"?
-        [{leadSessionId:"ungranted",members:[],tasks:[]},
-          {leadSessionId:scope.leadSessionId,members:[],tasks:[]}]:
-        input.operation==="getTeamStatus"?
-          {leadSessionId:scope.leadSessionId,members:[],tasks:[]}:
-        input.operation==="sendLeadInstruction"?
-          {accepted:true,requestId:input.requestId}:null;
-      res.writeHead(200,{"content-type":"application/json"});
-      res.end(JSON.stringify({result}));
-    });
+    },(req,res)=>{void handler.handle(req,res);});
     await new Promise((resolve,reject)=>{
       backend.once("error",reject);backend.listen(0,"127.0.0.1",resolve);
     });
@@ -148,6 +175,9 @@ test("synthetic Agent Mesh -> Unix -> actual pinned mutual TLS with a wrong-pin 
     assert.equal(received[1].operation,"sendLeadInstruction");
     assert.equal(received[1].workspaceId,scope.workspaceId);
     assert.equal(received[1].leadSessionId,scope.leadSessionId);
+    assert.equal(queued.length,1);
+    assert.deepEqual(queued[0],{sessionId:scope.leadSessionId,requestId,
+      mode:"queue",content:[{type:"text",text:"synthetic only, no model"}]});
     // Wrong Lead is denied on the host even before opening HTTPS.
     denied(await executeDshAgentOperation(command("getTeamStatus",{
       leadSessionId:"another-lead",
@@ -158,6 +188,7 @@ test("synthetic Agent Mesh -> Unix -> actual pinned mutual TLS with a wrong-pin 
       leadSessionId:scope.leadSessionId,
     }),{},deps));
     assert.equal(received.length,2);
+    handler.dispose();
   }finally{
     if(unix)await new Promise(resolve=>unix.close(resolve));
     if(backend)await new Promise(resolve=>backend.close(resolve));
