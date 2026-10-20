@@ -67,3 +67,18 @@ test("isolated Compose remains inert, nonroot and private-only",()=>{
   assert.equal((file.match(/create_host_path: false/g)||[]).length,4);
   assert.doesNotMatch(file,/docker\.sock|\/var\/run\/docker|network: host/);
 });
+
+
+test("reviewed candidate script only pulls pinned base and builds disconnected; never runs service",()=>{
+  const script=FILE("build-relay-candidate.review.sh");
+  assert.match(script,/--approved-pull-and-build/);
+  assert.match(script,/hostname.*28server/);
+  assert.match(script,/docker pull --platform linux\/amd64 "\$BASE"/);
+  assert.match(script,/node@sha256:efd0ab5780c2d9ab1f0f869571a00d5edb17793bff4cce4a2792e3eb0ffc7562/);
+  assert.match(script,/docker build --platform linux\/amd64 --pull=false --network=none --no-cache/);
+  assert.match(script,/DSH_RELAY_RUNTIME=NOT_STARTED/);
+  assert.match(script,/DSH_RELAY_DEPLOY=NOT_PERFORMED/);
+  assert.doesNotMatch(script,/\bdocker\s+(?:run|create|start|exec|compose|stack|push|image prune)\b/);
+  assert.doesNotMatch(script,/\b(?:useradd|usermod|chmod|chown|systemctl|openssl|kubectl|helm)\b/);
+  assert.doesNotMatch(script,/\b(?:eval|source)\s/);
+});
