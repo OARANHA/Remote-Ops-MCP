@@ -1,11 +1,13 @@
 # DeepHarness ↔ Wandora Agent Mesh — pré-instalação controlada do relay (Stage 19)
 
 **Estado: PREPARE-ONLY / NO-GO para ativação e deploy.** Este documento
-acompanha somente a PR #71 em Draft. A autorização do proprietário em
-2026-10-20 abrange **preparar a instalação e o plano de reversão**, não
-instalar, iniciar contêiner, criar credenciais, conceder grants, reiniciar
-agente, alterar Portainer nem enviar instruções a um Lead. Essas ações
-dependem de aprovações separadas.
+acompanha a PR #71 em Draft. Em 2026-10-20, o proprietário aprovou
+inicialmente a preparação do procedimento e, em aprovação posterior,
+**o provisionamento exclusivo da identidade e do certificado cliente do
+relay no host correto**. O operador concluiu essas etapas, mas **não
+autorizou iniciar o relay, habilitar a operação no Agent Mesh, configurar
+grants, alterar o backend mTLS, modificar Portainer ou enviar instruções
+ao Lead**. Essas ações continuam sujeitas a autorizações separadas.
 
 ## Evidências verificadas no host certo
 
@@ -31,6 +33,54 @@ backend instalado, certificado cliente confiável e pin correto,
 `Agent Mesh` WSS/dispatch atual, imagem digest-pinned, UID próprio do
 relay, acesso à chave privada montada sem expor ao host agent, grants,
 revogação ponta a ponta e resposta de Lead real.
+
+## Checkpoint real de provisionamento — operador, 2026-10-20
+
+Este checkpoint é posterior à preparação sintética Stage 19 e veio de
+comandos executados diretamente em `root@28server` pelo proprietário.
+A trilha abaixo é **evidência relatada pelo operador**, não prova de
+leitura de arquivo ou execução remota pelo conector ChatGPT.
+
+- `DSH_3443_TCP=OPEN` na rede privada; o TLS sem certificado cliente
+  retornou `ERR_SSL_TLSV13_ALERT_CERTIFICATE_REQUIRED`, consistente
+  com política de **certificado cliente obrigatório**, mas sem comprovar
+  a autenticação de um cliente confiável ou pin do novo certificado.
+- CA backend existente: `CA:TRUE`, keyUsage `Certificate Sign, CRL
+  Sign`, válida até 2031; único candidato de chave assinadora
+  corresponde à chave pública da CA (`DSH_CA_KEY_MATCH=GREEN`).
+- Operador criou conta de serviço `wandora-dsh-relay`:
+  **UID 995, GID primário 985** (diferentes do host agent 999:987 e
+  do DSH Web/proxy 1000:1000). Não é membro do grupo de socket 987
+  no host; o futuro Compose declara `group_add` 987.
+- Operador gerou uma chave privada exclusiva e certificado
+  **clientAuth** assinado pela CA existente, com validade até
+  **18/01/2027**, verificação de cadeia `GREEN`.
+- Os arquivos criados inicialmente sob a árvore PKI `0700`
+  propriedade root eram inacessíveis ao UID 995. Depois do
+  diagnóstico `namei`, o operador **moveu somente o diretório
+  exclusivo do relay** para outro pai acessível ao UID 995, sem
+  liberar acesso à árvore compartilhada ou alterar a CA. O usuário
+  do relay consegue ler a própria chave
+  (`DSH_RELAY_KEY_ACCESS=GREEN`); a localização privada deve ser
+  passada ao Compose por variáveis de operador, **sem registrar em
+  Git, logs, respostas da ferramenta ou memória o caminho exato da
+  chave, PEMs ou segredo**.
+- `DSH_RELAY_RUNTIME=NOT_STARTED`; o diretório/socket Unix de
+  Agent Mesh não foi criado, e a stack Portainer permanece inalterada.
+
+**Pendências antes de qualquer deploy:** revisão de permissões
+individualizadas da cópia da CA e do certificado, verificações do
+certificado cliente pela identidade exata prevista, caminho
+de certificados fora da árvore PKI inacessível, imagem do relay
+construída com base imutável auditada, `DSH_BRIDGE_SERVER_FP_SHA256`
+obtido de fonte confiável, provisionamento controlado do diretório
+Unix exclusivo com owner UID 995 / socket group GID 987,
+capacidade Agent Mesh anunciada pelo agente atualizado, e
+reconciliação da política de pin do certificado cliente no DSH.
+O backend da PR #17 verifica a impressão digital do cliente na
+requisição além de exigir TLS autorizado; **não é suficiente apenas
+assinar o certificado com a CA existente**. Alterar o pin do backend
+ou testar uma chamada semântica real não faz parte deste gate.
 
 ## Gate 0 — inspecionar sem instalar
 
@@ -168,6 +218,10 @@ stack principal/publicar TCP. Nunca corrigir um NO-GO concedendo
    Verificar que serviços DSH Web/proxy/DB continuam disponíveis,
    que `dsh_*` não estão expostos, e registrar evidências.
 
-**Resultado desta Stage 19:** apenas script de pré-instalação,
-testes sintéticos e documentação de GO/NO-GO e rollback na PR Draft
-`OARANHA/Remote-Ops-MCP#71`. Nenhuma alteração operacional.
+**Resultado consolidado (até 2026-10-20):** a Stage 19 produziu
+somente pré-instalação sintética e documentação Draft na PR #71. Sob
+autorização **posterior e distinta**, o operador provisionou a
+identidade e o certificado do relay diretamente no `28server` e
+validou o acesso à chave, sem iniciar container, alterar Agent Mesh,
+Portainer, target, grants ou Lead. A implantação segue NO-GO até
+gate e autorização próprios.
