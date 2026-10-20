@@ -40,15 +40,20 @@ export function validateDshSemanticAgentTarget(target) {
 }
 
 export function createDshAgentMeshSemanticRequester({
-  target,dispatchAgentOperation,timeoutMs=10_000,
+  target,lookupCurrentTarget,dispatchAgentOperation,timeoutMs=10_000,
 }={}) {
   const trusted=validateDshSemanticAgentTarget(target);
-  if(typeof dispatchAgentOperation!=="function"||
+  if(typeof lookupCurrentTarget!=="function"||
+     typeof dispatchAgentOperation!=="function"||
      !Number.isSafeInteger(timeoutMs)||timeoutMs<1000||timeoutMs>30_000)deny();
   return async function postJson(payload) {
     const envelope=makeDshAgentMeshEnvelope(payload);
     let response;
     try{
+      // Reload the independently trusted target on every dispatch.
+      // A disabled/reassigned/revoked lab target fails closed immediately.
+      const current=validateDshSemanticAgentTarget(await lookupCurrentTarget());
+      if(current.deviceId!==trusted.deviceId)deny();
       response=await dispatchAgentOperation(trusted.deviceId,envelope,{
         timeoutMs,maxBytes:MAX_RESULT_BYTES,
       });
