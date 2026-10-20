@@ -278,11 +278,36 @@ servidor não corroborado, backend ainda não aceita formalmente
 o fingerprint do cliente dedicado, e falta a autorização separada
 para ativação. Uma aprovação de CI não é aprovação de deploy.
 
-**Próximo gate operador:** inventário read-only das imagens locais
-sem puxar/build nada, por exemplo
-`docker image ls --digests --format '{{.Repository}}:{{.Tag}} {{.Digest}}'`
-em `root@28server`; procurar uma imagem Node 22 já existente e
-registrar apenas referência pública por digest, nunca segredos.
-Se não existir, a autorização para obter uma base revisada e
-construir o candidato será decisão posterior específica.
+**Gate verificado — inventário local e manifesto remoto do Node (2026-10-20).**
+Operador em `root@28server` executou inventário de imagens com filtro para
+`node`/`docker.io/library/node` e obteve `DSH_NODE_BASE_CACHE=ABSENT`.
+Este resultado não exclui images sem esse nome ou imagens de outras fontes;
+nenhuma foi selecionada como substituta. Em seguida executou **somente
+consulta remota de metadados**:
+
+```text
+docker buildx imagetools inspect docker.io/library/node:22-bookworm-slim
+OCI image index: sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392
+linux/amd64 manifest: sha256:efd0ab5780c2d9ab1f0f869571a00d5edb17793bff4cce4a2792e3eb0ffc7562
+created: 2026-10-06T01:45:03Z
+source revision: 81f419144a1251854c6d9afb09eaa39928e724e8
+variant: 22-bookworm-slim
+```
+
+**Seleção para avaliação:**
+`docker.io/library/node@sha256:efd0ab5780c2d9ab1f0f869571a00d5edb17793bff4cce4a2792e3eb0ffc7562`
+(manifesto **linux/amd64**, não o index multiarch nem attestation).
+O nome/tag e a revisão vêm dos metadados apresentados pelo operador;
+proveniência e a versão real do executável Node ainda não foram
+validadas localmente por hash/runtime. O digest é público e não é
+credencial; a chave privada TLS do relay nunca será lida ou registrada.
+
+**PENDENTE DE NOVA AUTORIZAÇÃO:** obter essa imagem via pull com digest,
+validar `docker image inspect`/plataforma e Node 22, depois construir
+uma **imagem final diferente** do manifesto-base, registrar digest
+imutável dela, inspecionar sua configuração/usuário sem iniciar serviço.
+O `DSH_RELAY_IMAGE_DIGEST` do Compose refere-se à imagem **final do
+relay**, não ao manifesto-base Node acima. Não há `docker pull`,
+`docker build`, `docker run` ou `compose up` autorizados ou realizados
+por esta alteração documental. Socket, target e grants continuam NO-GO.
 
