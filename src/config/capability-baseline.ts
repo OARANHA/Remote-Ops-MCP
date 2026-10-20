@@ -1,7 +1,7 @@
 import { MANAGED_ADMIN_CAPABILITY, MANAGED_ADMIN_DEFAULT_CWDS, MANAGED_ADMIN_DEFAULT_PROGRAMS } from "../privileged/managed-admin-policy.js";
 import type { TargetConfig } from "./targets.js";
 
-export type AgentTargetPreset = "operator-workspace" | "read-only" | "openhands-read" | "openhands-execute" | "postgres-readback" | "managed-admin";
+export type AgentTargetPreset = "operator-workspace" | "read-only" | "openhands-read" | "openhands-execute" | "postgres-readback" | "managed-admin" | "deepharness-semantic-lab";
 
 export const AGENT_WORKSPACE_ROOT = "/opt/wandora/ops-workspace";
 
@@ -82,6 +82,24 @@ export function buildAgentTargetFromPreset(input: {
       allowedSemanticCapabilities: [MANAGED_ADMIN_CAPABILITY],
       allowedAdminPrograms: [...MANAGED_ADMIN_DEFAULT_PROGRAMS],
       allowedAdminCwds: [...MANAGED_ADMIN_DEFAULT_CWDS],
+    };
+  }
+
+  if (input.preset === "deepharness-semantic-lab") {
+    // Never allow this capability on a production target or alternate alias.
+    if (input.targetId !== "deepharness-semantic-lab" || input.environment !== "development") {
+      throw new Error("deepharness_lab_target_denied");
+    }
+    return {
+      ...base,
+      capabilityProfile: "semantic-operator",
+      allowedPaths: [],
+      allowedServices: [],
+      allowedServiceActions: [],
+      allowedWritePaths: [],
+      allowedProcessCwds: [],
+      allowedProcessPrograms: [],
+      allowedSemanticCapabilities: ["deepharness.semantic"],
     };
   }
 
