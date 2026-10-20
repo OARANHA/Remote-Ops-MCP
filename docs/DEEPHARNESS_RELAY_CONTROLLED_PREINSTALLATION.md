@@ -311,3 +311,58 @@ relay**, não ao manifesto-base Node acima. Não há `docker pull`,
 `docker build`, `docker run` ou `compose up` autorizados ou realizados
 por esta alteração documental. Socket, target e grants continuam NO-GO.
 
+
+## Stage 21 — pull e build isolados autorizados, sem start (2026-10-20)
+
+O proprietário aprovou separadamente **baixar a imagem-base pelo digest
+`linux/amd64` já verificado e construir uma imagem candidata local**
+no `28server`, **sem criar/iniciar serviço ou contêiner de runtime,
+sem Compose/Portainer, sem target, grants, socket ou mudanças de PKI**.
+
+Foi removida a linha de frontend externo mutável
+`# syntax=docker/dockerfile:1.7` do Dockerfile review; as
+instruções são suportadas pelo Dockerfile padrão, sem necessidade de
+baixar frontend identificado por tag. O helper
+`integrations/deepharness/build-relay-candidate.review.sh`
+é a única receita de execução aprovada **nesta etapa**:
+exige argumento `--approved-pull-and-build`, hostname exato
+`28server`, arquitetura `x86_64`, checkout limpo do repositório
+`OARANHA/Remote-Ops-MCP`, fontes revisadas, e executa:
+`docker pull --platform linux/amd64` do manifesto fixo
+`docker.io/library/node@sha256:efd0ab5780c2d9ab1f0f869571a00d5edb17793bff4cce4a2792e3eb0ffc7562`,
+seguido de **um build local** `docker build --platform linux/amd64
+--pull=false --network=none --no-cache` com argumento
+`DSH_RELAY_NODE_BASE_IMAGE` no Dockerfile isolado. O Dockerfile
+tem só `COPY`, `ENV`, `WORKDIR`, `USER`, `CMD` —
+**nenhum RUN**. O build não precisa de certificados.
+
+Após o build o helper examina somente metadados do artefato final:
+`linux/amd64`, usuário **65534:65534** (default da imagem,
+não o usuário operacional futuro 995:985), comando Node fixo,
+`ExposedPorts` vazio e ID `sha256` da imagem local. Imprime
+`DSH_RELAY_BUILD=GREEN`, `DSH_RELAY_IMAGE_ID`,
+`DSH_RELAY_SOURCE_SHA` e
+`DSH_RELAY_RUNTIME=NOT_STARTED`, ou falha fechado com
+`DSH_RELAY_BUILD=NO_GO`.
+
+**Cuidado: `DSH_RELAY_IMAGE_ID` é o ID de configuração da imagem
+local**, não é automaticamente `repo@sha256:<digest do manifesto
+publicado>`. Não configurá-lo como `DSH_RELAY_IMAGE_DIGEST`
+do Compose enquanto o modelo de distribuição imutável e a
+proveniência final não forem revisados. Também não afirmar que
+a versão Node do binário embutido foi executada, pois
+nenhum contêiner é iniciado. Essa qualificação fica para a
+aprovação de canário futuro.
+
+Execução delegada ao **operador em `root@28server`**, pois o
+único MCP nesse host é `deepharness-read` e sua allowlist é
+read-only. O target administrativo da Wandora está em
+`wandora-vps-01`, VPS distinta; não usar ali. O operador deve
+criar um checkout temporário da PR #71, **comparar SHA exato** com o
+HEAD verificado, executar o helper apenas se coincidir, e
+enviar somente as linhas-resumo. Não transmitir credenciais
+via GitHub, CLI, logs ou chat.
+
+**A ativação continua NO-GO**. O build da imagem candidata não
+altera Agent Mesh, os serviços DeepHarness nem os grants.
+
