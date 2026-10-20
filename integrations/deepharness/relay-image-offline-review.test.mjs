@@ -39,6 +39,7 @@ test("review-only Dockerfile copies exactly the Node-builtin relay runtime",()=>
   for(const entry of ["private-bridge-client.mjs","agent-mesh-unix-relay.mjs",
     "agent-mesh-unix-listener.mjs","agent-mesh-unix-relay-run.mjs"])
     assert.ok(file.includes("integrations/deepharness/"+entry),entry);
+  assert.doesNotMatch(file,/^# syntax=/m,"no mutable Dockerfile frontend dependency");
   assert.doesNotMatch(file,/^\s*(RUN|ADD|EXPOSE|HEALTHCHECK)\s/m);
   assert.match(file,/CMD \["node","\/opt\/wandora-dsh-relay\/agent-mesh-unix-relay-run.mjs"\]/);
 });
