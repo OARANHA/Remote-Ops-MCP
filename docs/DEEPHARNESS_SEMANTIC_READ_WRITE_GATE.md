@@ -720,6 +720,9 @@ explicit selection requires `AUTH_MODE=oauth`,
 `DSH_SEMANTIC_AGENT_TARGET_ID=deepharness-semantic-lab`. Without all
 of these, no Agent Mesh tools are enabled. The target is loaded from
 the registry on the **server**, never supplied by the ChatGPT caller.
+Its exact ID, device binding, enabled flag, capability and lab environment
+are **rechecked on every dispatch**, so an operator-disabled or replaced
+lab target cannot continue accepting requests from a cached session.
 The legacy mTLS mode remains separately available as before; its
 certificate bytes never enter the Agent Mesh envelope.
 
