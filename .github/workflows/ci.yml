@@ -20,6 +20,10 @@ jobs:
       - run: node --experimental-strip-types --test test-openhands-bridge.mjs
       - run: node --experimental-strip-types --test test-docker-list-scope.mjs
       - run: node --test integrations/deepharness/*.test.mjs
+      - name: Verify DSH semantic Agent Mesh capability advertises only with trusted socket
+        run: node --test test-deepharness-agent-advertisement.mjs
+      - name: Verify human approval for dedicated DSH lab target (no remote agent)
+        run: node test-deepharness-semantic-target-approval.mjs
       - name: Verify disabled DeepHarness Agent Mesh local receiver and synthetic Unix relay
         run: node --test test-deepharness-agent-mesh-runtime.mjs
       - name: Verify full disposable Agent Mesh AF_UNIX plus pinned mutual TLS chain
