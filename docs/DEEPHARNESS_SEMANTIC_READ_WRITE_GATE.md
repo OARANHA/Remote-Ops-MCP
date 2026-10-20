@@ -747,3 +747,62 @@ separately authorized, isolated disposable canary with reviewed
 artifacts and explicitly scoped grants, followed by independent DSH
 reply readback. Never call an inbox `accepted:true` receipt a Lead
 completion or broaden `deepharness-read`.
+
+
+## Stage 18 — lab target provisioning with live socket readiness gate (2026-10-19; Draft only)
+
+PR #71 Stage 17 was independently verified **CI #307 and Semantic
+Policy #71 SUCCESS** at commit
+`aebe60e0eb66017d524825c412ffef4df3a071df`.
+No production deployment has occurred.
+
+**Newly closed readiness gap:** The connected `target_agent_prepare`
+tool had no preset capable of creating the special
+`deepharness-semantic-lab` Agent Mesh target, even though the new DSH
+tool loader already required it. The existing
+`src/config/capability-baseline.ts`,
+`src/config/target-approvals.ts` and `src/tools/index.ts` now include
+**only one** new preset `deepharness-semantic-lab`:
+
+- It requires **exact** `target_id=deepharness-semantic-lab`, environment
+  `development`, `AUTH_MODE=oauth` and a strong configured auth secret.
+- It derives `capabilityProfile=semantic-operator` and one capability
+  `allowedSemanticCapabilities=["deepharness.semantic"]` with all
+  generic filesystem, process, Docker, Git, service and admin
+  permissions EMPTY. It never inherits `operator-workspace`.
+- The selected **already-paired, live Agent Mesh device** must actually
+  advertise `deepharness.semantic` both on `prepare` and immediately
+  before `apply`. A stale/missing capability refuses the approval. All
+  normal actor-bound expiring `APPROVE adm_...` confirmations still
+  apply; no target is created by a `prepare`.
+- The `28server` agent's new
+  `src/agent/deepharness-advertisement.ts` exports a read-only
+  capability probe. The agent advertises `deepharness.semantic`
+  only when its operator-side enable flag, workspace and Lead scope,
+  distinct relay UID, required group membership, and **existing**
+  AF_UNIX directory/socket owner/group/type/modes all match
+  the Stage 15 policy. It does not create/start any socket, listener,
+  container, or Keycloak application. It remains inert in the currently
+  installed agent until a separately authorized agent update.
+- The DSH MCP tool loader also rechecks the durable *runtime target
+  disable overlay* (`effectiveTargetEnabled`), not merely the target's
+  static `enabled` bit, on **each** semantic dispatch. This must deny
+  a previously active client/session when an operator disables its
+  dedicated lab target.
+- New isolated CI tests `test-deepharness-agent-advertisement.mjs`
+  and `test-deepharness-semantic-target-approval.mjs` exercise the
+  host readiness probe, wrong UID/GID/mode, absent socket, approval
+  prepare/apply without agent announcement, actor mismatch,
+  an expiring-style human confirmation, no target creation before
+  approval, absence of generic authorities, runtime target disable
+  and the preservation of existing static targets.
+
+**NO-GO remains unchanged.** No real `deepharness.semantic`
+capability has been advertised by the deployed `28server` agent;
+no `target_agent_prepare/apply` has been called in production,
+and `deepharness-read` stays production read-only.
+Actual host UID/GID, private sidecar socket and mTLS provisioning,
+Agent Mesh service installation, exact scoped DSH grant and an
+authorized disposable Lead canary require separate operational
+evidence and explicit owner approval. A GREEN for these offline tests
+will not mean ChatGPT can instruct a live Lead yet.
