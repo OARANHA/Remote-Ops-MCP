@@ -641,3 +641,45 @@ reply on a disposable Team;
 certificate provisioning, mount, agent restart or deployment. Neither
 a passing Docker Compose syntax check nor a synthetic `accepted:true`
 receipt is a live DeepHarness integration.
+
+
+## Stage 16 — disposable Unix-to-mTLS chain gate (Draft only; 2026-10-19)
+
+The Stage 15 baseline was verified SUCCESS: Remote-Ops CI #293 and
+Semantic Policy #57 on PR #71 head
+`c3eda5535fa8faff11b47e067ce42949d0ba342a`. The next security
+gate must demonstrate that the **same** synthetic request can traverse
+the already reviewed Agent Mesh host receiver, a real Unix HTTP socket,
+the scoped relay handler, and an actual mutual-TLS HTTPS session,
+rather than relying only on independent mocks.
+
+`test-deepharness-agent-mesh-mtls-chain.mjs` is the standalone,
+CI-only Stage 16 gate. It creates a one-day disposable CA, server SAN
+certificate and client-auth certificate locally; starts one HTTPS
+listener on ephemeral **loopback only**, one Unix socket in an
+ephemeral private test directory, and uses the *unchanged* production
+`createDshMtlsRequester` with its fixed DSH hostname, SNI, fixed
+handler route and certificate fingerprint. A `httpsModule` substitution
+redirects only this test's network socket to loopback while **asserting**
+the fixed hostname/port/path/SNI; it is not a runtime parameter, a DNS
+or production IP change.
+
+The CI test routes a scoped synthetic `listTeams` call and a
+`sendLeadInstruction` with idempotency ID through the host receiver
+and the relay. It checks filtering of another Lead, rejects a
+different Lead *before* HTTPS, and rejects a wrong TLS certificate pin.
+The synthetic HTTPS responder reports `accepted:true` only; this does
+**not** prove a model actually processed an instruction. Unix socket
+owner/group and mode metadata in this test are deliberately **mocked**
+because the CI runner cannot impersonate the host agent and relay
+identities; the actual Unix and TLS I/O remain real.
+
+This test executes after `npm run build`, does not use the live
+DSH service, requires no remote credentials and does not install or
+start a container on either VPS. A GREEN CI would mean only that
+this **disposable transport test** passed. For a real integration,
+the separately approved candidate must still prove numeric host
+UID/GID, group-only socket access, dedicated sidecar image and private
+Docker DNS, real cert provisioning, server trust, OAuth/grant revocation,
+idempotency, official DSH services and Lead response readback.
+**PR #71 and DSH PR #17 remain Draft; no production activation.**
