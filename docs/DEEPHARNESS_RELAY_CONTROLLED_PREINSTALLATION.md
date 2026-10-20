@@ -225,3 +225,64 @@ identidade e o certificado do relay diretamente no `28server` e
 validou o acesso à chave, sem iniciar container, alterar Agent Mesh,
 Portainer, target, grants ou Lead. A implantação segue NO-GO até
 gate e autorização próprios.
+
+
+## Stage 20 — qualificação offline da imagem e do Compose (Draft, 2026-10-20)
+
+Com a Stage 19 CI #324 e Policy #88 comprovadas GREEN e a identidade
+do relay já provisionada no host (UID 995, GID primário 985,
+socket group GID 987), a etapa seguinte é **qualificar a imagem
+isolada antes de qualquer build ou start operacional**.
+
+O arquivo `integrations/deepharness/relay-image-offline-review.mjs`
+executa somente `docker image inspect --format` sobre um candidato
+**Node** imutável `node@sha256:<digest real>` ou
+`docker.io/library/node@sha256:<digest real>`. O comando não faz
+`pull`, `build`, `docker run`, `compose up`, `docker exec`,
+conexões TCP, leitura de chaves ou alteração do host:
+
+```bash
+# Após revisão e checkout controlado da PR #71 no 28server,
+# informar um digest REAL fornecido por fonte confiável.
+node integrations/deepharness/relay-image-offline-review.mjs \
+  --dry-run 'node@sha256:<64-digitos-hexadecimais-do-manifest>'
+```
+
+A referência acima é **um modelo de argumento**, jamais um digest
+pronto. Se não houver base Node já presente no cache local e
+identificável pelo digest confiável, a saída esperada é `NO_GO`.
+A versão Node **22**, a arquitetura linux/amd64 da imagem final,
+proveniência e conteúdo da cadeia ainda devem ser comprovados por
+procedimento independente. Uma imagem fixada por hash **não comprova
+sozinho** que é Node 22.
+
+`integrations/deepharness/relay-image-offline-review.test.mjs`
+executa validações sem Docker e rejeita base mutable, candidato de
+fornecedor arbitrário, arquitetura incorreta, valores de digest
+não correspondentes e alterações de segurança no Dockerfile/Compose
+(por exemplo, `ports`, `privileged` ou remoção do opt-in). Estes
+testes rodam na CI padrão do PR; não constroem imagem.
+
+O arquivo `agent-mesh-relay.compose.review.yml` **não recebeu**
+imagem nem paths operacionais: continua exigindo, em tempo de
+aprovação própria, um `DSH_RELAY_IMAGE_DIGEST` do artefato final e
+`DSH_RELAY_UID=995`, `DSH_RELAY_PRIMARY_GID=985`,
+`DSH_AGENT_OPS_GID=987`, certificados privados obtidos da custódia
+do operador e `DSH_RELAY_OPERATOR_ENABLE=0`. Os arquivos TLS
+continuam nas três montagens independentes só-leitura, sem expor o
+caminho real da chave no Git.
+
+**NO-GO operacional permanece:** imagem final não construída/
+verificada, socket Unix não provisionado, fingerprint pin do
+servidor não corroborado, backend ainda não aceita formalmente
+o fingerprint do cliente dedicado, e falta a autorização separada
+para ativação. Uma aprovação de CI não é aprovação de deploy.
+
+**Próximo gate operador:** inventário read-only das imagens locais
+sem puxar/build nada, por exemplo
+`docker image ls --digests --format '{{.Repository}}:{{.Tag}} {{.Digest}}'`
+em `root@28server`; procurar uma imagem Node 22 já existente e
+registrar apenas referência pública por digest, nunca segredos.
+Se não existir, a autorização para obter uma base revisada e
+construir o candidato será decisão posterior específica.
+
