@@ -46,7 +46,7 @@ function fixture(changes = {}) {
       return { accepted: true };
     },
   };
-  const registry = { get(x) { return x === workspace && allowed ? { sessionIds: new Set([lead]) } : null; } };
+  const registry = { get(x) { return x === workspace && allowed ? { sessionIds: [lead] } : null; } };
   const gate = async (ctx, submit) => {
     calls.gate++;
     calls.commitContext = ctx;
