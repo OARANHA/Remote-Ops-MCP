@@ -50,8 +50,8 @@ export function createOfficialDshHostSessionBackend(deps = {}) {
   async function team(auth) {
     const a = authority(auth);
     const workspace = workspaceRegistry.get(a.workspaceId);
-    if (!workspace || !(workspace.sessionIds instanceof Set) ||
-        !workspace.sessionIds.has(a.leadSessionId)) deny();
+    if (!workspace || !Array.isArray(workspace.sessionIds) ||
+        !workspace.sessionIds.includes(a.leadSessionId)) deny();
     const projection = await sessionController.projections(
       { sessionId: a.leadSessionId }, new AbortController().signal
     );
