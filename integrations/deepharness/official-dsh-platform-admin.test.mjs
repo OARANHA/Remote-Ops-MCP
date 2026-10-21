@@ -13,7 +13,7 @@ function fixture(){
     [FORBIDDEN,{id:FORBIDDEN,path:"/opt/other",title:"other",sessionIds:[lead]}],
   ]);
   const calls=[],grants=new Set(["workspace.list","workspace.create","workspace.rename",
-    "session.create","team.task.create","team.task.update"]);
+    "session.create","session.list","team.member.create","team.task.create","team.task.update"]);
   const env={
     workspaceParent:ROOT,
     authorizeRead:async ctx=>{if(!grants.has(ctx.operation))throw Error("revoked");},
@@ -49,6 +49,11 @@ function fixture(){
       resolveAgent:async id=>({agent:{id}}),
     },
     agentTeams:{
+      spawnTeammate:async(agent,input)=>{
+        calls.push(["spawn",agent.id,input.name]);
+        return {member:{id:"session-new-teammate",name:input.name,role:"teammate",phase:"active"}};
+      },
+
       createTask:async(agent,task)=>{
         calls.push(["task",agent.id,task.subject]);
         return {id:"task-1",revision:1,status:"pending"};
@@ -132,4 +137,19 @@ test("Revoked action fails before mutation or read",async()=>{
   assert.equal(calls.filter(x=>x[0]==="mkdir").length,0);
   grants.delete("workspace.list");
   await assert.rejects(api.listWorkspaces(),/revoked/);
+});
+
+test("Workspace session inventory and official teammate spawn obey scoped Lead",async()=>{
+  const {api,calls}=fixture();
+  assert.deepEqual(await api.listWorkspaceSessions({workspaceId:W}),[lead]);
+  const x=await api.createTeammate({workspaceId:W,leadSessionId:lead,
+    name:"revisor2",description:"Review design",prompt:"Review security risks",
+    provider:"nvidia",context:"fresh"});
+  assert.equal(x.member.name,"revisor2");
+  assert.equal(calls.filter(x=>x[0]==="spawn").length,1);
+  await assert.rejects(api.createTeammate({workspaceId:W,leadSessionId:"other",
+    name:"bad",description:"Bad",prompt:"Attempt",provider:"nvidia",context:"fresh"}),denied);
+  await assert.rejects(api.createTeammate({workspaceId:W,leadSessionId:lead,
+    name:"bad",description:"Bad",prompt:"Attempt",provider:"nvidia",context:"exploit"}),denied);
+  await assert.rejects(api.listWorkspaceSessions({workspaceId:FORBIDDEN}),denied);
 });
