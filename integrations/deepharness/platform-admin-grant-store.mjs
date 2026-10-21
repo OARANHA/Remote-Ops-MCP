@@ -69,13 +69,17 @@ function validate(state){
   return state;
 }
 function persist(file,state){
+  // load() rejects oversized files. Enforce the *same* bound before persisting
+  // so a successful grant/receipt never makes the store unreadable on restart.
+  const serialized=JSON.stringify(state)+"\n";
+  if(Buffer.byteLength(serialized,"utf8")>MAX_BYTES)deny("deepharness_platform_store_full");
   const dir=path.dirname(file);
   fs.mkdirSync(dir,{recursive:true,mode:0o700});
   const temp=file+"."+process.pid+"."+randomBytes(8).toString("hex")+".tmp";
   let fd;
   try{
     fd=fs.openSync(temp,"wx",0o600);
-    fs.writeFileSync(fd,JSON.stringify(state)+"\n","utf8");
+    fs.writeFileSync(fd,serialized,"utf8");
     fs.fsyncSync(fd);fs.closeSync(fd);fd=undefined;
     fs.renameSync(temp,file);
     const d=fs.openSync(dir,"r");try{fs.fsyncSync(d);}finally{fs.closeSync(d);}
