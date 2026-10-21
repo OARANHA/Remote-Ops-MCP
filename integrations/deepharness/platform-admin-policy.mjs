@@ -37,9 +37,16 @@ function validateGrant(grant,principal,action){
   return grant.revision;
 }
 function boundedResult(result){
-  if(result===null||typeof result!=="object"||
-    Buffer.byteLength(JSON.stringify(result),"utf8")>262144)deny();
-  return result;
+  if(result===null||typeof result!=="object")deny();
+  let serialized;
+  try {serialized=JSON.stringify(result);} catch {deny();}
+  if(typeof serialized!=="string"||
+    Buffer.byteLength(serialized,"utf8")>262144)deny();
+  // Return exactly what was size-checked. Returning the source object lets
+  // custom toJSON/getters conceal fields from the limit and leak on spread.
+  const detached=JSON.parse(serialized);
+  if(detached===null||typeof detached!=="object")deny();
+  return detached;
 }
 export function createDshPlatformPolicy({
   lookupCurrentGrant,withAuthorizedWrite,dispatchEnvelope,
