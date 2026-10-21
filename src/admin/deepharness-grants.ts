@@ -6,7 +6,7 @@ import { effectiveTargetEnabled,listSessions,listClients } from "../state/store.
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LEAD=/^session-[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const deny=()=>{throw Error("deepharness_grant_admin_unavailable");};
+const deny=(): never=>{throw Error("deepharness_grant_admin_unavailable");};
 const escapeHtml=(s:unknown)=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;")
  .replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
 
