@@ -14,6 +14,7 @@ COPY package*.json ./
 RUN if [ -f package-lock.json ]; then npm ci --omit=dev --no-audit --no-fund; else npm install --omit=dev --no-audit --no-fund; fi \
   && npm cache clean --force
 COPY --from=build /app/dist ./dist
+COPY integrations/deepharness ./integrations/deepharness
 RUN mkdir -p /app/config /app/data /app/secrets && chown -R node:node /app
 USER node
 EXPOSE 3000

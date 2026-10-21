@@ -8,3 +8,4 @@ config/targets.json
 .env
 *.log
 *.zip
+.ci-dsh-reviewed/

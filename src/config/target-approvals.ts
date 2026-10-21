@@ -29,10 +29,19 @@ export function prepareAgentTarget(input: {
   preset: AgentTargetPreset;
 }) {
   purge();
-  if ((input.preset === "managed-admin" || input.preset === "openhands-execute") && (env.AUTH_MODE !== "oauth" || !env.AUTH_SECRET || env.AUTH_SECRET.length < 32)) {
+  if ((input.preset === "managed-admin" || input.preset === "openhands-execute" || input.preset === "deepharness-semantic-lab") && (env.AUTH_MODE !== "oauth" || !env.AUTH_SECRET || env.AUTH_SECRET.length < 32)) {
     throw new OpsError("CAPABILITY_DENIED", "perfil privilegiado exige AUTH_MODE=oauth e AUTH_SECRET forte");
   }
+  if (input.preset === "deepharness-semantic-lab" &&
+      (input.targetId !== "deepharness-semantic-lab" || input.environment !== "development")) {
+    throw new OpsError("CAPABILITY_DENIED", "DSH semantic lab exige target exato e ambiente development");
+  }
   const device = requireLiveDevice(input.deviceId);
+  if (input.preset === "deepharness-semantic-lab" &&
+      !device.capabilities?.includes("deepharness.semantic")) {
+    throw new OpsError("CAPABILITY_DENIED",
+      "dispositivo Agent Mesh ainda não anunciou deepharness.semantic no laboratório");
+  }
   const target = buildAgentTargetFromPreset(input);
   if (input.preset === "managed-admin" && !device.capabilities?.includes(MANAGED_ADMIN_CAPABILITY)) {
     throw new OpsError("CAPABILITY_DENIED", `Agent Mesh device "${input.deviceId}" não anunciou ${MANAGED_ADMIN_CAPABILITY}; instale/ative o broker managed-admin primeiro`);
@@ -42,6 +51,8 @@ export function prepareAgentTarget(input: {
   const authority =
     input.preset === "postgres-readback"
       ? "pinned PostgreSQL readback only; generic Docker/process/write access remains disabled"
+      : input.preset === "deepharness-semantic-lab"
+        ? "DSH semantic lab only; named development target and active device capability required; no generic host/Docker/process/admin/write permissions"
       : input.preset === "openhands-read"
         ? "OpenHands metadata read-only; no execute, Docker, filesystem, process, service or write permissions"
         : input.preset === "openhands-execute"
@@ -90,6 +101,13 @@ export function applyAgentTargetApproval(input: {
   requireApprovalConfirmation(approval.id, input.confirmation);
 
   const liveDevice = requireLiveDevice(approval.target.deviceId!);
+  if (approval.target.id === "deepharness-semantic-lab" &&
+      approval.target.allowedSemanticCapabilities.length === 1 &&
+      approval.target.allowedSemanticCapabilities[0] === "deepharness.semantic" &&
+      !liveDevice.capabilities?.includes("deepharness.semantic")) {
+    throw new OpsError("CAPABILITY_DENIED",
+      "dispositivo Agent Mesh deixou de anunciar deepharness.semantic");
+  }
   if (approval.target.allowedSemanticCapabilities.includes(MANAGED_ADMIN_CAPABILITY) && !liveDevice.capabilities?.includes(MANAGED_ADMIN_CAPABILITY)) {
     throw new OpsError("CAPABILITY_DENIED", `Agent Mesh device "${approval.target.deviceId}" deixou de anunciar ${MANAGED_ADMIN_CAPABILITY}`);
   }

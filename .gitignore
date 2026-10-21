@@ -6,3 +6,4 @@ secrets/
 config/targets.json
 *.log
 .DS_Store
+.ci-dsh-reviewed/

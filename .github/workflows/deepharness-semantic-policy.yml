@@ -1,0 +1,34 @@
+name: DeepHarness semantic read-write policy gate
+
+on:
+  pull_request:
+    paths:
+      - 'integrations/deepharness/**'
+      - 'docs/DEEPHARNESS_SEMANTIC_READ_WRITE_GATE.md'
+      - '.github/workflows/deepharness-semantic-policy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  policy-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install locked runtime dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Validate pure JS policy (no network, DSH service or secrets)
+        run: |
+          node --check integrations/deepharness/semantic-policy.mjs
+          node --check integrations/deepharness/persistent-grant-store.mjs
+          node --check integrations/deepharness/official-dsh-host-session.mjs
+          node --check integrations/deepharness/private-bridge-backend.mjs
+          node --check integrations/deepharness/private-bridge-client.mjs
+          node --check integrations/deepharness/mcp-tools.mjs
+          node --check integrations/deepharness/composition.mjs
+          node --test integrations/deepharness/*.test.mjs

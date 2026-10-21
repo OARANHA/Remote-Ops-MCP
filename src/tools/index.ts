@@ -12,6 +12,7 @@ import { getTransport } from "../transport.js";
 import { assertConfiguredPath, resolveCheckedGitRepo, resolveCheckedPath, resolveCheckedProcessCwd } from "../security/paths.js";
 import { dispatchAgentOperation } from "../agent/gateway.js";
 import { redactText, redactObject } from "../security/redact.js";
+import { filterDockerListByAllowlist } from "../security/docker-list-scope.js";
 import type { ExecResult } from "../ssh/pool.js";
 import { effectiveTargetEnabled } from "../state/store.js";
 import { portainerStatus, portainerEndpoints, portainerStacks, portainerStack, updatePortainerStackEnv, redeployPortainerGitStack, createPortainerGitStack, startPortainerStack, stopPortainerStack, deletePortainerStack } from "../portainer/client.js";
@@ -297,7 +298,7 @@ const TOOL_DEFS: ToolDef[] = [
       target_id: z.string().regex(/^[a-z0-9][a-z0-9-]{1,39}$/),
       device_id: z.string().regex(/^dev_[A-Za-z0-9_-]{8,80}$/),
       environment: z.enum(["production","staging","development"]).default("production"),
-      preset: z.enum(["operator-workspace","read-only","openhands-read","openhands-execute","postgres-readback","managed-admin"]).default("operator-workspace"),
+      preset: z.enum(["operator-workspace","read-only","openhands-read","openhands-execute","postgres-readback","managed-admin","deepharness-semantic-lab"]).default("operator-workspace"),
     },
     mutation: true,
     destructive: false,
@@ -307,7 +308,7 @@ const TOOL_DEFS: ToolDef[] = [
       targetId: String(args.target_id),
       deviceId: String(args.device_id),
       environment: (args.environment ?? "production") as "production"|"staging"|"development",
-      preset: (args.preset ?? "operator-workspace") as "operator-workspace"|"read-only"|"openhands-read"|"openhands-execute"|"postgres-readback"|"managed-admin",
+      preset: (args.preset ?? "operator-workspace") as "operator-workspace"|"read-only"|"openhands-read"|"openhands-execute"|"postgres-readback"|"managed-admin"|"deepharness-semantic-lab",
     }),
   },
   {
@@ -509,6 +510,9 @@ const TOOL_DEFS: ToolDef[] = [
     inputSchema: { target: targetField },
     run: async (args) => {
       const t = resolveTarget(args.target);
+      if (t.allowedDockerContainers.length === 0) {
+        return { target: t.id, count: 0, containers: [] };
+      }
       const T = await tr(t);
       const res = await T.exec(["docker", "ps", "-a", "--format", "{{json .}}"]);
       if (res.code !== 0) dockerAccessError(res);
@@ -524,7 +528,8 @@ const TOOL_DEFS: ToolDef[] = [
             return { raw: redactText(l) };
           }
         });
-      return { target: t.id, count: containers.length, containers };
+      const scoped = filterDockerListByAllowlist(containers, t.allowedDockerContainers);
+      return { target: t.id, count: scoped.length, containers: scoped };
     },
   },
   {

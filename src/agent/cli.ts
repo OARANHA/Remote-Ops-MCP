@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import WebSocket from "ws";
 import { executeAgentOperation, type AgentOperation } from "./operations.js";
+import { canAdvertiseDshSemantic } from "./deepharness-advertisement.js";
 
 interface DeviceState {
   control_plane: string;
@@ -26,6 +27,7 @@ function agentCapabilities(): string[] {
       capabilities.push("host.managed_admin");
     }
   } catch {}
+  if (canAdvertiseDshSemantic()) capabilities.push("deepharness.semantic");
   return capabilities;
 }
 

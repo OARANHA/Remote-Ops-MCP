@@ -18,6 +18,27 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run build
       - run: node --experimental-strip-types --test test-openhands-bridge.mjs
+      - run: node --experimental-strip-types --test test-docker-list-scope.mjs
+      - run: node --test integrations/deepharness/*.test.mjs
+      - name: Verify DSH semantic Agent Mesh capability advertises only with trusted socket
+        run: node --test test-deepharness-agent-advertisement.mjs
+      - name: Verify human approval for dedicated DSH lab target (no remote agent)
+        run: node test-deepharness-semantic-target-approval.mjs
+      - name: Verify disabled DeepHarness Agent Mesh local receiver and synthetic Unix relay
+        run: node --test test-deepharness-agent-mesh-runtime.mjs
+      - name: Checkout the exact reviewed DSH semantic adapter and handler (CI only)
+        uses: actions/checkout@v4
+        with:
+          repository: OARANHA/deepharness
+          ref: 9c1ac05bf9a0a3fa2ef9f95a3248f156c3fa5d15
+          path: .ci-dsh-reviewed
+          persist-credentials: false
+      - name: Verify full disposable Agent Mesh Unix/mTLS chain against actual reviewed DSH handler
+        env:
+          DSH_CROSSREPO_SOURCE_SHA: 9c1ac05bf9a0a3fa2ef9f95a3248f156c3fa5d15
+        run: |
+          test "$(git -C .ci-dsh-reviewed rev-parse HEAD)" = "$DSH_CROSSREPO_SOURCE_SHA"
+          node --test test-deepharness-agent-mesh-mtls-chain.mjs
       - run: node test-exec-broker-session-capacity.mjs
       - run: node test-paperclip-semantic.mjs
       - run: node test-docker-candidate-contract.mjs
@@ -41,5 +62,19 @@ jobs:
       - run: node test-managed-admin-control-plane-e2e.mjs
       - run: node test-postgres-readback.mjs
       - run: node test-postgres-readback-proxy.mjs
+      - name: Validate opt-in DSH relay review Compose syntax (no containers)
+        env:
+          DSH_RELAY_IMAGE_DIGEST: ghcr.io/oaranha/ci-synthetic-dsh-relay@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          DSH_RELAY_UID: "12022"
+          DSH_RELAY_PRIMARY_GID: "12022"
+          DSH_AGENT_OPS_GID: "12021"
+          DSH_RELAY_OPERATOR_ENABLE: "0"
+          DSH_RELAY_WORKSPACE_ID: ci-synthetic-lab
+          DSH_RELAY_LEAD_SESSION_ID: ci-synthetic-lead
+          DSH_RELAY_SERVER_FP_SHA256: "aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa:aa"
+          DSH_RELAY_CA_FILE: /ci-not-present/ca.pem
+          DSH_RELAY_CLIENT_CERT_FILE: /ci-not-present/cert.pem
+          DSH_RELAY_CLIENT_KEY_FILE: /ci-not-present/key.pem
+        run: docker compose --profile dsh-relay-review -f integrations/deepharness/agent-mesh-relay.compose.review.yml config --quiet
       - name: Build production image
         run: docker build -t remote-ops-mcp:ci .

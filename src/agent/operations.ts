@@ -4,6 +4,7 @@ import { denySecretPath } from "../security/paths.js";
 import { callExecBroker } from "./exec-broker-client.js";
 import { callManagedAdminBroker } from "./managed-admin-broker-client.js";
 import { executeOpenHandsOperation } from "./openhands.js";
+import { executeDshAgentOperation } from "./deepharness.js";
 import { normalizeManagedAdminTicket } from "../privileged/managed-admin-ticket.js";
 
 export interface AgentOperation {
@@ -283,6 +284,7 @@ async function executePaperclipSemanticOperation(x: AgentOperation, opts?: ExecO
   } finally { clearTimeout(timer); }
 }
 export async function executeAgentOperation(x: AgentOperation, opts?: ExecOptions): Promise<ExecResult> {
+  if (x.op === "deepharness.semantic") return executeDshAgentOperation(x, opts);
   if (x.op === "host.managed_admin") return executeManagedAdminOperation(x, opts);
   if (x.op === "postgres.pinned_readback") return executePostgresPinnedReadbackOperation(x, opts);
   if (x.op.startsWith("openhands.")) return executeOpenHandsOperation(x, opts);

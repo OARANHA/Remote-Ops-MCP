@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import http from "node:http";
 import { executeAgentOperation } from "./dist/agent/operations.js";
 
 const seen=[];
+const dockerfile=fs.readFileSync('Dockerfile','utf8');
+assert.ok(dockerfile.includes('COPY integrations/deepharness ./integrations/deepharness'),
+  'runtime image must include the opt-in semantic integration modules');
 const server=http.createServer(async(req,res)=>{
   const chunks=[]; for await(const chunk of req) chunks.push(Buffer.from(chunk));
   seen.push({method:req.method,path:req.url,body:Buffer.concat(chunks).toString("utf8")});
