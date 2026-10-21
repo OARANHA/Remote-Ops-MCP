@@ -36,6 +36,16 @@ function validateGrant(grant,principal,action){
     grant.actions.some(x=>!ACTIONS.has(x))||!grant.actions.includes(action))deny();
   return grant.revision;
 }
+function scopedHostRequestId(principal,operation,requestId){
+  const bytes=createHash("sha256").update(JSON.stringify([
+    principal.actor,principal.clientId,principal.sessionId,operation,requestId,
+  ])).digest();
+  bytes[6]=(bytes[6]&0x0f)|0x50;
+  bytes[8]=(bytes[8]&0x3f)|0x80;
+  const hex=bytes.subarray(0,16).toString("hex");
+  return hex.slice(0,8)+"-"+hex.slice(8,12)+"-"+hex.slice(12,16)+
+    "-"+hex.slice(16,20)+"-"+hex.slice(20,32);
+}
 function boundedResult(result){
   if(result===null||typeof result!=="object")deny();
   let serialized;
@@ -61,8 +71,15 @@ export function createDshPlatformPolicy({
   return Object.freeze({
     async execute(trustedCaller,operation){
       const principal=principalOf(trustedCaller);
-      const envelope=makeDshPlatformEnvelope(operation);
+      // Validate the caller's exact business envelope before any operation.
+      const original=makeDshPlatformEnvelope(operation);
       const action=actionForDshPlatformOperation(operation.operation);
+      // Only mutation UUIDs are re-keyed; OAuth principal never crosses mTLS.
+      const envelope=READ.has(action)?original:makeDshPlatformEnvelope({
+        ...operation,requestId:scopedHostRequestId(
+          principal,operation.operation,operation.requestId,
+        ),
+      });
       const revision=await current(principal,action);
       if(READ.has(action)){
         const result=boundedResult(await dispatchEnvelope(envelope));
@@ -71,7 +88,7 @@ export function createDshPlatformPolicy({
         return result;
       }
       const {requestId}=operation;
-      const payloadHash=createHash("sha256").update(JSON.stringify(envelope.args)).digest("hex");
+      const payloadHash=createHash("sha256").update(JSON.stringify(original.args)).digest("hex");
       const context=Object.freeze({
         ...principal,action,revision,requestId,payloadHash,
         workspaceId:operation.workspaceId??null,
