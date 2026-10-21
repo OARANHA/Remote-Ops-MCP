@@ -1,5 +1,39 @@
 # DeepHarness Agent Teams via connected Remote-Ops MCP — read AND write
 
+## Decisão do proprietário — consumo exclusivo pelo ChatGPT (2026-10-20)
+
+**Único consumidor previsto da integração:** o próprio ChatGPT, através do
+MCP Wandora **já conectado e autenticado**; o proprietário solicita ações
+pela conversa. Não criar aplicação para múltiplos usuários, UI administrativa
+nova, portal, catálogo de agentes, outros clientes OAuth, nem plataforma de
+integrações genéricas só para este fluxo.
+
+**MVP obrigatório, um workspace e um Lead de laboratório:**
+1. Identificar o Lead autorizado e consultar suas tarefas.
+2. Ler mensagens/resultados do Lead.
+3. Enviar uma instrução textual aprovada e idempotente.
+4. Ler de volta o resultado e distinguir aceitação da conclusão.
+
+Reutilizar as operações `dsh_*`, as identidades, a infraestrutura e o
+transporte privado já implementados; **não aumentar arquitetura por inércia**.
+O fato de haver um único consumidor não elimina validação OAuth/sessão,
+autorização explícita por ação/workspace/Lead, TLS/mTLS, pin de certificados,
+limites de dados, auditoria mínima sem segredos, revogação e confirmação
+independente de resposta. `deepharness-read` continua estritamente
+read-only; não usar shell, Docker genérico, outro OAuth ou endpoint público
+para abreviar o caminho. Nenhuma mensagem real a Lead deve ser enviada sem
+consentimento específico para o canário.
+
+**Parar de adicionar funcionalidades fora do MVP** até demonstrar o ciclo
+de ponta a ponta no Lead de laboratório. O próximo esforço deve ser
+qualificação e ativação controlada do caminho existente, não outro produto.
+
+**Evidência em CI antes desta decisão:** o commit
+`b807f7978a23fd825a76be7c702394cf0e2cd4fd` da PR #71 teve CI
+`39503866098` e policy gate `39503866128` concluídas com SUCCESS.
+Esses testes exercitam ponte e handler reais com SessionController
+sintético, mas não comprovam produção nem resposta de Lead real.
+
 Status 2026-10-19: Draft engineering only; NO-GO for production.
 Owner authorized development of reading and writing through the existing ChatGPT
 Wandora MCP, plus one synthetic instruction to a verified laboratory Lead when
