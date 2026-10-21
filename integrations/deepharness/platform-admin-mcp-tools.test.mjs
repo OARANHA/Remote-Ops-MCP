@@ -39,5 +39,5 @@ test("eight optional tool definitions map only exact named DSH business actions"
 test("reject factory without authenticated policy adapter and absent MCP identity",async()=>{
   assert.throws(()=>createDshPlatformToolDefs({}),/unavailable/);
   const defs=createDshPlatformToolDefs({execute:async()=>true});
-  await assert.rejects(defs[0].run({},null),/unavailable/);
+  assert.throws(()=>defs[0].run({},null),/unavailable/);
 });
