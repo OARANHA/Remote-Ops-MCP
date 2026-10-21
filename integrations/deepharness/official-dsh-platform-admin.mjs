@@ -117,6 +117,35 @@ export function createOfficialDshPlatformAdmin({
         return Object.freeze({workspaceId:ws.id,leadSessionId:result.sessionId});
       });
     },
+    async listWorkspaceSessions(input){
+      exact(input,["workspaceId"]);
+      const ws=workspace(input.workspaceId);
+      return read("session.list",{workspaceId:ws.id},()=>{
+        const current=workspace(ws.id);
+        if(!Array.isArray(current.sessionIds)||current.sessionIds.length>10000)deny();
+        return Object.freeze([...current.sessionIds].map(id));
+      });
+    },
+    async createTeammate(input){
+      exact(input,["workspaceId","leadSessionId","name","description","prompt","provider","context"]);
+      const ws=workspace(input.workspaceId),leadSessionId=lead(ws,input.leadSessionId);
+      const name=label(input.name,80),description=label(input.description,500);
+      const prompt=label(input.prompt,4096),provider=id(input.provider);
+      if(!["fresh","fork"].includes(input.context))deny();
+      return write("team.member.create",{workspaceId:ws.id,leadSessionId},async()=>{
+        lead(workspace(ws.id),leadSessionId);
+        const resolved=await sessionController.resolveAgent(leadSessionId);
+        if(!resolved?.agent||resolved.error||typeof agentTeams.spawnTeammate!=="function")deny();
+        const created=await agentTeams.spawnTeammate(resolved.agent,{
+          name,description,prompt:[{type:"text",text:prompt}],
+          context:input.context,provider,signal:new AbortController().signal,
+        });
+        const member=created?.member;
+        if(!ID.test(member?.id)||member?.name!==name||member?.role!=="teammate")deny();
+        return Object.freeze({workspaceId:ws.id,leadSessionId,
+          member:{id:member.id,name:member.name,role:"teammate",phase:member.phase}});
+      });
+    },
     async createTeamTask(input){
       exact(input,["workspaceId","leadSessionId","subject","description"]);
       const ws=workspace(input.workspaceId),leadSessionId=lead(ws,input.leadSessionId);
