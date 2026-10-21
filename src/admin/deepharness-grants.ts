@@ -14,8 +14,8 @@ function requireConfiguredLab() {
   if(process.env.DSH_SEMANTIC_ENABLED!=="1"||
      process.env.DSH_SEMANTIC_TRANSPORT!=="agent-mesh-lab"||
      process.env.DSH_SEMANTIC_AGENT_TARGET_ID!=="deepharness-semantic-lab")deny();
-  const workspaceId=process.env.DSH_GRANT_WORKSPACE_ID;
-  const leadSessionId=process.env.DSH_GRANT_LEAD_SESSION_ID;
+  const workspaceId=process.env.DSH_GRANT_WORKSPACE_ID??"";
+  const leadSessionId=process.env.DSH_GRANT_LEAD_SESSION_ID??"";
   if(!workspaceId||!UUID.test(workspaceId)||!leadSessionId||!LEAD.test(leadSessionId)||
      workspaceId!=="fc24d43c-caf3-4059-8d82-5e9edd3c04c8"||
      leadSessionId!=="session-83cba7de-20a3-447b-967a-36315132db1a")deny();
