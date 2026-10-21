@@ -23,10 +23,12 @@ export function selectCurrentDshGrantSubject({
   const required={read:"GRANT READ TEAM_3",instruct:"GRANT INSTRUCT TEAM_3",revoke:"REVOKE TEAM_3"}[operation];
   if(confirmation!==required)deny();
   const session=sessions.find(s=>s.session_id===sessionId);
-  if(!session||session.revoked_at||!Number.isSafeInteger(session.refresh_expires_at)||
-    session.refresh_expires_at<=now||!ID.test(session.client_id))deny();
+  if(!session||!ID.test(session.client_id))deny();
   const client=clients.find(c=>c.client_id===session.client_id);
-  if(!client||client.revoked_at)deny();
+  if(operation!=="revoke"&&(
+    session.revoked_at||!Number.isSafeInteger(session.refresh_expires_at)||
+    session.refresh_expires_at<=now||!client||client.revoked_at
+  ))deny();
   const clientId=session.client_id;
   return Object.freeze({
     actor:`oauth:${clientId}:${sessionId.slice(0,12)}`,
