@@ -8,6 +8,7 @@ import { closeTargetPool } from "../ssh/pool.js";
 import { audit } from "../audit/audit.js";
 import { agentConnectionStatus, disconnectAgentDevice } from "../agent/gateway.js";
 import { installDshGrantAdminRoutes } from "./deepharness-grants.js";
+import { installDshPlatformAdminRoutes } from "./deepharness-platform-grants.js";
 import {
   activeSessionCount,
   approvePairingByCode,
@@ -101,6 +102,7 @@ export function adminRouter():Router{
   r.get("/",requireAdmin,(req,res)=>{const claims=(req as Request & {adminClaims:AdminClaims}).adminClaims,notice=typeof req.query.notice==="string"?req.query.notice.slice(0,160):undefined;res.type("html").send(dashboardPage(claims,notice));});
   r.use(requireAdmin); r.use(express.urlencoded({extended:false,limit:"16kb"}));
   installDshGrantAdminRoutes(r,{requireCsrf,adminAudit});
+  installDshPlatformAdminRoutes(r,{requireCsrf,adminAudit});
   r.post("/logout",requireCsrf,(_req,res)=>{clearAdminCookie(res);res.redirect(303,"/admin/login");});
   r.post("/pair/approve",requireCsrf,(req,res)=>{const code=String((req.body as Record<string,unknown>)?.code??"");const p=approvePairingByCode(code);adminAudit(req,"admin.approve_device_pairing",p?("pairing:"+p.pairing_id):undefined,p?"ok":"denied",p?undefined:"PAIRING_NOT_FOUND");res.redirect(303,`/admin?notice=${encodeURIComponent(p?`Pairing aprovado para ${p.hostname}.`:"Código de pairing inválido ou expirado.")}`);});
   r.post("/agent-devices/:deviceId/revoke",requireCsrf,(req,res)=>{const ok=revokeDevice(req.params.deviceId);if(ok)disconnectAgentDevice(req.params.deviceId);adminAudit(req,"admin.revoke_agent_device",req.params.deviceId,ok?"ok":"denied",ok?undefined:"DEVICE_NOT_FOUND");res.redirect(303,`/admin?notice=${encodeURIComponent(ok?"Agent device revogado imediatamente.":"Agent device não encontrado.")}`);});
