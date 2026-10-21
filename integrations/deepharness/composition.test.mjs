@@ -20,7 +20,7 @@ function build(overrides = {}) {
         actions: ["team.read", "chat.read", "lead.instruct"] } : null;
     },
     workspaceRegistry: { get(id) { return id === "lab" ?
-      { sessionIds: new Set(["lead-123"]) } : null; } },
+      { sessionIds: ["lead-123"] } : null; } },
     sessionController: {
       async projections() {
         calls.projections++;
