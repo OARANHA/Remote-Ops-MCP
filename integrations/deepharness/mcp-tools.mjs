@@ -2,7 +2,7 @@
 import {readFile} from "node:fs/promises";
 import {z} from "zod";
 import {composeDeepharnessReadWriteOverMtls,composeDeepharnessReadWriteOverAgentMesh} from "./composition.mjs";
-import {createPersistentDshGrantStore} from "./persistent-grant-store.mjs";
+import {getDshGrantStore} from "./grant-store-runtime.mjs";
 
 const ID=z.string().min(1).max(256);
 const UUID=z.string().uuid();
@@ -47,8 +47,7 @@ export async function loadDeepharnessToolDefs() {
     process.env.DSH_SEMANTIC_AGENT_TARGET_ID!=="deepharness-semantic-lab"
   ))deny();
   runtimePromise??=(async()=>{
-    const grantStore=createPersistentDshGrantStore({file:"/app/data/deepharness-grants.json",
-      audit:event=>console.log(JSON.stringify({ts:new Date().toISOString(),level:"info",source:"dsh-grant-store",...event}))});
+    const grantStore=getDshGrantStore();
     let policy;
     if(transport==="agent-mesh-lab"){
       const [{getTarget},{dispatchAgentOperation},{effectiveTargetEnabled}]=await Promise.all([
