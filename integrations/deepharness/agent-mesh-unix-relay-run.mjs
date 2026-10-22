@@ -47,7 +47,7 @@ export async function startDshUnixRelayRuntime({
       });
     }catch{
       // Platform failure must not stop the already running V1 relay.
-      process.stderr.write("DSH_PLATFORM_RELAY_NOT_STARTED\\n");
+      process.stderr.write("DSH_PLATFORM_RELAY_NOT_STARTED\n");
     }
     return Object.freeze({...existing,platformReady:!!platform,close:async()=>{
       const results=await Promise.allSettled([existing.close(),...(platform?[platform.close()]:[])]);
