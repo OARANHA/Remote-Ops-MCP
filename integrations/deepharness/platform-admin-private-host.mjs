@@ -5,6 +5,7 @@
  */
 import {createDshPlatformDurableReplay} from "./platform-admin-durable-replay.mjs";
 import {createDshPlatformPrivateRelay} from "./platform-admin-private-relay.mjs";
+import {assertDshPlatformHostReadiness} from "./platform-admin-host-readiness.mjs";
 
 const deny=()=>{throw Error("deepharness_platform_host_composition_unavailable");};
 
@@ -15,10 +16,11 @@ const deny=()=>{throw Error("deepharness_platform_host_composition_unavailable")
  * NOT a value supplied inside JSON. An absent dependency fails closed.
  */
 export function composeDshPlatformPrivateHost({
- admin,authenticatePeer,replayFile,
+ admin,authenticatePeer,replayFile,verifiedOfficialServices,
+ exclusiveReplayWriter,privateTransportAuthenticated,
 }={}){
- if(typeof authenticatePeer!=="function"||
-    typeof replayFile!=="string"||replayFile.length===0)deny();
+ assertDshPlatformHostReadiness({admin,authenticatePeer,replayFile,
+  verifiedOfficialServices,exclusiveReplayWriter,privateTransportAuthenticated});
  const replay=createDshPlatformDurableReplay({file:replayFile});
  return createDshPlatformPrivateRelay({
   admin,authenticatePeer,
