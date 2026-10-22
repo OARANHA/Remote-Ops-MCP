@@ -142,3 +142,49 @@ jobs:
           name: dsh-platform-published-digest-${{ github.event.pull_request.head.sha }}
           path: platform-candidate-digest.txt
           retention-days: 7
+
+  dsh-control-plane-image-publish:
+    needs: verify
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'OARANHA/Remote-Ops-MCP' && github.event.pull_request.head.ref == 'feat/dsh-platform-oauth-transport-contract-20261021'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Verify source revision and build context
+        env:
+          SOURCE_REVISION: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_REVISION"
+          test -f Dockerfile
+          test -f package-lock.json
+          test -f integrations/deepharness/platform-admin-mcp-tools.mjs
+          test -f integrations/deepharness/platform-admin-agent-receiver.mjs
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish full control plane with immutable SHA tag
+        env:
+          SOURCE_REVISION: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/oaranha/remote-ops-mcp:dsh-control-plane-sha-$SOURCE_REVISION"
+          docker build --platform linux/amd64 --build-arg "SOURCE_REVISION=$SOURCE_REVISION" -t "$image" .
+          test "$(docker image inspect --format '{{.Config.User}}' "$image")" = node
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --entrypoint node "$image" --input-type=module -e 'import("/app/integrations/deepharness/platform-admin-mcp-tools.mjs").then(m=>{if(process.getuid()===0||Object.keys(m).length===0)process.exit(1);console.log("DSH_CONTROL_PLANE_IMPORT_GREEN")})'
+          docker push "$image"
+          docker pull "$image"
+          docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$image" | grep '^ghcr.io/oaranha/remote-ops-mcp@sha256:' > control-plane-digest.txt
+          test -s control-plane-digest.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dsh-control-plane-published-digest-${{ github.event.pull_request.head.sha }}
+          path: control-plane-digest.txt
+          retention-days: 7
