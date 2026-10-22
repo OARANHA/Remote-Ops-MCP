@@ -30,6 +30,29 @@ test('runtime rejects incomplete, fabricated or broad host authority',()=>{
   {clientFingerprintSha256:'bad'},{other:true}])
   assert.throws(()=>validateOperationalHostConfig({...base,platformAdmin:{...platformAdmin,...patch}}));
 });
+test('readiness is computed and emitted even when the operational Context has no logger',async()=>{
+ const previous=console.info,events=[];let inspections=0;
+ console.info=value=>events.push(JSON.parse(value));
+ try{
+  const ctx={effect(){}};
+  await startOperationalReadHost(base,{
+   Pool:class{on(){}async end(){}},assertAuthoritativePgReadPool:async()=>{},
+   createAuthoritativePgReadQuery:()=>()=>{},createDiscovery:()=>({get:async()=>{}}),
+   loadLayeredEnv:()=>({}),inspectPlatformServices:actual=>{
+    assert.equal(actual,ctx);inspections++;
+    return {ready:true,directoryBrowse:true,services:{workspaceRegistry:true},secret:'MUST_NOT_APPEAR'};
+   },sdk:{},
+  },{
+   readFile:async name=>name.endsWith('db-password')?'a'.repeat(64):Buffer.from('TLS fixture'),
+   lookup:async name=>[{address:name==='deepharness-web-edge'?'172.19.0.12':'172.30.0.2'}],
+   boot:async()=>({ctx,service:{}}),listen:async()=>({}),
+  });
+  assert.equal(inspections,1);assert.equal(events.length,1);
+  assert.equal(events[0].event,'DSH_PLATFORM_HOST_READINESS');
+  assert.equal(events[0].ready,true);
+  assert.ok(!JSON.stringify(events).includes('MUST_NOT_APPEAR'));
+ }finally{console.info=previous;}
+});
 test('existing host passes exact Context to V2 once, and keeps V1 when optional V2 cannot initialize',async()=>{
  for(const fail of [false,true]){
   let warnings=0,builds=0,listener;
