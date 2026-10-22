@@ -80,3 +80,53 @@ jobs:
         run: docker compose --profile dsh-relay-review -f integrations/deepharness/agent-mesh-relay.compose.review.yml config --quiet
       - name: Build production image
         run: docker build -t remote-ops-mcp:ci .
+
+  dsh-platform-candidate-publish:
+    needs: verify
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'OARANHA/Remote-Ops-MCP' && github.event.pull_request.head.ref == 'feat/dsh-platform-oauth-transport-contract-20261021'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/checkout@v4
+        with:
+          repository: OARANHA/deepharness
+          ref: 9c1ac05bf9a0a3fa2ef9f95a3248f156c3fa5d15
+          path: .ci-dsh-reviewed
+          persist-credentials: false
+      - name: Qualify exact deployed source overlay before candidate publication
+        run: |
+          test "$(git -C .ci-dsh-reviewed rev-parse HEAD)" = '9c1ac05bf9a0a3fa2ef9f95a3248f156c3fa5d15'
+          git -C .ci-dsh-reviewed apply --check ../integrations/deepharness/platform-admin-existing-runtime.patch
+          git -C .ci-dsh-reviewed apply ../integrations/deepharness/platform-admin-existing-runtime.patch
+          node --test test-deepharness-platform-existing-runtime.mjs .ci-dsh-reviewed/deploy/mcp/operational-host.test.mjs .ci-dsh-reviewed/deploy/mcp/existing-profile-host.test.mjs
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish inert SHA-addressed candidate only after the full verify job
+        env:
+          SOURCE_REVISION: ${{ github.event.pull_request.head.sha }}
+        run: |
+          docker build --platform linux/amd64 --network none --pull=false --build-arg "SOURCE_REVISION=$SOURCE_REVISION" -f integrations/deepharness/Dockerfile.platform-existing-host.review -t local/dsh-platform-candidate .
+          test "$(docker image inspect --format '{{.Config.User}}' local/dsh-platform-candidate)" = '1000:1000'
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --entrypoint node local/dsh-platform-candidate -e 'import("/opt/wandora-mcp-verifier/platform-admin/platform-admin-private-host.mjs").then(m=>{if(process.getuid()===0||typeof m.createDshPlatformExistingHostHandler!=="function")process.exit(1);console.log("DSH_PLATFORM_CANDIDATE_IMPORT_GREEN_NO_HOST_STARTED")})'
+          candidate_tag="ghcr.io/oaranha/remote-ops-mcp-dsh-platform-candidate:sha-$SOURCE_REVISION"
+          docker tag local/dsh-platform-candidate "$candidate_tag"
+          docker push "$candidate_tag"
+          docker pull "$candidate_tag"
+          docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$candidate_tag" > platform-candidate-digest.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dsh-platform-published-digest-${{ github.event.pull_request.head.sha }}
+          path: platform-candidate-digest.txt
+          retention-days: 7
