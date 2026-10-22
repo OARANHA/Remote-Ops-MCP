@@ -23,7 +23,14 @@ async function optionalDshPlatformTools():Promise<RuntimeToolDef[]> {
   if(process.env.DSH_PLATFORM_MCP_ENABLED!=="1")return [];
   const moduleUrl=new URL("../../integrations/deepharness/platform-admin-runtime.mjs",import.meta.url);
   const integration=await import(moduleUrl.href) as {loadDshPlatformToolDefs:()=>Promise<RuntimeToolDef[]>};
-  return integration.loadDshPlatformToolDefs();
+  try { return await integration.loadDshPlatformToolDefs(); }
+  catch {
+    // A disabled/misconfigured V2 must never take the existing V1 offline.
+    // No V2 tools or authority are exposed on failure.
+    console.error(JSON.stringify({ts:new Date().toISOString(),level:"error",
+      msg:"deepharness_platform_tools_unavailable"}));
+    return [];
+  }
 }
 
 export async function createServer(ctx:ToolCtx):Promise<McpServer>{
