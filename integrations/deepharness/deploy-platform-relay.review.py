@@ -19,11 +19,11 @@ REV = 'efb0b9d0cc22a0b11531732362fd44e8ee573804'
 IMAGE = 'sha256:35582d3b80a56174086d229793ef8e99d2e39c773cc682d58a8f652283c306d2'
 NAME = 'wandora-dsh-relay-lab-canary'
 BACKUP = NAME + '-v1-backup-efb0b9d'
-ROOT = pathlib.Path('/opt/wandora/dsh-platform-relay-efb0b9d')
+ROOT = pathlib.Path('/opt/wandora/dsh-platform-relay-recovery-20261022-v2')
 OLD = pathlib.Path('/run/wandora/deepharness-semantic')
 NEW = pathlib.Path('/run/wandora/deepharness-platform')
 DEST = '/opt/wandora-dsh-relay'
-QUARANTINE = pathlib.Path('/run/wandora/dsh-relay-rollback-efb0b9d')
+QUARANTINE = pathlib.Path('/run/wandora/dsh-relay-rollback-recovery-20261022-v2')
 FILES = {
  'private-bridge-client.mjs': '0bfccd671820a857f5850907e4e4105a0b445a8c8717490d8e361e81e99661b0',
  'agent-mesh-unix-relay.mjs': 'afb726baac589f2c45d422935c9d0574e9981d561756a228c0261b05a155f5ce',
@@ -127,6 +127,17 @@ def wait_container_absent(container_id):
     raise RuntimeError('original_removal_not_confirmed')
 
 
+def verify_empty_platform_directory():
+    # A failed attempt may have left the verified directory. Preserve it, and
+    # never remove or replace any endpoint or other entry to permit a retry.
+    if NEW.exists():
+        verify_dir(NEW)
+        require(not any(NEW.iterdir()))
+        return True
+    require(not NEW.is_symlink())
+    return False
+
+
 
 def quarantine_endpoint(folder, private, label):
     # Candidate endpoints were absent before startup. Move (never follow/delete)
@@ -188,7 +199,7 @@ def main():
     require(env.get('DSH_PLATFORM_RELAY_ENABLED') != '1')
     require(all('\n' not in k + v and '\r' not in k + v for k, v in env.items()))
     require(not ROOT.exists() and not ROOT.is_symlink())
-    require(not NEW.exists() and not NEW.is_symlink())
+    verify_empty_platform_directory()
     require(not QUARANTINE.exists() and not QUARANTINE.is_symlink())
     # Exact-name collision test, no fallback to a different container.
     require(not run('docker', 'ps', '-aq', '--filter', 'name=^/' + BACKUP + '$'))
@@ -217,9 +228,10 @@ def main():
         IMAGE, '--input-type=module', '-e',
         'await import("' + DEST + '/agent-mesh-unix-relay-run.mjs");console.log("IMPORT_OK")')
     print('PINNED_SOURCE_AND_NONROOT_IMPORT=GREEN', flush=True)
-    NEW.mkdir(mode=0o2710)
-    os.chown(NEW, 995, 987)
-    os.chmod(NEW, 0o2710)
+    if not verify_empty_platform_directory():
+        NEW.mkdir(mode=0o2710)
+        os.chown(NEW, 995, 987)
+        os.chmod(NEW, 0o2710)
     verify_dir(NEW)
     QUARANTINE.mkdir(mode=0o700)
     os.chmod(QUARANTINE, 0o700)
