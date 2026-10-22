@@ -38,6 +38,6 @@ test("inventory gaps or invalid references deny",()=>{
 });
 test("fingerprint independent of workspace input order",()=>{
   const a=sample();a.workspaces.push({id:"elus",sessionCount:1,sessionsComplete:true,activity:"idle",skillRootsComplete:true});
-  const b=sample();b.workspaces.reverse();
+  const b=structuredClone(a);b.workspaces.reverse();
   assert.equal(planDshCleanup(a).inventoryFingerprint,planDshCleanup(b).inventoryFingerprint);
 });
