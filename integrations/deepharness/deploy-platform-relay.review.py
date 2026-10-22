@@ -3,6 +3,7 @@
 No DSH business calls, host platform authority, OAuth grants or agent changes.
 """
 import hashlib
+import http.client
 import json
 import os
 import pathlib
@@ -49,6 +50,54 @@ def run(*args, timeout=55):
 def require(value):
     if not value:
         raise RuntimeError('precondition_denied')
+
+
+def engine_request(method, path, body=None):
+    # Operator-only deployment: use the same local Docker engine as the CLI.
+    # No remote TCP socket, shell, credential output or DSH business operation.
+    require(not os.environ.get('DOCKER_HOST') and not os.environ.get('DOCKER_CONTEXT'))
+    context = json.loads(run('docker', 'context', 'inspect'))
+    endpoint = context[0]['Endpoints']['docker']['Host']
+    require(endpoint.startswith('unix:///'))
+    connection = http.client.HTTPConnection('localhost', timeout=30)
+    channel = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    channel.settimeout(30)
+    try:
+        channel.connect(endpoint[len('unix://'):])
+        connection.sock = channel
+        encoded = None if body is None else json.dumps(body).encode()
+        connection.request(method, path, encoded, {'Content-Type': 'application/json'})
+        response = connection.getresponse()
+        data = response.read(4 * 1024 * 1024 + 1)
+        require(response.status in (200, 201) and len(data) <= 4 * 1024 * 1024)
+        return json.loads(data)
+    finally:
+        connection.close()
+        channel.close()
+
+
+def prepare_autoremove_backup(old):
+    # Freeze a stopped recovery container BEFORE stopping an auto-removed V1.
+    # Preserve exact Config/HostConfig, changing only AutoRemove; do not start it.
+    current = engine_request('GET', '/containers/' + old['Id'] + '/json')
+    require(current['Id'] == old['Id'] and current['Config'] == old['Config']
+            and current['HostConfig'] == old['HostConfig'])
+    payload = json.loads(json.dumps(old['Config']))
+    payload['HostConfig'] = json.loads(json.dumps(old['HostConfig']))
+    payload['HostConfig']['AutoRemove'] = False
+    result = engine_request('POST', '/containers/create?name=' + BACKUP, payload)
+    recovery_id = result['Id']
+    require(re.fullmatch(r'[a-zA-Z0-9]+', recovery_id))
+    clone = json.loads(run('docker', 'inspect', recovery_id))[0]
+    require(clone['Image'] == old['Image'] and clone['Config'] == old['Config'])
+    expected_host = dict(old['HostConfig'], AutoRemove=False)
+    require(clone['HostConfig'] == expected_host)
+    mount_fields = ('Destination', 'Source', 'RW', 'Type')
+    mounts = lambda item: sorted(tuple(m[k] for k in mount_fields) for m in item['Mounts'])
+    require(mounts(clone) == mounts(old))
+    require(not clone['State']['Running'] and clone['State']['Status'] == 'created')
+    print('AUTOREMOVE_V1_RECOVERY_CONTAINER=VERIFIED_STOPPED', flush=True)
+    return recovery_id
 
 
 def verify_dir(p):
@@ -106,7 +155,7 @@ def main():
     require(sys.argv[1:] == ['--apply'])
     require(os.geteuid() == 0 and socket.gethostname() == '28server')
     old = json.loads(run('docker', 'inspect', NAME))[0]
-    require(old['State']['Running'] and not old['HostConfig']['AutoRemove'])
+    require(old['State']['Running'])
     require(old['Image'] == IMAGE and old['Config']['User'] == '995:985')
     require(old['HostConfig'].get('GroupAdd') == ['987'])
     require(set(old['NetworkSettings']['Networks']) == {'deepharness_mcp-private'})
@@ -181,19 +230,27 @@ def main():
             '--mount', f'type=bind,src={code},dst={DEST},readonly',
             '--entrypoint', 'node', IMAGE, DEST + '/agent-mesh-unix-relay-run.mjs']
     original_inode = (OLD / 'bridge.sock').lstat().st_ino
+    autoremove = old['HostConfig']['AutoRemove']
+    recovery_id = prepare_autoremove_backup(old) if autoremove else old['Id']
     stopped = renamed = False
     new_id = None
     try:
         run('docker', 'stop', '--time', '15', old['Id'])
+        if autoremove:
+            # Docker stop must have completed removal before a second writer can start.
+            require(not run('docker', 'ps', '-aq', '--no-trunc', '--filter', 'id=' + old['Id']))
+        else:
+            require(not json.loads(run('docker', 'inspect', old['Id']))[0]['State']['Running'])
         stopped = True
-        require(not json.loads(run('docker', 'inspect', old['Id']))[0]['State']['Running'])
+        renamed = autoremove
         try:
             stale = (OLD / 'bridge.sock').lstat()
             require(stale.st_ino == original_inode and verify_socket(OLD / 'bridge.sock'))
             quarantine_endpoint(OLD, QUARANTINE, 'original-stale-v1-endpoint')
         except FileNotFoundError:
             pass
-        run('docker', 'rename', old['Id'], BACKUP)
+        if not autoremove:
+            run('docker', 'rename', old['Id'], BACKUP)
         renamed = True
         new_id = run(*cmd)
         run('docker', 'start', new_id)
@@ -214,7 +271,7 @@ def main():
         require('DSH_UNIX_RELAY_LISTENING' in logs and 'NOT_STARTED' not in logs)
     except BaseException:
         if stopped:
-            restore_v1(old['Id'], new_id, renamed, QUARANTINE)
+            restore_v1(recovery_id, new_id, renamed, QUARANTINE)
         raise
     print('RELAY_V1_SOCKET=GREEN\nRELAY_V2_SOCKET=GREEN\nV1_BACKUP=' + BACKUP)
     print('HOST_AUTHORITY_AGENT_TARGET_AND_OAUTH_GRANTS=NOT_ACTIVATED')
@@ -223,6 +280,12 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except BaseException:
-        print('RELAY_DEPLOYMENT=STOPPED; inspect local state before retry', file=sys.stderr)
+    except BaseException as error:
+        # Emit only exception type and script line: never env, Docker stderr or TLS data.
+        trace = error.__traceback__
+        while trace.tb_next is not None:
+            trace = trace.tb_next
+        print('RELAY_DEPLOYMENT=STOPPED; error_type=' + type(error).__name__
+              + '; line=' + str(trace.tb_lineno) + '; inspect local state before retry', file=sys.stderr)
         sys.exit(1)
+
