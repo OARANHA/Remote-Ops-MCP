@@ -1,13 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Readable} from 'node:stream';
-import {mkdtempSync,rmSync} from 'node:fs';
+import {mkdtempSync,rmSync,existsSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import * as host from './platform-admin-private-host.mjs';
 
 const PIN=Array(32).fill('ab').join(':');
+test('host readiness inspects official capabilities without a listener, grant or replay write',()=>{
+ const f=fixture();
+ try{
+  assert.equal(typeof host.inspectDshPlatformExistingHostServices,'function');
+  const report=host.inspectDshPlatformExistingHostServices(f.ctx);
+  assert.equal(report.ready,true);assert.equal(report.directoryBrowse,true);
+  assert.equal(f.writes(),0);assert.equal(existsSync(f.options.replayFile),false);
+  f.ctx.sessionController={...f.ctx.sessionController,create:undefined};
+  assert.equal(host.inspectDshPlatformExistingHostServices(f.ctx).ready,false);
+  f.ctx.directoryPicker={capability:()=>{throw Error('unavailable');}};
+  assert.equal(host.inspectDshPlatformExistingHostServices(f.ctx).directoryBrowse,false);
+ }finally{f.dispose();}
+});
 function fixture(){
  const root=mkdtempSync(join(tmpdir(),'dsh-existing-host-'));
  const rows=new Map();let writes=0;
