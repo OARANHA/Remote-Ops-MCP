@@ -139,12 +139,13 @@ class RecoveryTests(unittest.TestCase):
         old = {
             'Id': 'original', 'Image': 'sha256:image',
             'Config': {'Image': 'sha256:image', 'Env': ['PRIVATE=value'], 'Cmd': ['run']},
-            'HostConfig': {'AutoRemove': True, 'ReadonlyRootfs': True, 'NetworkMode': 'private'},
+            'HostConfig': {'AutoRemove': True, 'ReadonlyRootfs': True, 'NetworkMode': 'private', 'OomKillDisable': None},
             'Mounts': [{'Destination': '/socket', 'Source': '/socket', 'RW': True, 'Type': 'bind'}],
         }
         clone = json.loads(json.dumps(old))
         clone.update(Id='recovery', State={'Running': False, 'Status': 'created'})
         clone['HostConfig']['AutoRemove'] = False
+        clone['HostConfig']['OomKillDisable'] = False  # Observed real Docker default.
         requests = []
 
         def engine(method, path, body=None):
@@ -153,6 +154,7 @@ class RecoveryTests(unittest.TestCase):
                 return old
             self.assertTrue(old['HostConfig']['AutoRemove'])
             self.assertFalse(body['HostConfig']['AutoRemove'])
+            self.assertIs(body['HostConfig']['OomKillDisable'], False)
             self.assertEqual(body['Env'], old['Config']['Env'])
             return {'Id': 'recovery'}
 
