@@ -17,6 +17,19 @@ spec.loader.exec_module(d)
 
 
 class RecoveryTests(unittest.TestCase):
+    def test_retry_preserves_empty_directory_and_rejects_existing_entries(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp) / 'platform'
+            folder.mkdir()
+            inode = folder.stat().st_ino
+            with patch.object(d, 'NEW', folder), patch.object(d, 'verify_dir'):
+                self.assertTrue(d.verify_empty_platform_directory())
+                (folder / 'bridge.sock').write_text('preserve')
+                with self.assertRaises(RuntimeError):
+                    d.verify_empty_platform_directory()
+            self.assertEqual(folder.stat().st_ino, inode)
+            self.assertEqual((folder / 'bridge.sock').read_text(), 'preserve')
+
     @unittest.skipUnless(os.environ.get('DSH_RELAY_DOCKER_TEST_IMAGE'), 'Docker smoke is explicit in CI')
     def test_real_engine_autoremove_backup_can_restart_original_command(self):
         image = os.environ['DSH_RELAY_DOCKER_TEST_IMAGE']
