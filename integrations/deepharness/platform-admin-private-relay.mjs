@@ -12,7 +12,7 @@ const bounded=value=>{
  if(typeof json!=="string"||Buffer.byteLength(json,"utf8")>262144)deny();
  let result;
  try{result=JSON.parse(json);}catch{deny();}
- if(!result||typeof result!=="object"||Array.isArray(result))deny();
+ if(!result||typeof result!=="object")deny();
  return result;
 };
 /**
