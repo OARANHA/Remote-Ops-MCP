@@ -30,7 +30,7 @@ function validReceipt(r){
   r.action===ACTIONS[r.operation]&&HASH.test(r.payloadHash)&&
   ["pending","committed"].includes(r.status)&&
   Number.isSafeInteger(r.createdAt)&&
-  (r.status==="pending"?r.result===null:obj(r.result));
+  (r.status==="pending"?r.result===null:(obj(r.result)||Array.isArray(r.result)));
 }
 function validate(state){
  if(!obj(state)||state.version!==1||!obj(state.receipts)||
