@@ -135,3 +135,25 @@ export function createDshPlatformExistingHostHandler({
  return Object.freeze({handle,dispose,
   readiness:Object.freeze({officialServices:true,directoryBrowse:true})});
 }
+
+/** Read-only readiness report: no business calls, files, listeners or grants. */
+export function inspectDshPlatformExistingHostServices(ctx){
+ const required={
+  workspaceRegistry:["list","get","resolveByPath"],
+  workspaceController:["create","rename"],
+  directoryPickerController:["createDirectory"],
+  sessionController:["create","resolveAgent"],
+  agentTeams:["spawnTeammate","createTask","updateTask"],
+  directoryPicker:["capability"],
+ };
+ const services={};
+ for(const [name,methods] of Object.entries(required)){
+  try{services[name]=methods.every(method=>typeof ctx?.[name]?.[method]==="function");}
+  catch{services[name]=false;}
+ }
+ let directoryBrowse=false;
+ try{directoryBrowse=services.directoryPicker&&ctx.directoryPicker.capability()?.kind==="browse";}
+ catch{}
+ return Object.freeze({ready:Object.values(services).every(Boolean)&&directoryBrowse,
+  directoryBrowse,services:Object.freeze(services)});
+}
