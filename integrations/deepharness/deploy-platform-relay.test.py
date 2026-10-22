@@ -4,9 +4,11 @@ import copy
 import importlib.util
 import io
 import json
+import os
 import pathlib
 import tempfile
 import unittest
+import uuid
 from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('deploy', pathlib.Path(__file__).with_name('deploy-platform-relay.review.py'))
@@ -15,6 +17,33 @@ spec.loader.exec_module(d)
 
 
 class RecoveryTests(unittest.TestCase):
+    @unittest.skipUnless(os.environ.get('DSH_RELAY_DOCKER_TEST_IMAGE'), 'Docker smoke is explicit in CI')
+    def test_real_engine_autoremove_backup_can_restart_original_command(self):
+        image = os.environ['DSH_RELAY_DOCKER_TEST_IMAGE']
+        token = uuid.uuid4().hex
+        backup_name = 'dsh-recovery-test-' + token
+        original_id = recovery_id = None
+        try:
+            original_id = d.run('docker', 'create', '--name', 'dsh-original-test-' + token,
+                                '--rm', '--network', 'none', '--read-only',
+                                '--entrypoint', 'node', image, '-e', 'setInterval(() => {}, 1000)')
+            d.run('docker', 'start', original_id)
+            old = json.loads(d.run('docker', 'inspect', original_id))[0]
+            self.assertTrue(old['State']['Running'])
+            with patch.object(d, 'BACKUP', backup_name):
+                recovery_id = d.prepare_autoremove_backup(old)
+            d.run('docker', 'stop', '--time', '2', original_id)
+            self.assertFalse(d.run('docker', 'ps', '-aq', '--no-trunc', '--filter', 'id=' + original_id))
+            d.run('docker', 'start', recovery_id)
+            clone = json.loads(d.run('docker', 'inspect', recovery_id))[0]
+            self.assertTrue(clone['State']['Running'])
+            self.assertFalse(clone['HostConfig']['AutoRemove'])
+        finally:
+            # Only these test-owned names; never production containers.
+            for name in (backup_name, 'dsh-original-test-' + token):
+                import subprocess
+                subprocess.run(['docker', 'rm', '-f', name], capture_output=True, timeout=30)
+
     def test_autoremove_rollout_failure_restores_prepared_backup(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
