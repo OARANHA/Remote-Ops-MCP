@@ -55,7 +55,7 @@ export function createDshPlatformAgentMeshDispatcher({
       Buffer.byteLength(response.stdout,"utf8")>262144)deny();
    let result;
    try{result=JSON.parse(response.stdout);}catch{deny();}
-   if(!result||typeof result!=="object"||Array.isArray(result))deny();
+   if(!result||typeof result!=="object")deny();
    // The downstream host MUST separately authenticate transport and enforce
    // managed root, replay, grants, and official DSH service authorization.
    return result;
