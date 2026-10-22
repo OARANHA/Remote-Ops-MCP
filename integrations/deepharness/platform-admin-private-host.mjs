@@ -5,6 +5,7 @@
  */
 import {createDshPlatformDurableReplay} from "./platform-admin-durable-replay.mjs";
 import {createDshPlatformPrivateRelay} from "./platform-admin-private-relay.mjs";
+import {createOfficialDshPlatformAdmin} from "./official-dsh-platform-admin.mjs";
 import {assertDshPlatformHostReadiness} from "./platform-admin-host-readiness.mjs";
 
 const deny=()=>{throw Error("deepharness_platform_host_composition_unavailable");};
@@ -16,9 +17,26 @@ const deny=()=>{throw Error("deepharness_platform_host_composition_unavailable")
  * NOT a value supplied inside JSON. An absent dependency fails closed.
  */
 export function composeDshPlatformPrivateHost({
- admin,authenticatePeer,replayFile,verifiedOfficialServices,
+ admin,services,workspaceParent,authorizeRead,withAuthorizedWrite,
+ authenticatePeer,replayFile,verifiedOfficialServices,
  exclusiveReplayWriter,privateTransportAuthenticated,
 }={}){
+ // Bind the actual Cordis Context services; never emulate directory creation.
+ // Host read/write authorization is mandatory and remains independent of the
+ // OAuth gate in the gateway. No permissive callback is supplied here.
+ if(services!==undefined){
+  if(admin!==undefined||verifiedOfficialServices!==true||
+     typeof services?.directoryPicker?.capability!=="function"||
+     services.directoryPicker.capability()?.kind!=="browse"||
+     typeof services?.agentTeams?.spawnTeammate!=="function")deny();
+  admin=createOfficialDshPlatformAdmin({
+   workspaceRegistry:services.workspaceRegistry,
+   workspaceController:services.workspaceController,
+   directoryPickerController:services.directoryPickerController,
+   sessionController:services.sessionController,agentTeams:services.agentTeams,
+   workspaceParent,authorizeRead,withAuthorizedWrite,
+  });
+ }
  assertDshPlatformHostReadiness({admin,authenticatePeer,replayFile,
   verifiedOfficialServices,exclusiveReplayWriter,privateTransportAuthenticated});
  const replay=createDshPlatformDurableReplay({file:replayFile});
