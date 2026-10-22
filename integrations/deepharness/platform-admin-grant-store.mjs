@@ -193,3 +193,19 @@ export function createPersistentDshPlatformGrantStore({file,now=Date.now,audit=(
     },
   });
 }
+
+/** Shared by the authenticated Admin console and MCP loader in one process. */
+let runtimeStore;
+let runtimeFile;
+export function getDshPlatformGrantStore({file}={}) {
+  if(typeof file!=="string"||!path.isAbsolute(file)||file==="/")deny();
+  const resolved=path.resolve(file);
+  if(runtimeStore){
+    if(resolved!==runtimeFile)deny("deepharness_platform_store_unavailable");
+    return runtimeStore;
+  }
+  const created=createPersistentDshPlatformGrantStore({file:resolved});
+  runtimeFile=resolved;
+  runtimeStore=created;
+  return created;
+}
