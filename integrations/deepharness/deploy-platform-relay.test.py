@@ -56,6 +56,12 @@ class RecoveryTests(unittest.TestCase):
                 subprocess.run(['docker', 'rm', '-f', name], capture_output=True, timeout=30)
 
     def test_autoremove_rollout_failure_restores_prepared_backup(self):
+        self.exercise_autoremove_recovery(1)
+
+    def test_removal_confirmation_timeout_still_restores_prepared_backup(self):
+        self.exercise_autoremove_recovery(40)
+
+    def exercise_autoremove_recovery(self, delayed_removal_checks):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
             olddir, newdir, bundle, quarantine = [root / x for x in ('old', 'new', 'bundle', 'quarantine')]
@@ -76,6 +82,7 @@ class RecoveryTests(unittest.TestCase):
             }
             events = []
             containers = {'original': original}
+            removal_checks = 0
 
             def engine(method, path, body=None):
                 events.append(('engine', method))
@@ -88,11 +95,16 @@ class RecoveryTests(unittest.TestCase):
                 return {'Id': 'recovery'}
 
             def command(*args, **kwargs):
+                nonlocal removal_checks
                 events.append(args)
                 if args[:2] == ('docker', 'inspect'):
                     key = 'original' if args[2] == d.NAME else args[2]
                     return json.dumps([containers[key]])
                 if args[:2] == ('docker', 'ps'):
+                    if args[-1] == 'id=original':
+                        removal_checks += 1
+                        if removal_checks <= delayed_removal_checks:
+                            return 'original'  # Stop returned before removal became visible.
                     return ''
                 if args[:2] == ('docker', 'stop'):
                     key = args[-1]
@@ -125,6 +137,7 @@ class RecoveryTests(unittest.TestCase):
                 stack.enter_context(patch.object(d.os, 'chown'))
                 stack.enter_context(patch.object(d.os, 'geteuid', return_value=0))
                 stack.enter_context(patch.object(d.socket, 'gethostname', return_value='28server'))
+                stack.enter_context(patch.object(d.time, 'sleep'))
                 stack.enter_context(patch.object(d.sys, 'argv', ['deploy.py', '--apply']))
                 output = stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
                 with self.assertRaises(RuntimeError):
