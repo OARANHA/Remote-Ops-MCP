@@ -1,10 +1,11 @@
 --- a/deploy/mcp/run-operational.mjs
 +++ b/deploy/mcp/run-operational.mjs
-@@ -21,7 +21,11 @@
+@@ -21,7 +21,12 @@
    const {loadLayeredEnv}=await imported(official,'@deepseek-ai/dsh-app-boot');
    const plugin=await imported(installed,'@wandora/deepharness-chatgpt-mcp-read/plugin');
    // Semantic exports are strictly opt-in; a disabled bridge never forces their load.
 -  let createSemanticBridge,createSemanticHttpHandler;
++  const {inspectDshPlatformExistingHostServices:inspectPlatformServices}=await import('../platform-admin/platform-admin-private-host.mjs');
 +  let createSemanticBridge,createSemanticHttpHandler,createPlatformHandler;
 +  if(config.platformAdmin?.enabled===true){
 +    phase='platform-modules';
@@ -13,12 +14,12 @@
    if(config.semanticBridge?.enabled===true){
      phase='semantic-modules';
      ({createDshSemanticBridge:createSemanticBridge}=await imported(installed,'@wandora/deepharness-chatgpt-mcp-read/semantic-bridge'));
-@@ -37,7 +41,7 @@
+@@ -37,7 +42,7 @@
    const {z}=await imported(dependencies,'zod');
    const {createPinnedOidcDiscovery:createDiscovery}=await import('/opt/wandora-mcp-host/oidc/pinned-oidc-discovery.mjs');
    phase='operational-host';
 -  await startOperationalReadHost(config,{runProfile,loadLayeredEnv,plugin,createSemanticBridge,createSemanticHttpHandler,createPolicy,Pool,createDiscovery,createAuthoritativePgReadQuery,assertAuthoritativePgReadPool,
-+  await startOperationalReadHost(config,{runProfile,loadLayeredEnv,plugin,createSemanticBridge,createSemanticHttpHandler,createPlatformHandler,createPolicy,Pool,createDiscovery,createAuthoritativePgReadQuery,assertAuthoritativePgReadPool,
++  await startOperationalReadHost(config,{runProfile,loadLayeredEnv,plugin,createSemanticBridge,createSemanticHttpHandler,createPlatformHandler,inspectPlatformServices,createPolicy,Pool,createDiscovery,createAuthoritativePgReadQuery,assertAuthoritativePgReadPool,
      sdk:{McpServer,StreamableHTTPServerTransport,inputSchema:z.object({
        workspaceId:z.string().min(1).max(256),leadSessionId:z.string().min(1).max(256)}).strict()}});
    console.log('OPERATIONAL_MCP_HOST_READY');
@@ -61,10 +62,15 @@
      ...(semanticBridge===undefined?{}:{semanticBridge})});
  }
  export async function startOperationalReadHost(config,deps,{readFile=systemReadFile,lookup=systemLookup,
-@@ -66,12 +85,22 @@
+@@ -66,12 +85,27 @@
          return deps.createPolicy({issuer,resource,discovery,query,allowedOrigins:settings.allowedOrigins,
            allowMissingNotBefore:true,revocationTimeoutMs:1000});
        }});
++    if(typeof deps.inspectPlatformServices==='function'){
++      // Capability booleans only, even when administrative authority is OFF.
++      try{host.ctx.logger?.info?.('DSH_PLATFORM_HOST_READINESS',deps.inspectPlatformServices(host.ctx));}
++      catch{host.ctx.logger?.warn?.('DSH_PLATFORM_HOST_READINESS_UNAVAILABLE');}
++    }
 +    let platformHandler;
 +    if(settings.platformAdmin?.enabled===true){
 +      try{
