@@ -29,7 +29,7 @@ class RecoveryTests(unittest.TestCase):
                     'DSH_UNIX_RELAY_LEAD_SESSION_ID=session-83cba7de-20a3-447b-967a-36315132db1a',
                     'DSH_BRIDGE_SERVER_FP_SHA256=' + ':'.join(['ab'] * 32),
                 ]},
-                'HostConfig': {'AutoRemove': True, 'GroupAdd': ['987'], 'PortBindings': {},
+                'HostConfig': {'AutoRemove': True, 'ReadonlyRootfs': True, 'GroupAdd': ['987'], 'PortBindings': {},
                                'Privileged': False, 'RestartPolicy': {'Name': 'no'}},
                 'NetworkSettings': {'Networks': {'deepharness_mcp-private': {}}},
                 'Mounts': [{'Destination': str(olddir), 'Source': str(olddir), 'RW': True, 'Type': 'bind'}],
@@ -99,7 +99,7 @@ class RecoveryTests(unittest.TestCase):
         old = {
             'Id': 'original', 'Image': 'sha256:image',
             'Config': {'Image': 'sha256:image', 'Env': ['PRIVATE=value'], 'Cmd': ['run']},
-            'HostConfig': {'AutoRemove': True, 'NetworkMode': 'private'},
+            'HostConfig': {'AutoRemove': True, 'ReadonlyRootfs': True, 'NetworkMode': 'private'},
             'Mounts': [{'Destination': '/socket', 'Source': '/socket', 'RW': True, 'Type': 'bind'}],
         }
         clone = json.loads(json.dumps(old))
@@ -124,13 +124,20 @@ class RecoveryTests(unittest.TestCase):
 
     def test_autoremove_backup_mismatch_aborts_before_stopping_original(self):
         old = {'Id': 'original', 'Image': 'image', 'Config': {},
-               'HostConfig': {'AutoRemove': True}, 'Mounts': []}
+               'HostConfig': {'AutoRemove': True, 'ReadonlyRootfs': True}, 'Mounts': []}
         wrong = dict(old, Id='recovery', State={'Running': False, 'Status': 'created'})
         with patch.object(d, 'engine_request', side_effect=[old, {'Id': 'recovery'}], create=True), patch.object(d, 'run', return_value=json.dumps([wrong])) as command:
             with self.assertRaises(RuntimeError):
                 d.prepare_autoremove_backup(old)
         self.assertEqual(command.call_count, 1)
         self.assertEqual(command.call_args.args[:2], ('docker', 'inspect'))
+
+    def test_changed_writable_layer_denies_backup_before_creation(self):
+        old = {'Id': 'original', 'HostConfig': {'AutoRemove': True}}
+        with patch.object(d, 'run', return_value='C /app/code'), patch.object(d, 'engine_request') as engine:
+            with self.assertRaises(RuntimeError):
+                d.prepare_autoremove_backup(old)
+        engine.assert_not_called()
 
     def test_quarantine_moves_symlink_without_following_target(self):
         with tempfile.TemporaryDirectory() as tmp:
