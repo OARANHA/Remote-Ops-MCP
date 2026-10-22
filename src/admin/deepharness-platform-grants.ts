@@ -51,9 +51,9 @@ async function grantStore():Promise<GrantStore>{
       path.resolve(filename)===path.resolve(env.STATE_FILE))throw Error("platform_state_unconfigured");
    const mod=new URL("../../integrations/deepharness/platform-admin-grant-store.mjs",import.meta.url);
    const impl=await import(mod.href) as {
-    createPersistentDshPlatformGrantStore:(args:{file:string})=>GrantStore;
+    getDshPlatformGrantStore:(args:{file:string})=>GrantStore;
    };
-   return impl.createPersistentDshPlatformGrantStore({file:filename});
+   return impl.getDshPlatformGrantStore({file:filename});
   })().catch(error=>{cached=undefined;throw error;});
  }
  return cached;
