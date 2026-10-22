@@ -87,12 +87,16 @@ def prepare_autoremove_backup(old):
     payload = json.loads(json.dumps(old['Config']))
     payload['HostConfig'] = json.loads(json.dumps(old['HostConfig']))
     payload['HostConfig']['AutoRemove'] = False
+    # Docker resolves the nullable default to false on creation. Make that exact
+    # default explicit; preserve true and keep every other field comparison strict.
+    if payload['HostConfig'].get('OomKillDisable', False) is None:
+        payload['HostConfig']['OomKillDisable'] = False
     result = engine_request('POST', '/containers/create?name=' + BACKUP, payload)
     recovery_id = result['Id']
     require(re.fullmatch(r'[a-zA-Z0-9]+', recovery_id))
     clone = json.loads(run('docker', 'inspect', recovery_id))[0]
     require(clone['Image'] == old['Image'] and clone['Config'] == old['Config'])
-    expected_host = dict(old['HostConfig'], AutoRemove=False)
+    expected_host = payload['HostConfig']
     require(clone['HostConfig'] == expected_host)
     mount_fields = ('Destination', 'Source', 'RW', 'Type')
     mounts = lambda item: sorted(tuple(m[k] for k in mount_fields) for m in item['Mounts'])
