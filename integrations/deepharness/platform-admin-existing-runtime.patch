@@ -62,14 +62,19 @@
      ...(semanticBridge===undefined?{}:{semanticBridge})});
  }
  export async function startOperationalReadHost(config,deps,{readFile=systemReadFile,lookup=systemLookup,
-@@ -66,12 +85,27 @@
+@@ -66,12 +85,32 @@
          return deps.createPolicy({issuer,resource,discovery,query,allowedOrigins:settings.allowedOrigins,
            allowMissingNotBefore:true,revocationTimeoutMs:1000});
        }});
 +    if(typeof deps.inspectPlatformServices==='function'){
 +      // Capability booleans only, even when administrative authority is OFF.
-+      try{host.ctx.logger?.info?.('DSH_PLATFORM_HOST_READINESS',deps.inspectPlatformServices(host.ctx));}
-+      catch{host.ctx.logger?.warn?.('DSH_PLATFORM_HOST_READINESS_UNAVAILABLE');}
++      let snapshot;
++      try{snapshot=deps.inspectPlatformServices(host.ctx);}catch{}
++      const names=['workspaceRegistry','workspaceController','directoryPickerController',
++        'sessionController','agentTeams','directoryPicker'];
++      console.info(JSON.stringify({event:'DSH_PLATFORM_HOST_READINESS',
++        ready:snapshot?.ready===true,directoryBrowse:snapshot?.directoryBrowse===true,
++        services:Object.fromEntries(names.map(name=>[name,snapshot?.services?.[name]===true]))}));
 +    }
 +    let platformHandler;
 +    if(settings.platformAdmin?.enabled===true){
