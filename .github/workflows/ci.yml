@@ -26,6 +26,8 @@ jobs:
         run: node --test test-deepharness-agent-advertisement.mjs
       - name: Verify human approval for dedicated DSH lab target (no remote agent)
         run: node test-deepharness-semantic-target-approval.mjs
+      - name: Verify DSH relay deployment recovery without Docker or credentials
+        run: python3 integrations/deepharness/deploy-platform-relay.test.py
       - name: Verify exclusive DSH platform Agent Mesh target and human approval
         run: node test-deepharness-platform-target-approval.mjs
       - name: Verify disabled DeepHarness Agent Mesh local receiver and synthetic Unix relay
