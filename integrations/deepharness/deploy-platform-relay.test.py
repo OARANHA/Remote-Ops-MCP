@@ -39,6 +39,17 @@ class RecoveryTests(unittest.TestCase):
             self.assertTrue(clone['State']['Running'])
             self.assertFalse(clone['HostConfig']['AutoRemove'])
         finally:
+            # Synthetic CI containers only: report structural round-trip differences.
+            if original_id is not None and 'old' in locals():
+                import subprocess
+                result = subprocess.run(['docker', 'inspect', backup_name], capture_output=True, text=True)
+                if result.returncode == 0:
+                    actual = json.loads(result.stdout)[0]['HostConfig']
+                    expected = dict(old['HostConfig'], AutoRemove=False)
+                    differences = {k: {'expected': expected.get(k), 'actual': actual.get(k)}
+                                   for k in sorted(set(expected) | set(actual))
+                                   if expected.get(k) != actual.get(k) or (k in expected) != (k in actual)}
+                    print('SYNTHETIC_RECOVERY_HOSTCONFIG_DIFF=' + json.dumps(differences), flush=True)
             # Only these test-owned names; never production containers.
             for name in (backup_name, 'dsh-original-test-' + token):
                 import subprocess
