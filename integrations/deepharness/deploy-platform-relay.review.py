@@ -117,6 +117,16 @@ def verify_socket(p):
     return stat.S_ISSOCK(s.st_mode) and s.st_uid == 995 and s.st_gid == 987 and stat.S_IMODE(s.st_mode) == 0o660
 
 
+def wait_container_absent(container_id):
+    # AutoRemove completion may lag docker stop. Never start a second writer
+    # until the original is absent, and keep rollback armed during this wait.
+    for _ in range(40):
+        if not run('docker', 'ps', '-aq', '--no-trunc', '--filter', 'id=' + container_id):
+            return
+        time.sleep(0.25)
+    raise RuntimeError('original_removal_not_confirmed')
+
+
 
 def quarantine_endpoint(folder, private, label):
     # Candidate endpoints were absent before startup. Move (never follow/delete)
@@ -242,13 +252,13 @@ def main():
     new_id = None
     try:
         run('docker', 'stop', '--time', '15', old['Id'])
-        if autoremove:
-            # Docker stop must have completed removal before a second writer can start.
-            require(not run('docker', 'ps', '-aq', '--no-trunc', '--filter', 'id=' + old['Id']))
-        else:
-            require(not json.loads(run('docker', 'inspect', old['Id']))[0]['State']['Running'])
         stopped = True
         renamed = autoremove
+        if autoremove:
+            # Docker stop must have completed removal before a second writer can start.
+            wait_container_absent(old['Id'])
+        else:
+            require(not json.loads(run('docker', 'inspect', old['Id']))[0]['State']['Running'])
         try:
             stale = (OLD / 'bridge.sock').lstat()
             require(stale.st_ino == original_inode and verify_socket(OLD / 'bridge.sock'))
@@ -277,6 +287,8 @@ def main():
         require('DSH_UNIX_RELAY_LISTENING' in logs and 'NOT_STARTED' not in logs)
     except BaseException:
         if stopped:
+            if autoremove:
+                wait_container_absent(old['Id'])
             restore_v1(recovery_id, new_id, renamed, QUARANTINE)
         raise
     print('RELAY_V1_SOCKET=GREEN\nRELAY_V2_SOCKET=GREEN\nV1_BACKUP=' + BACKUP)
@@ -289,9 +301,12 @@ if __name__ == '__main__':
     except BaseException as error:
         # Emit only exception type and script line: never env, Docker stderr or TLS data.
         trace = error.__traceback__
-        while trace.tb_next is not None:
+        lines = []
+        while trace is not None:
+            if trace.tb_frame.f_code.co_filename == __file__:
+                lines.append(str(trace.tb_lineno))
             trace = trace.tb_next
         print('RELAY_DEPLOYMENT=STOPPED; error_type=' + type(error).__name__
-              + '; line=' + str(trace.tb_lineno) + '; inspect local state before retry', file=sys.stderr)
+              + '; script_lines=' + ','.join(lines) + '; inspect local state before retry', file=sys.stderr)
         sys.exit(1)
 
