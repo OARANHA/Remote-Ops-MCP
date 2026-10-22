@@ -10,7 +10,9 @@ WORKDIR /opt/wandora-dsh-relay
 COPY integrations/deepharness/private-bridge-client.mjs \
      integrations/deepharness/agent-mesh-unix-relay.mjs \
      integrations/deepharness/agent-mesh-unix-listener.mjs \
-     integrations/deepharness/agent-mesh-unix-relay-run.mjs ./
+     integrations/deepharness/agent-mesh-unix-relay-run.mjs \
+     integrations/deepharness/platform-admin-contract.mjs \
+     integrations/deepharness/platform-admin-private-http-handler.mjs ./
 # Review default is non-root. Compose must override with the distinct,
 # operator-verified relay UID and GID, never the host ops-mcp UID.
 USER 65534:65534
