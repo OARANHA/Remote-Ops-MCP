@@ -1,0 +1,124 @@
+--- a/deploy/mcp/run-operational.mjs
++++ b/deploy/mcp/run-operational.mjs
+@@ -21,7 +21,11 @@
+   const {loadLayeredEnv}=await imported(official,'@deepseek-ai/dsh-app-boot');
+   const plugin=await imported(installed,'@wandora/deepharness-chatgpt-mcp-read/plugin');
+   // Semantic exports are strictly opt-in; a disabled bridge never forces their load.
+-  let createSemanticBridge,createSemanticHttpHandler;
++  let createSemanticBridge,createSemanticHttpHandler,createPlatformHandler;
++  if(config.platformAdmin?.enabled===true){
++    phase='platform-modules';
++    ({createDshPlatformExistingHostHandler:createPlatformHandler}=await import('../platform-admin/platform-admin-private-host.mjs'));
++  }
+   if(config.semanticBridge?.enabled===true){
+     phase='semantic-modules';
+     ({createDshSemanticBridge:createSemanticBridge}=await imported(installed,'@wandora/deepharness-chatgpt-mcp-read/semantic-bridge'));
+@@ -37,7 +41,7 @@
+   const {z}=await imported(dependencies,'zod');
+   const {createPinnedOidcDiscovery:createDiscovery}=await import('/opt/wandora-mcp-host/oidc/pinned-oidc-discovery.mjs');
+   phase='operational-host';
+-  await startOperationalReadHost(config,{runProfile,loadLayeredEnv,plugin,createSemanticBridge,createSemanticHttpHandler,createPolicy,Pool,createDiscovery,createAuthoritativePgReadQuery,assertAuthoritativePgReadPool,
++  await startOperationalReadHost(config,{runProfile,loadLayeredEnv,plugin,createSemanticBridge,createSemanticHttpHandler,createPlatformHandler,createPolicy,Pool,createDiscovery,createAuthoritativePgReadQuery,assertAuthoritativePgReadPool,
+     sdk:{McpServer,StreamableHTTPServerTransport,inputSchema:z.object({
+       workspaceId:z.string().min(1).max(256),leadSessionId:z.string().min(1).max(256)}).strict()}});
+   console.log('OPERATIONAL_MCP_HOST_READY');
+--- a/deploy/mcp/operational-host.mjs
++++ b/deploy/mcp/operational-host.mjs
+@@ -8,7 +8,7 @@
+ const origins=['https://chatgpt.com','https://chatgpt-mtls-proxy.invalid'];
+ export function validateOperationalHostConfig(value){
+   if(!value||typeof value!=='object'||Array.isArray(value)||
+-      Object.keys(value).some(key=>!['version','enabled','issuer','resource','backendPort','allowedOrigins','semanticBridge'].includes(key))||
++      Object.keys(value).some(key=>!['version','enabled','issuer','resource','backendPort','allowedOrigins','semanticBridge','platformAdmin'].includes(key))||
+       value.version!==1||value.enabled!==true||value.issuer!==issuer||value.resource!==resource||
+       value.backendPort!==3443||!Array.isArray(value.allowedOrigins)||
+       JSON.stringify(value.allowedOrigins)!==JSON.stringify(origins))throw Error('Operational MCP host disabled or invalid');
+@@ -23,7 +23,26 @@
+       throw Error('Operational MCP semantic bridge disabled or invalid');
+     semanticBridge=Object.freeze({...bridge});
+   }
+-  return Object.freeze({...value,allowedOrigins:Object.freeze([...value.allowedOrigins]),
++  let platformAdmin;
++  if(value.platformAdmin!==undefined){
++    const p=value.platformAdmin;
++    const permitted=new Set(['workspace.list','workspace.create','workspace.rename','session.list',
++      'session.create','team.member.create','team.task.create','team.task.update']);
++    if(!p||typeof p!=='object'||Array.isArray(p)||
++       Object.keys(p).some(key=>!['enabled','workspaceParent','replayFile','allowedActions',
++         'clientFingerprintSha256','exclusiveReplayWriter'].includes(key))||
++       typeof p.enabled!=='boolean')throw Error('Operational platform host configuration denied');
++    if(p.enabled===false&&Object.keys(p).length!==1)throw Error('Disabled platform host must have no authority');
++    if(p.enabled===true&&(
++       typeof p.workspaceParent!=='string'||!p.workspaceParent.startsWith('/data/dsh/')||
++       typeof p.replayFile!=='string'||!p.replayFile.startsWith('/data/dsh/')||
++       !Array.isArray(p.allowedActions)||p.allowedActions.length===0||
++       p.allowedActions.some(a=>!permitted.has(a))||new Set(p.allowedActions).size!==p.allowedActions.length||
++       !/^(?:[0-9a-f]{2}:){31}[0-9a-f]{2}$/i.test(p.clientFingerprintSha256??'')||
++       p.exclusiveReplayWriter!==true))throw Error('Operational platform host authority denied');
++    platformAdmin=Object.freeze({...p,...(p.allowedActions?{allowedActions:Object.freeze([...p.allowedActions])}:{})});
++  }
++  return Object.freeze({...value,...(platformAdmin===undefined?{}:{platformAdmin}),allowedOrigins:Object.freeze([...value.allowedOrigins]),
+     ...(semanticBridge===undefined?{}:{semanticBridge})});
+ }
+ export async function startOperationalReadHost(config,deps,{readFile=systemReadFile,lookup=systemLookup,
+@@ -66,12 +85,22 @@
+         return deps.createPolicy({issuer,resource,discovery,query,allowedOrigins:settings.allowedOrigins,
+           allowMissingNotBefore:true,revocationTimeoutMs:1000});
+       }});
++    let platformHandler;
++    if(settings.platformAdmin?.enabled===true){
++      try{
++        if(typeof deps.createPlatformHandler!=='function')throw Error('Platform embedding unavailable');
++        platformHandler=deps.createPlatformHandler({...settings.platformAdmin,ctx:host.ctx});
++      }catch{
++        host.ctx.logger?.warn?.('DSH_PLATFORM_HOST_NOT_READY');
++      }
++    }
+     phase='tls-files';
+     const tls={key:await readFile('/run/secrets/backend-server-key.pem'),
+       cert:await readFile('/run/secrets/backend-server-chain.pem'),ca:await readFile('/run/secrets/backend-ca.pem')};
+     phase='tls-listener';
+     const listener=await listen({enabled:true,ctx:host.ctx,service:host.service,host:backendAddress,
+       port:settings.backendPort,tls,sdk:deps.sdk,
++      ...(platformHandler?{platformHandler}:{}),
+       ...(settings.semanticBridge?.enabled===true?{semanticBridge:{
+         bridge:host.semanticBridge,clientFingerprintSha256:settings.semanticBridge.clientFingerprintSha256,
+         audit:event=>host.ctx.logger?.info?.('private DSH semantic request',event),
+--- a/deploy/mcp/private-read-listener.mjs
++++ b/deploy/mcp/private-read-listener.mjs
+@@ -3,7 +3,7 @@
+ import {isIP} from 'node:net';
+ import {networkInterfaces} from 'node:os';
+ const PRIVATE_DSH_SEMANTIC_PATH='/wandora/dsh-bridge/v1';
+-export async function attachPrivateReadListener({enabled=false,ctx,service,host,port,tls,sdk,semanticBridge,createSemanticHttpHandler}={}) {
++export async function attachPrivateReadListener({enabled=false,ctx,service,host,port,tls,sdk,semanticBridge,createSemanticHttpHandler,platformHandler}={}) {
+   if(enabled!==true)throw Error('Private MCP listener disabled');
+   if(isIP(host)!==4||host==='0.0.0.0'||!Number.isInteger(port)||port<1024||port>65535||
+       typeof ctx?.effect!=='function'||typeof ctx?.get!=='function'||ctx.get('chatgptMcpRead')!==service||
+@@ -19,6 +19,8 @@
+     catch{throw Error('Private MCP bind address verification denied');}
+   }
+   if(!assigned)throw Error('Private MCP listener configuration denied');
++  if(platformHandler!==undefined&&(typeof platformHandler?.handle!=='function'||
++      typeof platformHandler?.dispose!=='function'))throw Error('Private platform handler denied');
+   let server,handler,semanticHandler,closed=false,closing;
+   const semanticOptions=semanticBridge;
+   if(semanticOptions!==undefined&&(!semanticOptions||typeof semanticOptions!=='object'||
+@@ -33,6 +35,7 @@
+     closed=true;
+     handler?.dispose();
+     semanticHandler?.dispose();
++    platformHandler?.dispose();
+     for(const socket of sockets)socket.destroy();
+     if(server?.listening)await new Promise(resolve=>server.close(resolve));
+   })();
+@@ -41,7 +44,8 @@
+     if(semanticOptions)semanticHandler=createSemanticHttpHandler(semanticOptions);
+     server=createServer({...tls,minVersion:'TLSv1.2',requestCert:true,rejectUnauthorized:true},(req,res)=>{
+       if(closed||ctx.get('chatgptMcpRead')!==service){res.writeHead(503).end();return;}
+-      const selected=semanticHandler&&req.url===PRIVATE_DSH_SEMANTIC_PATH?semanticHandler:handler;
++      const selected=platformHandler&&req.url==='/wandora/dsh-platform/v2'?platformHandler:
++        semanticHandler&&req.url===PRIVATE_DSH_SEMANTIC_PATH?semanticHandler:handler;
+       Promise.resolve().then(()=>selected.handle(req,res)).catch(()=>res.destroy());
+     });
+     server.on('connection',socket=>{sockets.add(socket);socket.once('close',()=>sockets.delete(socket));});
