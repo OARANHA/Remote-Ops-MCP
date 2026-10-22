@@ -84,6 +84,10 @@ jobs:
         run: docker compose --profile dsh-relay-review -f integrations/deepharness/agent-mesh-relay.compose.review.yml config --quiet
       - name: Build production image
         run: docker build -t remote-ops-mcp:ci .
+      - name: Verify relay recovery with real Docker auto-remove semantics
+        env:
+          DSH_RELAY_DOCKER_TEST_IMAGE: remote-ops-mcp:ci
+        run: python3 integrations/deepharness/deploy-platform-relay.test.py
 
   dsh-platform-candidate-publish:
     needs: verify
