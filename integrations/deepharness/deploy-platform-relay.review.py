@@ -79,6 +79,8 @@ def engine_request(method, path, body=None):
 def prepare_autoremove_backup(old):
     # Freeze a stopped recovery container BEFORE stopping an auto-removed V1.
     # Preserve exact Config/HostConfig, changing only AutoRemove; do not start it.
+    # Config cloning does not capture a writable image layer. Refuse changed layers.
+    require(old['HostConfig'].get('ReadonlyRootfs') or not run('docker', 'diff', old['Id']))
     current = engine_request('GET', '/containers/' + old['Id'] + '/json')
     require(current['Id'] == old['Id'] and current['Config'] == old['Config']
             and current['HostConfig'] == old['HostConfig'])
