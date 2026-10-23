@@ -112,9 +112,15 @@ export function createDshPlatformExistingHostHandler({
  }
  const relay={
   async dispatch(connection,envelope){
+   let stage="authenticate";
+   const auditFailure=()=>{if(stage!=="adapter")ctx.logger?.warn?.("DSH_PLATFORM_DISPATCH_FAILURE_STAGE", {operation:"team.member.create",stage});};
+   try {
    if(!authentic(connection))deny();
+   stage="validate_envelope";
    const request=validateDshPlatformEnvelope(envelope);
    const action=actionForDshPlatformOperation(request.args.operation);
+   const teammate=action==="team.member.create";
+   stage="authorize_action";
    const authorize=scope=>{
     if(!authentic(connection)||!permitted.has(action)||scope.operation!==action||
        (request.args.workspaceId!==undefined&&scope.workspaceId!==request.args.workspaceId)||
@@ -132,9 +138,16 @@ export function createDshPlatformExistingHostHandler({
     withAuthorizedWrite:async(scope,work)=>{
      authorize(scope);const result=await work();authorize(scope);return result;
     }});
+   stage="create_dispatcher";
    const dispatcher=createDshPlatformPrivateRelay({admin,authenticatePeer:authentic,
     withDurableReplay:(request,commit)=>replay.withDurableReplay(request,commit)});
-   return dispatcher.dispatch(connection,request);
+   stage="adapter";
+   return await dispatcher.dispatch(connection,request);
+   }catch(error){
+     // Fixed stage labels only. No request bodies, identifiers, or exception messages.
+     if(envelope?.args?.operation==="createTeammate")auditFailure();
+     throw error;
+   }
   },
  };
  const handle=createDshPlatformPrivateHttpHandler({relay,
