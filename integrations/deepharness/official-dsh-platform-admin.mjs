@@ -33,7 +33,7 @@ function view(ws){
  */
 export function createOfficialDshPlatformAdmin({
   workspaceRegistry,workspaceController,directoryPickerController,
-  sessionController,agentTeams,sessionSkillCatalog,workspaceParent,authorizeRead,withAuthorizedWrite,
+  sessionController,agentTeams,sessionSkillCatalog,workspaceParent,authorizeRead,withAuthorizedWrite,auditStage,
 }={}){
   if(typeof authorizeRead!=="function"||typeof withAuthorizedWrite!=="function"||
     typeof workspaceRegistry?.list!=="function"||
@@ -148,16 +148,26 @@ export function createOfficialDshPlatformAdmin({
       if(!["fresh","fork"].includes(input.context))deny();
       return write("team.member.create",{workspaceId:ws.id,leadSessionId},async()=>{
         lead(workspace(ws.id),leadSessionId);
-        const resolved=await sessionController.resolveAgent(leadSessionId);
-        if(!resolved?.agent||resolved.error||typeof agentTeams.spawnTeammate!=="function")deny();
-        const created=await agentTeams.spawnTeammate(resolved.agent,{
-          name,description,prompt:[{type:"text",text:prompt}],
-          context:input.context,provider,signal:new AbortController().signal,
-        });
-        const member=created?.member;
-        if(!ID.test(member?.id)||member?.name!==name||member?.role!=="teammate")deny();
-        return Object.freeze({workspaceId:ws.id,leadSessionId,
-          member:{id:member.id,name:member.name,role:"teammate",phase:member.phase}});
+        // Only fixed stage labels leave this adapter; never emit prompts,
+        // provider credentials, session identities or thrown error messages.
+        let stage="resolve_agent";
+        try{
+          const resolved=await sessionController.resolveAgent(leadSessionId);
+          if(!resolved?.agent||resolved.error||typeof agentTeams.spawnTeammate!=="function")deny();
+          stage="spawn_teammate";
+          const created=await agentTeams.spawnTeammate(resolved.agent,{
+            name,description,prompt:[{type:"text",text:prompt}],
+            context:input.context,provider,signal:new AbortController().signal,
+          });
+          stage="validate_member";
+          const member=created?.member;
+          if(!ID.test(member?.id)||member?.name!==name||member?.role!=="teammate")deny();
+          return Object.freeze({workspaceId:ws.id,leadSessionId,
+            member:{id:member.id,name:member.name,role:"teammate",phase:member.phase}});
+        }catch(error){
+          try{auditStage?.({operation:"team.member.create",stage});}catch{}
+          throw error;
+        }
       });
     },
     async createTeamTask(input){
