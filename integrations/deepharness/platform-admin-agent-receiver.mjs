@@ -80,8 +80,9 @@ export async function executeDshPlatformAgentOperation(envelope,opts={},deps={})
   return {code:0,stdout:output,stderr:"",durationMs:Date.now()-started,
    truncated:false,timedOut:false};
  }catch{
-  // Fixed, non-sensitive labels only; never include request data or exception text.
-  return {code:1,stdout:"",stderr:`deepharness_platform_receiver_unavailable stage=${stage}`,
+  // Preserve the existing Agent Mesh error contract; log only fixed stage labels.
+  try{(deps.auditStage??(label=>console.warn("DSH_PLATFORM_RECEIVER_FAILURE_STAGE",label)))(stage);}catch{}
+  return {code:1,stdout:"",stderr:"deepharness_platform_receiver_unavailable",
    durationMs:Date.now()-started,truncated:false,timedOut:false};
  }
 }
