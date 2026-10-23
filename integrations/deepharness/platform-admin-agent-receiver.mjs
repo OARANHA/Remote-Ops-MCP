@@ -26,10 +26,10 @@ async function requireSocket(socket,stat,env,agentUid,agentGroups){
     !sock.isSocket()||sock.isSymbolicLink?.()||sock.uid!==owner||
     sock.gid!==group||(sock.mode&0o777)!==0o660)deny();
 }
-function post(socket,payload,request,timeout){
+function post(socket,payload,request,timeout,audit){
  return new Promise((resolve,reject)=>{
   let settled=false;
-  const fail=()=>{if(!settled){settled=true;reject(Error("deepharness_platform_receiver_unavailable"));}};
+  const fail=(reason="transport")=>{if(!settled){settled=true;try{audit?.(reason);}catch{}reject(Error("deepharness_platform_receiver_unavailable"));}};
   try{
    const body=JSON.stringify(payload);
    const req=request({socketPath:socket,path:ROUTE,method:"POST",agent:false,
@@ -37,10 +37,12 @@ function post(socket,payload,request,timeout){
        "content-length":Buffer.byteLength(body)}},res=>{
     if(res.statusCode!==200||
        !/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(String(res.headers["content-type"]??""))||
-       res.headers["content-encoding"]!==undefined){res.destroy();fail();return;}
+       res.headers["content-encoding"]!==undefined){
+      const reason=res.statusCode!==200?(res.statusCode===403?"http_403":"http_non_200"):"http_headers";
+      res.destroy();fail(reason);return;}
     let bytes=0;const chunks=[];
     res.on("data",chunk=>{
-     bytes+=chunk.length;if(bytes>maxResponse){res.destroy();fail();return;}
+     bytes+=chunk.length;if(bytes>maxResponse){res.destroy();fail("response_size");return;}
      chunks.push(Buffer.from(chunk));
     });
     res.once("end",()=>{
@@ -48,15 +50,15 @@ function post(socket,payload,request,timeout){
       const packet=JSON.parse(Buffer.concat(chunks).toString("utf8"));
       if(!packet||typeof packet!=="object"||Array.isArray(packet)||
         Object.keys(packet).length!==1||!Object.hasOwn(packet,"result")||
-        !packet.result||typeof packet.result!=="object"){fail();return;}
+        !packet.result||typeof packet.result!=="object"){fail("response_shape");return;}
       if(!settled){settled=true;resolve(packet.result);}
-     }catch{fail();}
+     }catch{fail("response_json");}
     });
-    res.once("error",fail);
+    res.once("error",()=>fail("response_stream"));
    });
-   req.setTimeout(timeout,()=>req.destroy(Error("deadline")));
-   req.once("error",fail);req.end(body);
-  }catch{fail();}
+   req.setTimeout(timeout,()=>{fail("timeout");req.destroy();});
+   req.once("error",()=>fail("transport"));req.end(body);
+  }catch{fail("transport");}
  });
 }
 export async function executeDshPlatformAgentOperation(envelope,opts={},deps={}){
@@ -73,7 +75,9 @@ export async function executeDshPlatformAgentOperation(envelope,opts={},deps={})
   await requireSocket(socket,deps.lstat??lstat,env,uid,groups);
   const timeout=Math.min(Math.max(opts.timeoutMs??10000,1000),30000);
   stage="relay_http";
-  const result=await post(socket,payload,deps.request??http.request,timeout);
+  const result=await post(socket,payload,deps.request??http.request,timeout,reason=>{
+    try{(deps.auditHttp??(label=>console.warn("DSH_PLATFORM_RECEIVER_HTTP_FAILURE",label)))(reason);}catch{}
+  });
   stage="response";
   const output=JSON.stringify(result);
   if(Buffer.byteLength(output,"utf8")>maxResponse)deny();
