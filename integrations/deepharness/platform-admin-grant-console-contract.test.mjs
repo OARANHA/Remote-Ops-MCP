@@ -55,3 +55,15 @@ test("denies callers supplying a personal identity without a trusted OAuth recor
     confirmation:"GRANT MANAGE DSH PLATFORM",
   }),denied);
 });
+
+test("skills.list requires explicit extended grant for same verified OAuth session",()=>{
+ const old=selectCurrentDshPlatformGrantSubject({...principal(),operation:"manage",
+   confirmation:"GRANT MANAGE DSH PLATFORM"});
+ assert.equal(old.actions.includes("skills.list"),false);
+ const extended=selectCurrentDshPlatformGrantSubject({...principal(),operation:"manage_skills",
+   confirmation:"GRANT MANAGE AND SKILLS DSH PLATFORM"});
+ assert.deepEqual(extended.actions,[...old.actions,"skills.list"]);
+ assert.equal(extended.sessionId,sid);
+ assert.throws(()=>selectCurrentDshPlatformGrantSubject({...principal(),operation:"manage_skills",
+   confirmation:"GRANT MANAGE DSH PLATFORM"}),denied);
+});
