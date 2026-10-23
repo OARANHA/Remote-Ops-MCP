@@ -14,7 +14,7 @@ const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]
 const SLUG=/^[a-z][a-z0-9-]{1,47}$/;
 const MAX_BYTES=16_384;
 const ACTIONS=Object.freeze({
-  listWorkspaces:"workspace.list",createWorkspace:"workspace.create",
+  listWorkspaces:"workspace.list",listSessionSkills:"skills.list",createWorkspace:"workspace.create",
   renameWorkspace:"workspace.rename",listWorkspaceSessions:"session.list",
   createLeadSession:"session.create",createTeammate:"team.member.create",
   createTeamTask:"team.task.create",updateTeamTask:"team.task.update",
@@ -36,6 +36,9 @@ function validateArgs(a){
   switch(op){
     case "listWorkspaces":
       exactly(a,["operation"]);break;
+    case "listSessionSkills":
+      exactly(a,["operation","workspaceId","sessionId"]);
+      identity(a.workspaceId);identity(a.sessionId);break;
     case "createWorkspace":
       exactly(a,["operation","name","title","requestId"]);
       if(typeof a.name!=="string"||!SLUG.test(a.name))deny();
