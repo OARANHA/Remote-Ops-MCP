@@ -14,10 +14,10 @@ import {
 
 const deny=()=>{throw Error("deepharness_platform_host_unavailable");};
 const METHODS=Object.freeze([
-  "listWorkspaces","createWorkspace","renameWorkspace","listWorkspaceSessions",
+  "listWorkspaces","listSessionSkills","createWorkspace","renameWorkspace","listWorkspaceSessions",
   "createLeadSession","createTeammate","createTeamTask","updateTeamTask",
 ]);
-const READ=new Set(["listWorkspaces","listWorkspaceSessions"]);
+const READ=new Set(["listWorkspaces","listWorkspaceSessions","listSessionSkills"]);
 const obj=x=>x!==null&&typeof x==="object"&&!Array.isArray(x);
 
 function detach(value){
@@ -31,6 +31,7 @@ function detach(value){
 function params(operation,input){
   switch(operation){
     case "listWorkspaces": return null;
+    case "listSessionSkills":return {workspaceId:input.workspaceId,sessionId:input.sessionId};
     case "createWorkspace":return {name:input.name,title:input.title};
     case "renameWorkspace":return {workspaceId:input.workspaceId,title:input.title};
     case "listWorkspaceSessions":return {workspaceId:input.workspaceId};
