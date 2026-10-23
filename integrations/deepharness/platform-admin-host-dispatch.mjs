@@ -14,7 +14,7 @@ import {
 
 const deny=()=>{throw Error("deepharness_platform_host_unavailable");};
 const METHODS=Object.freeze([
-  "listWorkspaces","listSessionSkills","createWorkspace","renameWorkspace","listWorkspaceSessions",
+  "listWorkspaces","createWorkspace","renameWorkspace","listWorkspaceSessions",
   "createLeadSession","createTeammate","createTeamTask","updateTeamTask",
 ]);
 const READ=new Set(["listWorkspaces","listWorkspaceSessions","listSessionSkills"]);
@@ -57,6 +57,7 @@ export function createDshPlatformHostDispatcher({admin,withDurableReplay}={}){
       const operation=request.args.operation;
       const action=actionForDshPlatformOperation(operation);
       const input=params(operation,request.args);
+      if(operation==="listSessionSkills"&&typeof admin.listSessionSkills!=="function")deny();
       const call=async()=>detach(await (
         input===null?admin[operation]():admin[operation](input)
       ));
