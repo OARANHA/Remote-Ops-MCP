@@ -97,18 +97,27 @@ export function createDshPlatformExistingHostHandler({
  const permitted=new Set(allowedActions);
  const pin=Buffer.from(clientFingerprintSha256.replaceAll(":",""),"hex");
  let active=true;
- function authentic(connection){
+ function authenticationFailure(connection){
   try{
-   if(!active||ctx.get("chatgptMcpRead")!==readService||
-      !names.every((name,i)=>originalService(ctx[name])===originals[i])||
-      (skillService!==undefined&&ctx.get("sessionSkillCatalog")!==skillService)||
-      services.directoryPicker.capability()?.kind!=="browse"||
-      connection?.encrypted!==true||connection.authorized!==true||
-      connection.destroyed===true)return false;
+   if(!active)return "inactive";
+   if(ctx.get("chatgptMcpRead")!==readService)return "read_service_changed";
+   if(!names.every((name,i)=>originalService(ctx[name])===originals[i]))return "official_service_changed";
+   if(skillService!==undefined&&ctx.get("sessionSkillCatalog")!==skillService)return "skill_service_changed";
+   if(services.directoryPicker.capability()?.kind!=="browse")return "directory_capability_changed";
+   if(connection?.encrypted!==true||connection.authorized!==true||connection.destroyed===true)return "tls_connection_invalid";
    const fp=connection.getPeerCertificate?.()?.fingerprint256;
-   if(typeof fp!=="string"||!/^(?:[a-f0-9]{2}:){31}[a-f0-9]{2}$/i.test(fp))return false;
-   return timingSafeEqual(Buffer.from(fp.replaceAll(":",""),"hex"),pin);
-  }catch{return false;}
+   if(typeof fp!=="string"||!/^(?:[a-f0-9]{2}:){31}[a-f0-9]{2}$/i.test(fp))return "peer_fingerprint_invalid";
+   if(!timingSafeEqual(Buffer.from(fp.replaceAll(":",""),"hex"),pin))return "peer_fingerprint_mismatch";
+   return null;
+  }catch{return "authentication_exception";}
+ }
+ function authentic(connection){return authenticationFailure(connection)===null;}
+ function auditPeerFailure(reason){
+  // Only a fixed reason label; never log certificate material or request data.
+  const allowed=["inactive","read_service_changed","official_service_changed",
+   "skill_service_changed","directory_capability_changed","tls_connection_invalid",
+   "peer_fingerprint_invalid","peer_fingerprint_mismatch","authentication_exception"];
+  if(allowed.includes(reason))ctx.logger?.warn?.("DSH_PLATFORM_PEER_FAILURE_REASON",{reason});
  }
  const relay={
   async dispatch(connection,envelope){
@@ -150,7 +159,11 @@ export function createDshPlatformExistingHostHandler({
   },
  };
  const handle=createDshPlatformPrivateHttpHandler({relay,
-  connectionForRequest:req=>authentic(req.socket)?req.socket:undefined});
+  connectionForRequest:req=>{
+   const reason=authenticationFailure(req.socket);
+   if(reason!==null){auditPeerFailure(reason);return undefined;}
+   return req.socket;
+  }});
  const dispose=()=>{active=false;};
  // Preserve the single replay owner for this process, including after disposal:
  // a same-process replacement cannot race an already admitted durable write.
