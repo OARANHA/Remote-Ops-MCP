@@ -30,6 +30,9 @@ export function createDshPlatformToolDefs(policy){
   return Object.freeze([
     tool("dsh_list_workspaces","listWorkspaces",
       "Inventory accessible DeepHarness workspaces in the trusted managed root; no host paths exposed.",{}),
+    tool("dsh_list_session_skills","listSessionSkills",
+      "Read skills visible to an authorized DSH session; does not inventory all skill roots or authorize deletion.",
+      {workspaceId:ID,sessionId:ID}),
     tool("dsh_create_workspace","createWorkspace",
       "Create or reuse a workspace beneath the fixed managed DSH projects directory.",
       {name:SLUG,title:TEXT(120),requestId:UUID},true),
