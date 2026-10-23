@@ -39,6 +39,7 @@ export function composeDshPlatformPrivateHost({
    workspaceController:services.workspaceController,
    directoryPickerController:services.directoryPickerController,
    sessionController:services.sessionController,agentTeams:services.agentTeams,
+   sessionSkillCatalog:services.sessionSkillCatalog,
    workspaceParent,authorizeRead,withAuthorizedWrite,
   });
  }
@@ -80,6 +81,9 @@ export function createDshPlatformExistingHostHandler({
  const names=["workspaceRegistry","workspaceController","directoryPickerController",
   "directoryPicker","sessionController","agentTeams"];
  const services=Object.fromEntries(names.map(name=>[name,ctx[name]]));
+ const skillService=allowedActions.includes("skills.list")?ctx.get("sessionSkillCatalog"):undefined;
+ if(allowedActions.includes("skills.list")&&typeof skillService?.list!=="function")deny();
+ if(skillService!==undefined)services.sessionSkillCatalog=skillService;
  const originals=names.map(name=>originalService(services[name]));
  const readService=ctx.get("chatgptMcpRead");
  if(!readService||originals.some(value=>!value)||
@@ -97,6 +101,7 @@ export function createDshPlatformExistingHostHandler({
   try{
    if(!active||ctx.get("chatgptMcpRead")!==readService||
       !names.every((name,i)=>originalService(ctx[name])===originals[i])||
+      (skillService!==undefined&&ctx.get("sessionSkillCatalog")!==skillService)||
       services.directoryPicker.capability()?.kind!=="browse"||
       connection?.encrypted!==true||connection.authorized!==true||
       connection.destroyed===true)return false;
