@@ -82,3 +82,12 @@ test("snapshot detaches caller objects and size bounds apply to envelope",()=>{
   assert.ok(Buffer.byteLength(JSON.stringify(envelope))<=16384);
   assert.throws(()=>actionForDshPlatformOperation("owner.grant_root"),deny);
 });
+
+test("skill catalog uses exact session-bound read envelope and no arbitrary path",()=>{
+ const good={operation:"listSessionSkills",workspaceId:W,sessionId:L};
+ assert.equal(actionForDshPlatformOperation(good.operation),"skills.list");
+ assert.deepEqual(makeDshPlatformEnvelope(good).args,good);
+ for(const bad of [{...good,path:"/etc"}, {...good,sessionId:"../bad"}, {...good,oauthSession:"fake"}, {...good,workspaceId:""}]){
+  assert.throws(()=>makeDshPlatformEnvelope(bad),deny);
+ }
+});
