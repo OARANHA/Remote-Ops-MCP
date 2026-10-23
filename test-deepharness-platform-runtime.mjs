@@ -7,7 +7,7 @@ import {mkdtempSync,writeFileSync,readFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 
-test('existing MCP registry exposes all eight V2 tools only with explicit configuration',()=>{
+test('existing MCP registry exposes nine V2 tools only with explicit configuration',()=>{
  const dir=mkdtempSync(join(tmpdir(),'dsh-mcp-registry-'));
  try {
   const targets=join(dir,'targets.json');
@@ -37,7 +37,7 @@ test('existing MCP registry exposes all eight V2 tools only with explicit config
    {cwd:process.cwd(),env:{...env,DSH_PLATFORM_MCP_ENABLED:flag},encoding:'utf8'}).trim().split('\n').at(-1));
   assert.deepEqual(run('0'),[]);
   assert.deepEqual(run('1').sort(),['dsh_list_workspaces','dsh_create_workspace',
-   'dsh_rename_workspace','dsh_list_workspace_sessions','dsh_create_lead_session',
+   'dsh_rename_workspace','dsh_list_workspace_sessions','dsh_list_session_skills','dsh_create_lead_session',
    'dsh_create_teammate','dsh_create_team_task','dsh_update_team_task'].sort());
   assert.deepEqual(JSON.parse(readFileSync(join(dir,'platform.json'),'utf8')).grants,{});
   writeFileSync(targets,JSON.stringify({targets:[{id:'unrelated-target',transport:'mock',enabled:true}]}));
