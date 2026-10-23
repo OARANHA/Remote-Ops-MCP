@@ -1,0 +1,73 @@
+name: DeepHarness platform diagnostic publish
+on:
+  workflow_dispatch:
+    inputs:
+      approved_revision:
+        description: 'Reviewed Remote-Ops-MCP commit SHA to package'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    if: github.repository == 'OARANHA/Remote-Ops-MCP' && github.ref == 'refs/heads/feat/dsh-platform-oauth-transport-contract-20261021'
+    runs-on: ubuntu-latest
+    environment: dsh-platform-diagnostic-publish
+    steps:
+      - name: Check exact reviewed revision
+        env:
+          APPROVED: ${{ inputs.approved_revision }}
+          ACTUAL: ${{ github.sha }}
+        run: |
+          test "$APPROVED" = "$ACTUAL"
+          test "${#APPROVED}" -eq 40
+          echo "APPROVED_SOURCE_REVISION=$ACTUAL"
+
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/checkout@v4
+        with:
+          repository: OARANHA/deepharness
+          ref: 9c1ac05bf9a0a3fa2ef9f95a3248f156c3fa5d15
+          path: .ci-dsh-reviewed
+          persist-credentials: false
+      - name: Validate reviewed runtime overlay
+        run: |
+          test "$(git -C .ci-dsh-reviewed rev-parse HEAD)" = 9c1ac05bf9a0a3fa2ef9f95a3248f156c3fa5d15
+          git -C .ci-dsh-reviewed apply --check ../integrations/deepharness/platform-admin-existing-runtime.patch
+          git -C .ci-dsh-reviewed apply ../integrations/deepharness/platform-admin-existing-runtime.patch
+          node --check .ci-dsh-reviewed/deploy/mcp/run-operational.mjs
+          node --test test-deepharness-platform-existing-runtime.mjs .ci-dsh-reviewed/deploy/mcp/operational-host.test.mjs .ci-dsh-reviewed/deploy/mcp/existing-profile-host.test.mjs
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build verified local candidate
+        env:
+          SOURCE_REVISION: ${{ github.sha }}
+        run: |
+          docker build --platform linux/amd64 --network none --pull=false \
+            --build-arg "SOURCE_REVISION=$SOURCE_REVISION" \
+            -f integrations/deepharness/Dockerfile.platform-existing-host.review \
+            -t local/dsh-platform-candidate:latest .
+          test "$(docker image inspect --format '{{.Config.User}}' local/dsh-platform-candidate:latest)" = '1000:1000'
+          docker run --rm --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges --entrypoint node local/dsh-platform-candidate:latest \
+            -e 'import("/opt/wandora-mcp-verifier/platform-admin/platform-admin-private-host.mjs").then(m=>{if(process.getuid()===0||typeof m.createDshPlatformExistingHostHandler!=="function")process.exit(1);console.log("DSH_PLATFORM_CANDIDATE_IMPORT_GREEN_NO_HOST_STARTED")})'
+      - name: Publish diagnostic image only
+        env:
+          SOURCE_REVISION: ${{ github.sha }}
+        run: |
+          TAG="ghcr.io/oaranha/remote-ops-mcp-dsh-platform-diagnostic:${SOURCE_REVISION}"
+          docker tag local/dsh-platform-candidate:latest "$TAG"
+          docker push "$TAG"
+          echo "PUBLISHED_TAG=$TAG" >> "$GITHUB_STEP_SUMMARY"
+          docker buildx imagetools inspect "$TAG"
