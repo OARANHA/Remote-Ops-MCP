@@ -10,11 +10,14 @@ const ACTIONS=Object.freeze({
   manage:Object.freeze(["workspace.list","workspace.create","workspace.rename",
     "session.list","session.create","team.member.create",
     "team.task.create","team.task.update"]),
+  manage_skills:Object.freeze(["workspace.list","workspace.create","workspace.rename",
+    "session.list","session.create","team.member.create","team.task.create","team.task.update","skills.list"]),
   revoke:Object.freeze([]),
 });
 const WORDS=Object.freeze({
   read:"GRANT READ DSH PLATFORM",
   manage:"GRANT MANAGE DSH PLATFORM",
+  manage_skills:"GRANT MANAGE AND SKILLS DSH PLATFORM",
   revoke:"REVOKE DSH PLATFORM",
 });
 /** Identity comes from the real registered OAuth client/session, never fields
