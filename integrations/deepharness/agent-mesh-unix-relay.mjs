@@ -140,6 +140,8 @@ export function createDshPlatformUnixRelayHandler({postJson}={}){
  const local=connection=>connection&&connection.remoteAddress===undefined&&
   connection.remotePort===undefined&&connection.destroyed!==true;
  return createDshPlatformPrivateHttpHandler({
+  auditStage:stage=>{if(["request","peer","body","contract","upstream","response"].includes(stage))
+    process.stderr.write(`DSH_PLATFORM_RELAY_FAILURE_STAGE ${stage}\n`);},
   connectionForRequest:req=>local(req.socket)?req.socket:undefined,
   relay:{dispatch:async(connection,envelope)=>{
    if(!local(connection))throw Error("dsh_relay_invalid_connection");
