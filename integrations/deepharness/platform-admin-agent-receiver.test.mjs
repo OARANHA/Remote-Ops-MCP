@@ -42,7 +42,7 @@ test("rejects disabled host receiver before contacting socket",async()=>{
  });
  assert.equal(result.code,1);
  assert.equal(result.stdout,"");
- assert.match(result.stderr,/^deepharness_platform_receiver_unavailable stage=(enabled|contract|socket|relay_http|response)$/);
+ assert.equal(result.stderr,"deepharness_platform_receiver_unavailable");
 });
 test("rejects untrusted socket permissions and unauthorized group",async()=>{
  for(const invalid of [
