@@ -113,13 +113,12 @@ export function createDshPlatformExistingHostHandler({
  const relay={
   async dispatch(connection,envelope){
    let stage="authenticate";
-   const auditFailure=()=>{if(stage!=="adapter")ctx.logger?.warn?.("DSH_PLATFORM_DISPATCH_FAILURE_STAGE", {operation:"team.member.create",stage});};
+   const auditFailure=()=>ctx.logger?.warn?.("DSH_PLATFORM_DISPATCH_FAILURE_STAGE", {operation:"team.member.create",stage});
    try {
    if(!authentic(connection))deny();
    stage="validate_envelope";
    const request=validateDshPlatformEnvelope(envelope);
    const action=actionForDshPlatformOperation(request.args.operation);
-   const teammate=action==="team.member.create";
    stage="authorize_action";
    const authorize=scope=>{
     if(!authentic(connection)||!permitted.has(action)||scope.operation!==action||
@@ -141,7 +140,7 @@ export function createDshPlatformExistingHostHandler({
    stage="create_dispatcher";
    const dispatcher=createDshPlatformPrivateRelay({admin,authenticatePeer:authentic,
     withDurableReplay:(request,commit)=>replay.withDurableReplay(request,commit)});
-   stage="adapter";
+   stage="replay_or_adapter";
    return await dispatcher.dispatch(connection,request);
    }catch(error){
      // Fixed stage labels only. No request bodies, identifiers, or exception messages.
