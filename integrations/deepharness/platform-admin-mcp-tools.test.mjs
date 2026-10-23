@@ -4,22 +4,24 @@ import {createDshPlatformToolDefs} from "./platform-admin-mcp-tools.mjs";
 const KEY="4db3b83c-5abc-4aa3-9270-9715e3d34e38";
 const principal={actor:"oauth:client:session-0123",clientId:"client",
   sessionId:"session-0123456789abcdef"};
-test("eight optional tool definitions map only exact named DSH business actions",async()=>{
+test("nine optional tool definitions map only exact named DSH business actions",async()=>{
   const calls=[];
   const defs=createDshPlatformToolDefs({
     execute:async(auth,args)=>{calls.push({auth,args});return {ok:true}},
   });
   const expected=[
-    "listWorkspaces","createWorkspace","renameWorkspace","listWorkspaceSessions",
+    "listWorkspaces","listSessionSkills","createWorkspace","renameWorkspace","listWorkspaceSessions",
     "createLeadSession","createTeammate","createTeamTask","updateTeamTask",
   ];
-  assert.equal(defs.length,8);
-  assert.equal(new Set(defs.map(d=>d.name)).size,8);
+  assert.equal(defs.length,9);
+  assert.equal(new Set(defs.map(d=>d.name)).size,9);
   assert.equal(defs[0].mutation,undefined);
-  assert.equal(defs[3].mutation,undefined);
+  assert.equal(defs[1].mutation,undefined);
+  assert.equal(defs[4].mutation,undefined);
   assert.ok(defs.filter(d=>d.mutation).length===6);
   const minimal=[
-    {},{name:"lab-new",title:"Lab New",requestId:KEY},
+    {},{workspaceId:"lab-1",sessionId:"session-1"},
+    {name:"lab-new",title:"Lab New",requestId:KEY},
     {workspaceId:"lab-1",title:"Lab",requestId:KEY},
     {workspaceId:"lab-1"},
     {workspaceId:"lab-1",agentPreset:"default",requestId:KEY},
