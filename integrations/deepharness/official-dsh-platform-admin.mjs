@@ -5,6 +5,7 @@
  * supplied by the caller-side composition, never accepted in user arguments.
  */
 import {join,resolve,sep} from "node:path";
+import {createDshCleanupSkillReader} from "./platform-cleanup-skill-catalog.mjs";
 const deny=()=>{throw Error("dsh_platform_admin_denied");};
 const obj=x=>x!==null&&typeof x==="object"&&!Array.isArray(x);
 const ID=/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
@@ -32,7 +33,7 @@ function view(ws){
  */
 export function createOfficialDshPlatformAdmin({
   workspaceRegistry,workspaceController,directoryPickerController,
-  sessionController,agentTeams,workspaceParent,authorizeRead,withAuthorizedWrite,
+  sessionController,agentTeams,sessionSkillCatalog,workspaceParent,authorizeRead,withAuthorizedWrite,
 }={}){
   if(typeof authorizeRead!=="function"||typeof withAuthorizedWrite!=="function"||
     typeof workspaceRegistry?.list!=="function"||
@@ -66,7 +67,20 @@ export function createOfficialDshPlatformAdmin({
   }
   const write=(operation,scope,work)=>
     withAuthorizedWrite(Object.freeze({operation,...scope}),work);
+  // Optional official session-addressed skill catalog. Kept inert until an
+  // independently scoped skills.list grant and private transport are wired.
+  const skillReader=sessionSkillCatalog===undefined?undefined:
+    createDshCleanupSkillReader({
+      listSkills:({sessionId})=>sessionSkillCatalog.list({sessionId},new AbortController().signal),
+      authorizeRead:scope=>authorizeRead(scope),
+    });
   return Object.freeze({
+    ...(skillReader===undefined?{}:{async listSessionSkills(input){
+      exact(input,["workspaceId","sessionId"]);
+      const ws=workspace(input.workspaceId);
+      lead(ws,input.sessionId);
+      return skillReader.list({workspaceId:ws.id,sessionId:input.sessionId});
+    }}),
     async listWorkspaces(){
       return read("workspace.list",{},()=>{
         const all=workspaceRegistry.list();
