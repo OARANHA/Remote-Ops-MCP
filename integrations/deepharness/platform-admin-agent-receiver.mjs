@@ -61,21 +61,27 @@ function post(socket,payload,request,timeout){
 }
 export async function executeDshPlatformAgentOperation(envelope,opts={},deps={}){
  const started=Date.now(),env=deps.env??process.env;
+ let stage="enabled";
  try{
   if(env.DSH_PLATFORM_AGENT_ENABLED!=="1")deny();
+  stage="contract";
   const payload=validateDshPlatformEnvelope(envelope);
   const socket=deps.socketPath??SOCKET;
   const uid=deps.agentUid??process.getuid?.();
   const groups=deps.agentGroups??[process.getgid?.(),...(process.getgroups?.()??[])];
+  stage="socket";
   await requireSocket(socket,deps.lstat??lstat,env,uid,groups);
   const timeout=Math.min(Math.max(opts.timeoutMs??10000,1000),30000);
+  stage="relay_http";
   const result=await post(socket,payload,deps.request??http.request,timeout);
+  stage="response";
   const output=JSON.stringify(result);
   if(Buffer.byteLength(output,"utf8")>maxResponse)deny();
   return {code:0,stdout:output,stderr:"",durationMs:Date.now()-started,
    truncated:false,timedOut:false};
  }catch{
-  return {code:1,stdout:"",stderr:"deepharness_platform_receiver_unavailable",
+  // Fixed, non-sensitive labels only; never include request data or exception text.
+  return {code:1,stdout:"",stderr:`deepharness_platform_receiver_unavailable stage=${stage}`,
    durationMs:Date.now()-started,truncated:false,timedOut:false};
  }
 }
