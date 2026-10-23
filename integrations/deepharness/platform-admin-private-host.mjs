@@ -122,6 +122,12 @@ export function createDshPlatformExistingHostHandler({
    };
    if(!permitted.has(action))deny();
    const admin=createOfficialDshPlatformAdmin({...services,workspaceParent,
+    auditStage:({operation,stage})=>{
+     // Fixed labels only; never log payloads, identifiers or exception text.
+     if(operation==="team.member.create"&&
+        ["resolve_agent","spawn_teammate","validate_member"].includes(stage))
+       ctx.logger?.warn?.("DSH_PLATFORM_TEAMMATE_FAILURE_STAGE", {operation,stage});
+    },
     authorizeRead:async scope=>authorize(scope),
     withAuthorizedWrite:async(scope,work)=>{
      authorize(scope);const result=await work();authorize(scope);return result;
