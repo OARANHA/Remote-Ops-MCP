@@ -13,10 +13,10 @@ const deny=(s="deepharness_platform_grant_denied")=>{throw Error(s);};
 const ID=/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HASH=/^[a-f0-9]{64}$/;
-const ACTIONS=new Set(["workspace.list","workspace.create","workspace.rename",
+const ACTIONS=new Set(["workspace.list","skills.list","workspace.create","workspace.rename",
   "session.list","session.create","team.member.create",
   "team.task.create","team.task.update"]);
-const READ=new Set(["workspace.list","session.list"]);
+const READ=new Set(["workspace.list","session.list","skills.list"]);
 const MAX_BYTES=12*1024*1024,MAX_GRANTS=500,MAX_RECEIPTS=5000,MAX_RESULT=131072;
 const obj=x=>x!==null&&typeof x==="object"&&!Array.isArray(x);
 const ident=x=>typeof x==="string"&&ID.test(x);
