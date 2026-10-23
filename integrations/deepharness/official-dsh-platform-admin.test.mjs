@@ -177,3 +177,21 @@ test("Missing official skill service cannot advertise session skills",()=>{
  const {api}=fixture();
  assert.equal(api.listSessionSkills,undefined);
 });
+
+test("Teammate failures emit only allowlisted diagnostic stage without changing denial",async()=>{
+  const {env}=fixture();
+  const events=[];
+  const input={workspaceId:W,leadSessionId:lead,name:"reviewer",
+    description:"Review design",prompt:"PRIVATE_PROMPT_NEVER_LOG",
+    provider:"nvidia",context:"fresh"};
+  const api=createOfficialDshPlatformAdmin({...env,auditStage:event=>events.push(event),
+    sessionController:{...env.sessionController,resolveAgent:async()=>{throw Error("PRIVATE_RESOLVE_ERROR");}}});
+  await assert.rejects(api.createTeammate(input),/PRIVATE_RESOLVE_ERROR/);
+  assert.deepEqual(events,[{operation:"team.member.create",stage:"resolve_agent"}]);
+  events.length=0;
+  const failing=createOfficialDshPlatformAdmin({...env,auditStage:event=>events.push(event),
+    agentTeams:{...env.agentTeams,spawnTeammate:async()=>{throw Error("PRIVATE_SPAWN_ERROR");}}});
+  await assert.rejects(failing.createTeammate(input),/PRIVATE_SPAWN_ERROR/);
+  assert.deepEqual(events,[{operation:"team.member.create",stage:"spawn_teammate"}]);
+  assert.ok(!JSON.stringify(events).includes("PRIVATE"));
+});
