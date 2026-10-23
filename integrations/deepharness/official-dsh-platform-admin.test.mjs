@@ -153,3 +153,27 @@ test("Workspace session inventory and official teammate spawn obey scoped Lead",
     name:"bad",description:"Bad",prompt:"Attempt",provider:"nvidia",context:"exploit"}),denied);
   await assert.rejects(api.listWorkspaceSessions({workspaceId:FORBIDDEN}),denied);
 });
+
+test("Optional official session skill catalog stays scoped and read-only",async()=>{
+  const {env}=fixture();
+  const calls=[];
+  const api=createOfficialDshPlatformAdmin({...env,
+    authorizeRead:async scope=>{calls.push(scope.operation);if(scope.operation!=="skills.list")throw Error("revoked");},
+    sessionSkillCatalog:{list:async request=>{
+      assert.deepEqual(request,{sessionId:lead});
+      return {skills:[{name:"skill-one",description:"Example",modelInvocable:false}]};
+    }},
+  });
+  const result=await api.listSessionSkills({workspaceId:W,sessionId:lead});
+  assert.equal(result.skills[0].name,"skill-one");
+  assert.equal(result.cleanupAuthorized,false);
+  assert.equal(result.projectRootsComplete,false);
+  assert.deepEqual(calls,["skills.list","skills.list"]);
+  await assert.rejects(api.listSessionSkills({workspaceId:FORBIDDEN,sessionId:lead}),denied);
+  await assert.rejects(api.listSessionSkills({workspaceId:W,sessionId:"unattached"}),denied);
+  await assert.rejects(api.listSessionSkills({workspaceId:W,sessionId:lead,path:"/etc"}),denied);
+});
+test("Missing official skill service cannot advertise session skills",()=>{
+ const {api}=fixture();
+ assert.equal(api.listSessionSkills,undefined);
+});
