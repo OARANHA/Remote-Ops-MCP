@@ -143,7 +143,7 @@ export function createOfficialDshPlatformAdmin({
     async createTeammate(input){
       exact(input,["workspaceId","leadSessionId","name","description","prompt","provider","context"]);
       const ws=workspace(input.workspaceId),leadSessionId=lead(ws,input.leadSessionId);
-      const name=label(input.name,80),description=label(input.description,500);
+      const name=label(input.name,80),description=label(input.description,200);
       const prompt=label(input.prompt,4096),provider=id(input.provider);
       if(!["fresh","fork"].includes(input.context))deny();
       return write("team.member.create",{workspaceId:ws.id,leadSessionId},async()=>{
@@ -152,10 +152,11 @@ export function createOfficialDshPlatformAdmin({
         // provider credentials, session identities or thrown error messages.
         let stage="resolve_agent";
         try{
-          const resolved=await sessionController.resolveAgent(leadSessionId);
-          if(!resolved?.agent||resolved.error||typeof agentTeams.spawnTeammate!=="function")deny();
+          const agent=await sessionController.resolveAgent(leadSessionId);
+          if(!agent||typeof agent.id!=="string"||typeof agent.session!=="object"||
+             typeof agentTeams.spawnTeammate!=="function")deny();
           stage="spawn_teammate";
-          const created=await agentTeams.spawnTeammate(resolved.agent,{
+          const created=await agentTeams.spawnTeammate(agent,{
             name,description,prompt:[{type:"text",text:prompt}],
             context:input.context,provider,signal:new AbortController().signal,
           });
@@ -176,9 +177,9 @@ export function createOfficialDshPlatformAdmin({
       const subject=label(input.subject,240),description=label(input.description,1500);
       return write("team.task.create",{workspaceId:ws.id,leadSessionId},async()=>{
         lead(workspace(ws.id),leadSessionId);
-        const resolved=await sessionController.resolveAgent(leadSessionId);
-        if(!resolved?.agent||resolved.error)deny();
-        const task=await agentTeams.createTask(resolved.agent,{subject,description});
+        const agent=await sessionController.resolveAgent(leadSessionId);
+        if(!agent||typeof agent.id!=="string"||typeof agent.session!=="object")deny();
+        const task=await agentTeams.createTask(agent,{subject,description});
         if(!ID.test(task?.id)||!Number.isSafeInteger(task.revision))deny();
         return Object.freeze({taskId:task.id,revision:task.revision,status:task.status});
       });
@@ -193,9 +194,9 @@ export function createOfficialDshPlatformAdmin({
         (input.action==="reassign"&&input.owner===null))deny();
       return write("team.task.update",{workspaceId:ws.id,leadSessionId},async()=>{
         lead(workspace(ws.id),leadSessionId);
-        const resolved=await sessionController.resolveAgent(leadSessionId);
-        if(!resolved?.agent||resolved.error)deny();
-        const task=await agentTeams.updateTask(resolved.agent,{
+        const agent=await sessionController.resolveAgent(leadSessionId);
+        if(!agent||typeof agent.id!=="string"||typeof agent.session!=="object")deny();
+        const task=await agentTeams.updateTask(agent,{
           taskId,expectedRevision:revision,action:input.action,
           ...(input.owner===null?{}:{owner:input.owner}),
         });
