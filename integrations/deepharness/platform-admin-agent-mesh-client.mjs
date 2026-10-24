@@ -32,30 +32,33 @@ export function validateDshPlatformTarget(t){
  return Object.freeze({id:TARGET,deviceId:t.deviceId});
 }
 export function createDshPlatformAgentMeshDispatcher({
- target,lookupCurrentTarget,dispatchAgentOperation,timeoutMs=10_000,
+ target,lookupCurrentTarget,dispatchAgentOperation,timeoutMs=10_000,auditFailure=()=>{},
 }={}){
  const trusted=validateDshPlatformTarget(target);
+ const audit=stage=>{try{auditFailure(stage);}catch{}};
  if(typeof lookupCurrentTarget!=="function"||
     typeof dispatchAgentOperation!=="function"||
     !Number.isSafeInteger(timeoutMs)||timeoutMs<1000||timeoutMs>30000)deny();
  return Object.freeze({
   async dispatch(rawEnvelope){
    const envelope=validateDshPlatformEnvelope(rawEnvelope);
+   let current;
+   try{current=validateDshPlatformTarget(await lookupCurrentTarget());}
+   catch{audit("target_lookup_or_validation");deny();}
+   if(current.deviceId!==trusted.deviceId){audit("device_identity_changed");deny();}
    let response;
-   try{
-    const current=validateDshPlatformTarget(await lookupCurrentTarget());
-    if(current.deviceId!==trusted.deviceId)deny();
-    response=await dispatchAgentOperation(trusted.deviceId,envelope,{
+   try{response=await dispatchAgentOperation(trusted.deviceId,envelope,{
      timeoutMs,maxBytes:262144,
-    });
-   }catch{deny();}
+   });}catch{audit("agent_dispatch_exception");deny();}
    if(!response||response.code!==0||response.truncated!==false||
       response.timedOut!==false||response.stderr!==""||
       typeof response.stdout!=="string"||response.stdout.length===0||
-      Buffer.byteLength(response.stdout,"utf8")>262144)deny();
+      Buffer.byteLength(response.stdout,"utf8")>262144){
+    audit("agent_response_contract");deny();
+   }
    let result;
-   try{result=JSON.parse(response.stdout);}catch{deny();}
-   if(!result||typeof result!=="object")deny();
+   try{result=JSON.parse(response.stdout);}catch{audit("agent_response_json");deny();}
+   if(!result||typeof result!=="object"){audit("agent_result_shape");deny();}
    // The downstream host MUST separately authenticate transport and enforce
    // managed root, replay, grants, and official DSH service authorization.
    return result;
