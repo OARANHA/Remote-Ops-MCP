@@ -160,6 +160,10 @@ export function createDshPlatformExistingHostHandler({
   },
  };
  const handle=createDshPlatformPrivateHttpHandler({relay,
+  auditStage:stage=>{
+   if(["request","peer","body","contract","upstream","response"].includes(stage))
+    ctx.logger?.warn?.("DSH_PLATFORM_HTTP_FAILURE_STAGE",{stage});
+  },
   connectionForRequest:req=>{
    const reason=authenticationFailure(req.socket);
    if(reason!==null){auditPeerFailure(reason);return undefined;}
