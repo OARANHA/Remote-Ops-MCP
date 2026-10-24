@@ -122,7 +122,11 @@ export function createDshPlatformExistingHostHandler({
  const relay={
   async dispatch(connection,envelope){
    let stage="authenticate";
-   const auditFailure=()=>ctx.logger?.warn?.("DSH_PLATFORM_DISPATCH_FAILURE_STAGE", {operation:"team.member.create",stage});
+   const auditFailure=()=>{
+    // Fixed labels only; stderr remains observable without a Cordis logger.
+    process.stderr.write("DSH_PLATFORM_DISPATCH_FAILURE_STAGE "+stage+"\n");
+    ctx.logger?.warn?.("DSH_PLATFORM_DISPATCH_FAILURE_STAGE",{operation:"team.member.create",stage});
+   };
    try {
    const initialPeerFailure=authenticationFailure(connection);
    if(initialPeerFailure!==null){auditPeerFailure(initialPeerFailure);deny();}
@@ -141,7 +145,10 @@ export function createDshPlatformExistingHostHandler({
      // Fixed labels only; never log payloads, identifiers or exception text.
      if(operation==="team.member.create"&&
         ["resolve_agent","spawn_teammate","validate_member"].includes(stage))
-       ctx.logger?.warn?.("DSH_PLATFORM_TEAMMATE_FAILURE_STAGE", {operation,stage});
+       {
+        process.stderr.write("DSH_PLATFORM_TEAMMATE_FAILURE_STAGE "+stage+"\n");
+        ctx.logger?.warn?.("DSH_PLATFORM_TEAMMATE_FAILURE_STAGE",{operation,stage});
+       }
     },
     authorizeRead:async scope=>authorize(scope),
     withAuthorizedWrite:async(scope,work)=>{
