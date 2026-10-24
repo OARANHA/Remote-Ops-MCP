@@ -33,6 +33,7 @@ export async function loadDshPlatformToolDefs(){
   const policy=composeDshPlatformOverAgentMesh({
    grantStore:getDshPlatformGrantStore({file}),target,lookupCurrentTarget,
    dispatchAgentOperation,
+   auditFailure:stage=>console.warn("DSH_PLATFORM_AGENT_MESH_FAILURE_STAGE",stage),
   });
   return createDshPlatformToolDefs(policy);
  })().catch(error=>{pending=undefined;throw error;});
