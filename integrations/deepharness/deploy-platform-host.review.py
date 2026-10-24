@@ -14,7 +14,8 @@ import time
 
 WEB = 'deepharness-web-1'
 RELAY = 'wandora-dsh-relay-lab-canary'
-IMAGE = 'sha256:b83128762a01e2c59bfa03126a34d126cf8850a71adcdecf24d08a7116ffcd4c'
+IMAGE = 'ghcr.io/oaranha/remote-ops-mcp-dsh-platform-candidate@sha256:8e0df65cb817fa11b2fd17ecdad6d5df75bf38bb97725a369cb501143b3a71a7'
+REVIEWED_REVISION = '7ebc3fe11f125f3975b71a8f1949e853480bc2f8'
 CONFIG = pathlib.Path('/opt/wandora/data/deepharness-mcp/review/runtime.json')
 BACKUP = pathlib.Path('/opt/wandora/dsh-platform-host-activation-20261022-v1')
 WORKSPACE_PARENT = '/data/dsh/projetos'
@@ -39,6 +40,14 @@ def run(*args, timeout=35):
 
 def inspect(name):
     return json.loads(run('docker', 'inspect', name))[0]
+
+def installed_reviewed_host_image(web):
+    require(web['State']['Running'] and web['Config']['User'] == '1000:1000')
+    require(web['Config']['Image'] == IMAGE)
+    require(web['Config'].get('Labels', {}).get('org.opencontainers.image.revision') == REVIEWED_REVISION)
+    image_id = web.get('Image')
+    require(isinstance(image_id, str) and re.fullmatch(r'sha256:[a-f0-9]{64}', image_id))
+    return image_id
 
 
 def candidate_config(original, fingerprint):
@@ -124,7 +133,7 @@ def main():
     require(sys.argv[1:] == ['--apply'])
     require(os.geteuid() == 0 and socket.gethostname() == '28server')
     web, relay = inspect(WEB), inspect(RELAY)
-    require(web['State']['Running'] and web['Image'] == IMAGE and web['Config']['User'] == '1000:1000')
+    installed_image = installed_reviewed_host_image(web)
     require(web['HostConfig']['AutoRemove'] is False)
     require(relay['State']['Running'])
     env = dict(v.split('=', 1) for v in relay['Config'].get('Env', []) if '=' in v)
@@ -162,7 +171,7 @@ def main():
     run('docker', 'run', '--rm', '--pull', 'never', '--network', 'none', '--read-only',
         '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true', '--user', '1000:1000',
         '--mount', f'type=bind,src={validation},dst=/candidate-runtime.json,readonly',
-        '--entrypoint', 'node', IMAGE, '--input-type=module', '-e',
+        '--entrypoint', 'node', installed_image, '--input-type=module', '-e',
         "import {readFileSync} from 'node:fs';import {validateOperationalHostConfig} from '/opt/wandora-mcp-verifier/mcp/operational-host.mjs';validateOperationalHostConfig(JSON.parse(readFileSync('/candidate-runtime.json','utf8')));console.log('VALIDATED')")
     print('INSTALLED_HOST_CONFIG_VALIDATION=GREEN', flush=True)
     replay_dir.mkdir(mode=0o700)
