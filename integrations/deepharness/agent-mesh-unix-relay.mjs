@@ -9,6 +9,8 @@
  */
 import {createDshMtlsRequester,createDshPrivateBridgeClient,DSH_BRIDGE_PATH} from "./private-bridge-client.mjs";
 
+import {createDshPlatformPrivateHttpHandler} from "./platform-admin-private-http-handler.mjs";
+
 const MAX_REQUEST=16_384;
 const MAX_RESPONSE=262_144;
 const ID=/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
@@ -123,4 +125,33 @@ export function createDshAgentMeshUnixRelayOverMtls({tls,serverFingerprintSha256
     ca:tls.ca,cert:tls.cert,key:tls.key,serverFingerprintSha256,
   });
   return createDshAgentMeshUnixRelayHandler({postJson,workspaceId,leadSessionId});
+}
+
+/**
+ * Platform branch of the SAME least-privilege Unix relay.
+ * Serve only with startDshUnixRelayListener at the fixed V2 socket in a
+ * relay-owned 02710 directory / 0660 socket, with an explicitly trusted,
+ * dedicated agent group. Filesystem DAC is the local access boundary; this
+ * does not claim to inspect SO_PEERCRED. The backend independently requires
+ * a verified and pinned mTLS client certificate and explicit host authority.
+ */
+export function createDshPlatformUnixRelayHandler({postJson}={}){
+ if(typeof postJson!=="function")throw Error("dsh_relay_invalid_configuration");
+ const local=connection=>connection&&connection.remoteAddress===undefined&&
+  connection.remotePort===undefined&&connection.destroyed!==true;
+ return createDshPlatformPrivateHttpHandler({
+  auditStage:stage=>{if(["request","peer","body","contract","upstream","response"].includes(stage))
+    process.stderr.write(`DSH_PLATFORM_RELAY_FAILURE_STAGE ${stage}\n`);},
+  connectionForRequest:req=>local(req.socket)?req.socket:undefined,
+  relay:{dispatch:async(connection,envelope)=>{
+   if(!local(connection))throw Error("dsh_relay_invalid_connection");
+   return postJson(envelope);
+  }},
+ });
+}
+export function createDshPlatformUnixRelayOverMtls({tls,serverFingerprintSha256}={}){
+ if(!isRecord(tls))throw Error("dsh_relay_invalid_configuration");
+ return createDshPlatformUnixRelayHandler({postJson:createDshMtlsRequester({
+  ca:tls.ca,cert:tls.cert,key:tls.key,serverFingerprintSha256,protocol:"platform-v2",
+ })});
 }

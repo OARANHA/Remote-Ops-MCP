@@ -13,7 +13,7 @@ function fixture(){
     [FORBIDDEN,{id:FORBIDDEN,path:"/opt/other",title:"other",sessionIds:[lead]}],
   ]);
   const calls=[],grants=new Set(["workspace.list","workspace.create","workspace.rename",
-    "session.create","session.list","team.member.create","team.task.create","team.task.update"]);
+    "session.create","session.list","team.member.read","team.member.create","team.task.create","team.task.update"]);
   const env={
     workspaceParent:ROOT,
     authorizeRead:async ctx=>{if(!grants.has(ctx.operation))throw Error("revoked");},
@@ -46,9 +46,11 @@ function fixture(){
         const id="session-99999999-9999-4999-8999-999999999999";
         rows.get(workspaceId).sessionIds.unshift(id);return {sessionId:id};
       },
-      resolveAgent:async id=>({agent:{id}}),
+      resolveAgent:async id=>({id,session:{}}),
     },
     agentTeams:{
+      listMembers:async agent=>{assert.equal(agent.id,lead);return [{id:"member-provisioning",name:"pesquisador-oss",role:"teammate",phase:"provisioning",prompt:"PRIVATE_PROMPT",diagnostic:"PRIVATE_DIAGNOSTIC"},
+        {id:"member-failed",name:"pesquisador-oss",role:"teammate",phase:"failed",credentials:"PRIVATE_CREDENTIAL"}];},
       spawnTeammate:async(agent,input)=>{
         calls.push(["spawn",agent.id,input.name]);
         return {member:{id:"session-new-teammate",name:input.name,role:"teammate",phase:"active"}};
@@ -139,6 +141,22 @@ test("Revoked action fails before mutation or read",async()=>{
   await assert.rejects(api.listWorkspaces(),/revoked/);
 });
 
+test("Team member state read is scoped, read-only, and exposes no prompt or diagnostics",async()=>{
+  const {env}=fixture(),readScopes=[];
+  const scoped=createOfficialDshPlatformAdmin({...env,authorizeRead:async scope=>{readScopes.push(scope);}});
+  const result=await scoped.listTeamMemberStates({workspaceId:W,leadSessionId:lead});
+  assert.deepEqual(result,{workspaceId:W,leadSessionId:lead,members:[
+    {id:"member-provisioning",name:"pesquisador-oss",role:"teammate",phase:"provisioning"},
+    {id:"member-failed",name:"pesquisador-oss",role:"teammate",phase:"failed"},
+  ]});
+  assert.equal(readScopes.length,2);
+  assert.deepEqual(readScopes[0],{operation:"team.member.read",workspaceId:W,leadSessionId:lead});
+  assert.equal(JSON.stringify(result).includes("PRIVATE"),false);
+  await assert.rejects(scoped.listTeamMemberStates({workspaceId:FORBIDDEN,leadSessionId:lead}),denied);
+  await assert.rejects(scoped.listTeamMemberStates({workspaceId:W,leadSessionId:"unattached"}),denied);
+  await assert.rejects(scoped.listTeamMemberStates({workspaceId:W,leadSessionId:lead,path:"/etc"}),denied);
+});
+
 test("Workspace session inventory and official teammate spawn obey scoped Lead",async()=>{
   const {api,calls}=fixture();
   assert.deepEqual(await api.listWorkspaceSessions({workspaceId:W}),[lead]);
@@ -147,9 +165,54 @@ test("Workspace session inventory and official teammate spawn obey scoped Lead",
     provider:"nvidia",context:"fresh"});
   assert.equal(x.member.name,"revisor2");
   assert.equal(calls.filter(x=>x[0]==="spawn").length,1);
+  assert.deepEqual(calls.find(x=>x[0]==="spawn"),["spawn",lead,"revisor2"]);
+  await assert.rejects(api.createTeammate({workspaceId:W,leadSessionId:lead,
+    name:"too-long",description:"D".repeat(201),prompt:"Inspect",provider:"chutes.ai",context:"fresh"}),denied);
   await assert.rejects(api.createTeammate({workspaceId:W,leadSessionId:"other",
     name:"bad",description:"Bad",prompt:"Attempt",provider:"nvidia",context:"fresh"}),denied);
   await assert.rejects(api.createTeammate({workspaceId:W,leadSessionId:lead,
     name:"bad",description:"Bad",prompt:"Attempt",provider:"nvidia",context:"exploit"}),denied);
   await assert.rejects(api.listWorkspaceSessions({workspaceId:FORBIDDEN}),denied);
+});
+
+test("Optional official session skill catalog stays scoped and read-only",async()=>{
+  const {env}=fixture();
+  const calls=[];
+  const api=createOfficialDshPlatformAdmin({...env,
+    authorizeRead:async scope=>{calls.push(scope.operation);if(scope.operation!=="skills.list")throw Error("revoked");},
+    sessionSkillCatalog:{list:async request=>{
+      assert.deepEqual(request,{sessionId:lead});
+      return {skills:[{name:"skill-one",description:"Example",modelInvocable:false}]};
+    }},
+  });
+  const result=await api.listSessionSkills({workspaceId:W,sessionId:lead});
+  assert.equal(result.skills[0].name,"skill-one");
+  assert.equal(result.cleanupAuthorized,false);
+  assert.equal(result.projectRootsComplete,false);
+  assert.deepEqual(calls,["skills.list","skills.list"]);
+  await assert.rejects(api.listSessionSkills({workspaceId:FORBIDDEN,sessionId:lead}),denied);
+  await assert.rejects(api.listSessionSkills({workspaceId:W,sessionId:"unattached"}),denied);
+  await assert.rejects(api.listSessionSkills({workspaceId:W,sessionId:lead,path:"/etc"}),denied);
+});
+test("Missing official skill service cannot advertise session skills",()=>{
+ const {api}=fixture();
+ assert.equal(api.listSessionSkills,undefined);
+});
+
+test("Teammate failures emit only allowlisted diagnostic stage without changing denial",async()=>{
+  const {env}=fixture();
+  const events=[];
+  const input={workspaceId:W,leadSessionId:lead,name:"reviewer",
+    description:"Review design",prompt:"PRIVATE_PROMPT_NEVER_LOG",
+    provider:"nvidia",context:"fresh"};
+  const api=createOfficialDshPlatformAdmin({...env,auditStage:event=>events.push(event),
+    sessionController:{...env.sessionController,resolveAgent:async()=>{throw Error("PRIVATE_RESOLVE_ERROR");}}});
+  await assert.rejects(api.createTeammate(input),/PRIVATE_RESOLVE_ERROR/);
+  assert.deepEqual(events,[{operation:"team.member.create",stage:"resolve_agent"}]);
+  events.length=0;
+  const failing=createOfficialDshPlatformAdmin({...env,auditStage:event=>events.push(event),
+    agentTeams:{...env.agentTeams,spawnTeammate:async()=>{throw Error("PRIVATE_SPAWN_ERROR");}}});
+  await assert.rejects(failing.createTeammate(input),/PRIVATE_SPAWN_ERROR/);
+  assert.deepEqual(events,[{operation:"team.member.create",stage:"spawn_teammate"}]);
+  assert.ok(!JSON.stringify(events).includes("PRIVATE"));
 });

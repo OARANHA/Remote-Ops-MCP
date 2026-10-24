@@ -1,0 +1,10 @@
+**
+!integrations/
+!integrations/deepharness/
+!integrations/deepharness/*.mjs
+!.ci-dsh-reviewed/
+!.ci-dsh-reviewed/deploy/
+!.ci-dsh-reviewed/deploy/mcp/
+!.ci-dsh-reviewed/deploy/mcp/run-operational.mjs
+!.ci-dsh-reviewed/deploy/mcp/operational-host.mjs
+!.ci-dsh-reviewed/deploy/mcp/private-read-listener.mjs

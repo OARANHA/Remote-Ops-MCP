@@ -19,9 +19,23 @@ async function optionalDeepharnessTools():Promise<RuntimeToolDef[]> {
   return integration.loadDeepharnessToolDefs();
 }
 
-async function createServer(ctx:ToolCtx):Promise<McpServer>{
+async function optionalDshPlatformTools():Promise<RuntimeToolDef[]> {
+  if(process.env.DSH_PLATFORM_MCP_ENABLED!=="1")return [];
+  const moduleUrl=new URL("../../integrations/deepharness/platform-admin-runtime.mjs",import.meta.url);
+  const integration=await import(moduleUrl.href) as {loadDshPlatformToolDefs:()=>Promise<RuntimeToolDef[]>};
+  try { return await integration.loadDshPlatformToolDefs(); }
+  catch {
+    // A disabled/misconfigured V2 must never take the existing V1 offline.
+    // No V2 tools or authority are exposed on failure.
+    console.error(JSON.stringify({ts:new Date().toISOString(),level:"error",
+      msg:"deepharness_platform_tools_unavailable"}));
+    return [];
+  }
+}
+
+export async function createServer(ctx:ToolCtx):Promise<McpServer>{
  const server=new McpServer({name:"remote-ops-mcp",version:"1.1.0"},{instructions:"Servidor de operações remotas em VPS Linux via capabilities explícitas. Descubra targets com targets_list. Operações de escrita/processo só funcionam nas workspaces e programas allowlisted; não há sudo nem shell root implícito. Managed-admin, quando explicitamente habilitado, exige prepare/apply, confirmação humana e ticket root assinado de uso único. As ferramentas DeepHarness, quando ativadas, usam grants exatos por OAuth client/session, workspace, Lead e ação; o OAuth mcp:read sozinho não concede acesso a equipes nem autorização de escrita. Em chats de operador, apresente por padrão somente o resumo necessário à decisão; detalhe operacional completo deve ser consultado nas fontes autoritativas ou via visão full quando o usuário pedir explicitamente ou quando for necessário para uma decisão humana. O audit mantém seu contrato redigido de eventos. Todas as ações são auditadas."});
- const defs=[...TOOL_DEFS,...await optionalDeepharnessTools()];
+ const defs=[...TOOL_DEFS,...await optionalDeepharnessTools(),...await optionalDshPlatformTools()];
  for(const def of defs){
    const mutation=def.mutation===true;
    server.registerTool(def.name,{description:def.description,inputSchema:def.inputSchema,

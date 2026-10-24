@@ -284,6 +284,13 @@ async function executePaperclipSemanticOperation(x: AgentOperation, opts?: ExecO
   } finally { clearTimeout(timer); }
 }
 export async function executeAgentOperation(x: AgentOperation, opts?: ExecOptions): Promise<ExecResult> {
+  if (x.op === "deepharness.platform") {
+    const moduleUrl=new URL("../../integrations/deepharness/platform-admin-agent-receiver.mjs",import.meta.url);
+    const receiver=await import(moduleUrl.href) as {
+      executeDshPlatformAgentOperation:(request:unknown,opts?:ExecOptions)=>Promise<ExecResult>;
+    };
+    return receiver.executeDshPlatformAgentOperation(x,opts);
+  }
   if (x.op === "deepharness.semantic") return executeDshAgentOperation(x, opts);
   if (x.op === "host.managed_admin") return executeManagedAdminOperation(x, opts);
   if (x.op === "postgres.pinned_readback") return executePostgresPinnedReadbackOperation(x, opts);

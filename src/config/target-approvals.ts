@@ -29,14 +29,22 @@ export function prepareAgentTarget(input: {
   preset: AgentTargetPreset;
 }) {
   purge();
-  if ((input.preset === "managed-admin" || input.preset === "openhands-execute" || input.preset === "deepharness-semantic-lab") && (env.AUTH_MODE !== "oauth" || !env.AUTH_SECRET || env.AUTH_SECRET.length < 32)) {
+  if ((input.preset === "managed-admin" || input.preset === "openhands-execute" || input.preset === "deepharness-semantic-lab" || input.preset === "deepharness-platform-private") && (env.AUTH_MODE !== "oauth" || !env.AUTH_SECRET || env.AUTH_SECRET.length < 32)) {
     throw new OpsError("CAPABILITY_DENIED", "perfil privilegiado exige AUTH_MODE=oauth e AUTH_SECRET forte");
   }
   if (input.preset === "deepharness-semantic-lab" &&
       (input.targetId !== "deepharness-semantic-lab" || input.environment !== "development")) {
     throw new OpsError("CAPABILITY_DENIED", "DSH semantic lab exige target exato e ambiente development");
   }
+  if (input.preset === "deepharness-platform-private" &&
+      (input.targetId !== "deepharness-platform-private" || input.environment !== "development")) {
+    throw new OpsError("CAPABILITY_DENIED", "DSH platform exige target exato e ambiente development");
+  }
   const device = requireLiveDevice(input.deviceId);
+  if (input.preset === "deepharness-platform-private" &&
+      !device.capabilities?.includes("deepharness.platform")) {
+    throw new OpsError("CAPABILITY_DENIED", "dispositivo Agent Mesh não anunciou deepharness.platform");
+  }
   if (input.preset === "deepharness-semantic-lab" &&
       !device.capabilities?.includes("deepharness.semantic")) {
     throw new OpsError("CAPABILITY_DENIED",
@@ -51,6 +59,8 @@ export function prepareAgentTarget(input: {
   const authority =
     input.preset === "postgres-readback"
       ? "pinned PostgreSQL readback only; generic Docker/process/write access remains disabled"
+      : input.preset === "deepharness-platform-private"
+        ? "DSH platform only; exact development target and active device capability; no generic host/Docker/process/admin/write permissions; OAuth grants remain separate"
       : input.preset === "deepharness-semantic-lab"
         ? "DSH semantic lab only; named development target and active device capability required; no generic host/Docker/process/admin/write permissions"
       : input.preset === "openhands-read"
@@ -101,6 +111,11 @@ export function applyAgentTargetApproval(input: {
   requireApprovalConfirmation(approval.id, input.confirmation);
 
   const liveDevice = requireLiveDevice(approval.target.deviceId!);
+  if (approval.target.id === "deepharness-platform-private" &&
+      approval.target.allowedSemanticCapabilities.includes("deepharness.platform") &&
+      !liveDevice.capabilities?.includes("deepharness.platform")) {
+    throw new OpsError("CAPABILITY_DENIED", "dispositivo Agent Mesh deixou de anunciar deepharness.platform");
+  }
   if (approval.target.id === "deepharness-semantic-lab" &&
       approval.target.allowedSemanticCapabilities.length === 1 &&
       approval.target.allowedSemanticCapabilities[0] === "deepharness.semantic" &&

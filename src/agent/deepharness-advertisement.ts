@@ -41,3 +41,33 @@ export function canAdvertiseDshSemantic({
       (socket.mode&0o777)===0o660;
   }catch{return false;}
 }
+
+const PLATFORM_SOCKET="/run/wandora/deepharness-platform/bridge.sock";
+export function canAdvertiseDshPlatform({
+  env=process.env,
+  stat=lstatSync,
+  identity=()=>({uid:process.getuid?.()??0,gid:process.getgid?.()??0,
+    groups:process.getgroups?.()??[]}),
+}:{
+  env?:NodeJS.ProcessEnv;
+  stat?:(path:string)=>Stats;
+  identity?:()=>Identity;
+}={}):boolean {
+  try {
+    if(env.DSH_PLATFORM_AGENT_ENABLED!=="1")return false;
+    const uidText=env.DSH_PLATFORM_RELAY_UID??"";
+    const gidText=env.DSH_PLATFORM_SOCKET_GID??"";
+    if(!/^[1-9][0-9]*$/.test(uidText)||!/^[1-9][0-9]*$/.test(gidText))return false;
+    const relayUid=Number(uidText),socketGid=Number(gidText),local=identity();
+    if(!Number.isSafeInteger(relayUid)||!Number.isSafeInteger(socketGid)||
+       !Number.isSafeInteger(local.uid)||local.uid===0||relayUid===local.uid||
+       ![local.gid,...local.groups].includes(socketGid))return false;
+    const folder=stat(dirname(PLATFORM_SOCKET)),socket=stat(PLATFORM_SOCKET);
+    return folder.isDirectory()&&!folder.isSymbolicLink()&&
+      folder.uid===relayUid&&folder.gid===socketGid&&
+      (folder.mode&0o7777)===0o2710&&
+      socket.isSocket()&&!socket.isSymbolicLink()&&
+      socket.uid===relayUid&&socket.gid===socketGid&&
+      (socket.mode&0o777)===0o660;
+  }catch{return false;}
+}
