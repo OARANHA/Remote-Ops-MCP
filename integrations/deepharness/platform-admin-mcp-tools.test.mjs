@@ -14,7 +14,7 @@ test("ten optional tool definitions map only exact named DSH business actions",a
     "listTeamMemberStates","createLeadSession","createTeammate","createTeamTask","updateTeamTask",
   ];
   assert.equal(defs.length,10);
-  assert.equal(new Set(defs.map(d=>d.name)).size,9);
+  assert.equal(new Set(defs.map(d=>d.name)).size,10);
   assert.equal(defs[0].mutation,undefined);
   assert.equal(defs[1].mutation,undefined);
   assert.equal(defs[4].mutation,undefined);
