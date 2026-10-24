@@ -82,8 +82,8 @@ export function installDshPlatformAdminRoutes(router:Router,dependencies:{
 <input type="hidden" name="csrf" value="${esc(claimsCsrf(req))}">
 <label>Sessão OAuth ativa: <select name="session_id" required>${options}</select></label>
 <p><label>Operação: <select name="operation" required>
-<option value="read">Leitura de workspaces e sessões</option>
-<option value="manage">Administração V2 (oito operações)</option>
+<option value="read">Leitura de workspaces, sessões e estados da equipe</option>
+<option value="manage">Administração V2 (nove operações)</option>
 <option value="revoke">Revogar grant V2</option></select></label></p>
 <p>Confirmação exata: <code>${words.read}</code>, <code>${words.manage}</code> ou <code>${words.revoke}</code>.</p>
 <input name="confirmation" required maxlength="64" autocomplete="off">

@@ -14,11 +14,11 @@ test("read and manage select only live OAuth session and predefined managed scop
     confirmation:"GRANT READ DSH PLATFORM"});
   assert.equal(a.actor,"oauth:"+clientId+":"+sid.slice(0,12));
   assert.equal(a.rootScope,"managed");
-  assert.deepEqual(a.actions,["workspace.list","session.list"]);
+  assert.deepEqual(a.actions,["workspace.list","session.list","team.member.read"]);
   assert.ok(Object.isFrozen(a.actions));
   const b=selectCurrentDshPlatformGrantSubject({...principal(),operation:"manage",
     confirmation:"GRANT MANAGE DSH PLATFORM"});
-  assert.equal(b.actions.length,8);
+  assert.equal(b.actions.length,9);
   assert.equal(b.sessionId,sid);
   assert.ok(!Object.hasOwn(b,"password")&&!Object.hasOwn(b,"path"));
 });

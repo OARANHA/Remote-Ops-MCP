@@ -6,12 +6,12 @@
 const ID=/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
 const deny=()=>{throw Error("deepharness_platform_grant_admin_denied");};
 const ACTIONS=Object.freeze({
-  read:Object.freeze(["workspace.list","session.list"]),
+  read:Object.freeze(["workspace.list","session.list","team.member.read"]),
   manage:Object.freeze(["workspace.list","workspace.create","workspace.rename",
-    "session.list","session.create","team.member.create",
+    "session.list","team.member.read","session.create","team.member.create",
     "team.task.create","team.task.update"]),
   manage_skills:Object.freeze(["workspace.list","workspace.create","workspace.rename",
-    "session.list","session.create","team.member.create","team.task.create","team.task.update","skills.list"]),
+    "session.list","team.member.read","session.create","team.member.create","team.task.create","team.task.update","skills.list"]),
   revoke:Object.freeze([]),
 });
 const WORDS=Object.freeze({

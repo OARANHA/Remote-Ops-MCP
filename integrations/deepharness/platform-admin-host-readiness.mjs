@@ -4,7 +4,7 @@
  */
 const deny=()=>{throw Error("deepharness_platform_host_not_ready");};
 const METHODS=Object.freeze([
- "listWorkspaces","createWorkspace","renameWorkspace","listWorkspaceSessions",
+ "listWorkspaces","createWorkspace","renameWorkspace","listWorkspaceSessions","listTeamMemberStates",
  "createLeadSession","createTeammate","createTeamTask","updateTeamTask",
 ]);
 export function assertDshPlatformHostReadiness({

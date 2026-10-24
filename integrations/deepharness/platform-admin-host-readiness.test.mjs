@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {assertDshPlatformHostReadiness} from "./platform-admin-host-readiness.mjs";
 const methods=["listWorkspaces","createWorkspace","renameWorkspace",
- "listWorkspaceSessions","createLeadSession","createTeammate",
+ "listWorkspaceSessions","listTeamMemberStates","createLeadSession","createTeammate",
  "createTeamTask","updateTeamTask"];
 const admin=Object.fromEntries(methods.map(name=>[name,async()=>({})]));
 const good={admin,authenticatePeer:async()=>true,replayFile:"/private/dsh-v2-replay.json",

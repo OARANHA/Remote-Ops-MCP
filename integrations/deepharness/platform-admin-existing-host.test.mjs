@@ -32,7 +32,7 @@ function fixture(){
    rows.set(ws.id,ws);return {created:true,workspace:{workspaceId:ws.id,path,title:ws.title}};},
    rename:async({workspaceId,title})=>{rows.get(workspaceId).title=title;return {workspace:{workspaceId,title}};}},
   sessionController:{create:async()=>({sessionId:'lead-new'}),resolveAgent:async id=>({agent:{id}})},
-  agentTeams:{spawnTeammate:async()=>({}),createTask:async()=>({}),updateTask:async()=>({})},
+  agentTeams:{spawnTeammate:async()=>({}),createTask:async()=>({}),updateTask:async()=>({}),listMembers:async()=>[]},
  };
  const effects=[];const readService={};
  const ctx={...services,get:name=>name==='chatgptMcpRead'?readService:undefined,effect:fn=>effects.push(fn)};

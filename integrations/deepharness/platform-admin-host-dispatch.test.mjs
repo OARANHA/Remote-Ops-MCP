@@ -13,6 +13,7 @@ function fixture(){
     createWorkspace:async args=>{calls.push(["createWorkspace",args]);return {created:true,workspace:{workspaceId:W,title:args.title}};},
     renameWorkspace:async args=>{calls.push(["renameWorkspace",args]);return {workspaceId:args.workspaceId,title:args.title};},
     listWorkspaceSessions:async args=>{calls.push(["listWorkspaceSessions",args]);return [L];},
+    listTeamMemberStates:async args=>{calls.push(["listTeamMemberStates",args]);return {workspaceId:args.workspaceId,leadSessionId:args.leadSessionId,members:[]};},
     createLeadSession:async args=>{calls.push(["createLeadSession",args]);return {workspaceId:args.workspaceId,leadSessionId:L};},
     createTeammate:async args=>{calls.push(["createTeammate",args]);return {member:{id:L,name:args.name}};},
     createTeamTask:async args=>{calls.push(["createTeamTask",args]);return {taskId:"task-1",revision:1,status:"pending"};},
@@ -40,13 +41,14 @@ test("requires complete host service surface and an independent replay gate",()=
     admin:{...admin,createWorkspace:undefined},withDurableReplay:gate,
   }),denied);
 });
-test("all eight V2 routes have strict mapped business args with no requestId",async()=>{
+test("all nine V2 routes have strict mapped business args with no requestId",async()=>{
   const f=fixture();
   const cases=[
     {operation:"listWorkspaces"},
     {operation:"createWorkspace",name:"mvp-b2b",title:"Marketplace",requestId:KEY},
     {operation:"renameWorkspace",workspaceId:W,title:"Marketplace",requestId:KEY},
     {operation:"listWorkspaceSessions",workspaceId:W},
+    {operation:"listTeamMemberStates",workspaceId:W,leadSessionId:L},
     {operation:"createLeadSession",workspaceId:W,agentPreset:"default",requestId:KEY},
     {operation:"createTeammate",workspaceId:W,leadSessionId:L,name:"reviewer",
       description:"Review",prompt:"Review project",provider:"nvidia",context:"fresh",requestId:KEY},
@@ -63,7 +65,7 @@ test("all eight V2 routes have strict mapped business args with no requestId",as
     const result=await f.dispatch(makeDshPlatformEnvelope(args));
     assert.ok(result!==undefined);
   }
-  const writes=f.calls.filter(x=>x[0]!=="listWorkspaceSessions");
+  const writes=f.calls.filter(x=>!["listWorkspaceSessions","listTeamMemberStates"].includes(x[0]));
   assert.equal(writes.length,6);
   for(const [method,args] of f.calls){
     assert.equal(typeof method,"string");assert.ok(!Object.hasOwn(args,"requestId"));

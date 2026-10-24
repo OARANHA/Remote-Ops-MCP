@@ -19,10 +19,11 @@ const cases=[
     description:"Analyze edge cases",requestId:K},
   {operation:"updateTeamTask",workspaceId:W,leadSessionId:L,taskId:"task-1",
     expectedRevision:1,action:"complete",owner:null,requestId:K},
+  {operation:"listTeamMemberStates",workspaceId:W,leadSessionId:L},
 ];
-test("eight exact operator verbs; no platform listener or grants enabled",()=>{
+test("nine exact operator verbs; no platform listener or grants enabled",()=>{
   const expected=["workspace.list","workspace.create","workspace.rename","session.list",
-    "session.create","team.member.create","team.task.create","team.task.update"];
+    "session.create","team.member.create","team.task.create","team.task.update","team.member.read"];
   for(let i=0;i<cases.length;i++){
     const req=cases[i];
     assert.equal(actionForDshPlatformOperation(req.operation),expected[i]);

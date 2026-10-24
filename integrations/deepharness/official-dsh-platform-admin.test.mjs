@@ -13,7 +13,7 @@ function fixture(){
     [FORBIDDEN,{id:FORBIDDEN,path:"/opt/other",title:"other",sessionIds:[lead]}],
   ]);
   const calls=[],grants=new Set(["workspace.list","workspace.create","workspace.rename",
-    "session.create","session.list","team.member.create","team.task.create","team.task.update"]);
+    "session.create","session.list","team.member.read","team.member.create","team.task.create","team.task.update"]);
   const env={
     workspaceParent:ROOT,
     authorizeRead:async ctx=>{if(!grants.has(ctx.operation))throw Error("revoked");},
@@ -49,6 +49,8 @@ function fixture(){
       resolveAgent:async id=>({id,session:{}}),
     },
     agentTeams:{
+      listMembers:async agent=>{assert.equal(agent.id,lead);return [{id:"member-provisioning",name:"pesquisador-oss",role:"teammate",phase:"provisioning",prompt:"PRIVATE_PROMPT",diagnostic:"PRIVATE_DIAGNOSTIC"},
+        {id:"member-failed",name:"pesquisador-oss",role:"teammate",phase:"failed",credentials:"PRIVATE_CREDENTIAL"}];},
       spawnTeammate:async(agent,input)=>{
         calls.push(["spawn",agent.id,input.name]);
         return {member:{id:"session-new-teammate",name:input.name,role:"teammate",phase:"active"}};
@@ -137,6 +139,22 @@ test("Revoked action fails before mutation or read",async()=>{
   assert.equal(calls.filter(x=>x[0]==="mkdir").length,0);
   grants.delete("workspace.list");
   await assert.rejects(api.listWorkspaces(),/revoked/);
+});
+
+test("Team member state read is scoped, read-only, and exposes no prompt or diagnostics",async()=>{
+  const {env}=fixture(),readScopes=[];
+  const scoped=createOfficialDshPlatformAdmin({...env,authorizeRead:async scope=>{readScopes.push(scope);}});
+  const result=await scoped.listTeamMemberStates({workspaceId:W,leadSessionId:lead});
+  assert.deepEqual(result,{workspaceId:W,leadSessionId:lead,members:[
+    {id:"member-provisioning",name:"pesquisador-oss",role:"teammate",phase:"provisioning"},
+    {id:"member-failed",name:"pesquisador-oss",role:"teammate",phase:"failed"},
+  ]});
+  assert.equal(readScopes.length,2);
+  assert.deepEqual(readScopes[0],{operation:"team.member.read",workspaceId:W,leadSessionId:lead});
+  assert.equal(JSON.stringify(result).includes("PRIVATE"),false);
+  await assert.rejects(scoped.listTeamMemberStates({workspaceId:FORBIDDEN,leadSessionId:lead}),denied);
+  await assert.rejects(scoped.listTeamMemberStates({workspaceId:W,leadSessionId:"unattached"}),denied);
+  await assert.rejects(scoped.listTeamMemberStates({workspaceId:W,leadSessionId:lead,path:"/etc"}),denied);
 });
 
 test("Workspace session inventory and official teammate spawn obey scoped Lead",async()=>{

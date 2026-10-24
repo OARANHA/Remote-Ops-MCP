@@ -22,7 +22,8 @@ test('private host binds official Context services and refuses unavailable direc
    resolveAgent:async id=>({id,session:{}})},
   agentTeams:{spawnTeammate:async(a,x)=>({member:{id:'member-new',name:x.name,role:'teammate',phase:'active'}}),
    createTask:async()=>({id:'task-new',revision:1,status:'pending'}),
-   updateTask:async(a,x)=>({id:x.taskId,revision:x.expectedRevision+1,status:'in_progress'})},
+   updateTask:async(a,x)=>({id:x.taskId,revision:x.expectedRevision+1,status:'in_progress'}),
+   listMembers:async()=>[{id:'member-1',name:'pesquisador-oss',role:'teammate',phase:'provisioning'}]},
  };
  const calls=[];
  const options={services,workspaceParent:'/data/dsh/projetos',
@@ -47,7 +48,9 @@ test('private host binds official Context services and refuses unavailable direc
    subject:'Inspect',description:'Read source',requestId:key()});
   await invoke({operation:'updateTeamTask',workspaceId:'workspace-new',leadSessionId:'lead-new',
    taskId:'task-new',expectedRevision:1,action:'claim',owner:null,requestId:key()});
-  assert.equal(new Set(calls).size,8);
+  const states=await invoke({operation:'listTeamMemberStates',workspaceId:'workspace-new',leadSessionId:'lead-new'});
+  assert.deepEqual(states.members,[{id:'member-1',name:'pesquisador-oss',role:'teammate',phase:'provisioning'}]);
+  assert.equal(new Set(calls).size,9);
   for(const patch of [
    {services:{...services,directoryPicker:{capability:()=>({kind:'native'})}}},
    {services:{...services,agentTeams:{...services.agentTeams,spawnTeammate:undefined}}},
@@ -58,7 +61,7 @@ test('private host binds official Context services and refuses unavailable direc
 
 const ID="4db3b83c-5abc-4aa3-9270-9715e3d34e38";
 const methods=["listWorkspaces","createWorkspace","renameWorkspace",
- "listWorkspaceSessions","createLeadSession","createTeammate",
+ "listWorkspaceSessions","listTeamMemberStates","createLeadSession","createTeammate",
  "createTeamTask","updateTeamTask"];
 function fixtures(){
  const counts={createWorkspace:0,listWorkspaces:0};

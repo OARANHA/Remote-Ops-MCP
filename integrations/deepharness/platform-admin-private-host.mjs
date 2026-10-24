@@ -67,7 +67,7 @@ export function createDshPlatformExistingHostHandler({
  clientFingerprintSha256,exclusiveReplayWriter=false,
 }={}){
  const actions=new Set(["workspace.list","workspace.create","workspace.rename",
-  "session.list","skills.list","session.create","team.member.create","team.task.create","team.task.update"]);
+  "session.list","skills.list","team.member.read","session.create","team.member.create","team.task.create","team.task.update"]);
  if(enabled!==true||exclusiveReplayWriter!==true||
     typeof ctx?.get!=="function"||typeof ctx?.effect!=="function"||
     !Array.isArray(allowedActions)||allowedActions.length===0||
@@ -191,7 +191,7 @@ export function inspectDshPlatformExistingHostServices(ctx){
   workspaceController:["create","rename"],
   directoryPickerController:["createDirectory"],
   sessionController:["create","resolveAgent"],
-  agentTeams:["spawnTeammate","createTask","updateTask"],
+  agentTeams:["spawnTeammate","createTask","updateTask","listMembers"],
   directoryPicker:["capability"],
  };
  const services={};

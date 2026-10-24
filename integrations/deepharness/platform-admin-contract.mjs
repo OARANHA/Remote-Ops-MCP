@@ -16,6 +16,7 @@ const MAX_BYTES=16_384;
 const ACTIONS=Object.freeze({
   listWorkspaces:"workspace.list",listSessionSkills:"skills.list",createWorkspace:"workspace.create",
   renameWorkspace:"workspace.rename",listWorkspaceSessions:"session.list",
+  listTeamMemberStates:"team.member.read",
   createLeadSession:"session.create",createTeammate:"team.member.create",
   createTeamTask:"team.task.create",updateTeamTask:"team.task.update",
 });
@@ -48,6 +49,9 @@ function validateArgs(a){
       identity(a.workspaceId);label(a.title,120);uuid(a.requestId);break;
     case "listWorkspaceSessions":
       exactly(a,["operation","workspaceId"]);identity(a.workspaceId);break;
+    case "listTeamMemberStates":
+      exactly(a,["operation","workspaceId","leadSessionId"]);
+      identity(a.workspaceId);identity(a.leadSessionId);break;
     case "createLeadSession":
       exactly(a,["operation","workspaceId","agentPreset","requestId"]);
       identity(a.workspaceId);label(a.agentPreset,90);uuid(a.requestId);break;

@@ -46,6 +46,7 @@ export function createOfficialDshPlatformAdmin({
     typeof sessionController?.resolveAgent!=="function"||
     typeof agentTeams?.createTask!=="function"||
     typeof agentTeams?.updateTask!=="function"||
+    typeof agentTeams?.listMembers!=="function"||
     typeof workspaceParent!=="string"||!workspaceParent.startsWith("/")||
     resolve(workspaceParent)!==workspaceParent||workspaceParent==="/")deny();
   const root=workspaceParent;
@@ -138,6 +139,27 @@ export function createOfficialDshPlatformAdmin({
         const current=workspace(ws.id);
         if(!Array.isArray(current.sessionIds)||current.sessionIds.length>10000)deny();
         return Object.freeze([...current.sessionIds].map(id));
+      });
+    },
+    async listTeamMemberStates(input){
+      exact(input,["workspaceId","leadSessionId"]);
+      const ws=workspace(input.workspaceId),leadSessionId=lead(ws,input.leadSessionId);
+      return read("team.member.read",{workspaceId:ws.id,leadSessionId},async()=>{
+        lead(workspace(ws.id),leadSessionId);
+        const agent=await sessionController.resolveAgent(leadSessionId);
+        if(!agent||typeof agent.id!=="string"||typeof agent.session!=="object"||agent.session===null)deny();
+        const members=await agentTeams.listMembers(agent);
+        if(!Array.isArray(members)||members.length>200)deny();
+        const seen=new Set();
+        const states=members.map(member=>{
+          if(!obj(member)||!ID.test(member.id)||seen.has(member.id)||
+             typeof member.name!=="string"||member.name.length<1||member.name.length>80||
+             /[\0\r\n]/.test(member.name)||!["lead","teammate"].includes(member.role)||
+             typeof member.phase!=="string"||!/^[a-z][a-z0-9_-]{0,31}$/.test(member.phase))deny();
+          seen.add(member.id);
+          return Object.freeze({id:member.id,name:member.name,role:member.role,phase:member.phase});
+        });
+        return Object.freeze({workspaceId:ws.id,leadSessionId,members:Object.freeze(states)});
       });
     },
     async createTeammate(input){

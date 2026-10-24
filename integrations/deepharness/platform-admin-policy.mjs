@@ -12,10 +12,10 @@ const deny=()=>{throw Error("deepharness_platform_capability_denied");};
 const ID=/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
 const RECEIPT=/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
 const obj=x=>x!==null&&typeof x==="object"&&!Array.isArray(x);
-const READ=new Set(["workspace.list","session.list","skills.list"]);
+const READ=new Set(["workspace.list","session.list","skills.list","team.member.read"]);
 const ACTIONS=new Set([
   "workspace.list","skills.list","workspace.create","workspace.rename",
-  "session.list","session.create","team.member.create",
+  "session.list","team.member.read","session.create","team.member.create",
   "team.task.create","team.task.update",
 ]);
 function principalOf(ctx){
