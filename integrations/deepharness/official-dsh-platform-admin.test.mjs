@@ -46,7 +46,7 @@ function fixture(){
         const id="session-99999999-9999-4999-8999-999999999999";
         rows.get(workspaceId).sessionIds.unshift(id);return {sessionId:id};
       },
-      resolveAgent:async id=>({agent:{id}}),
+      resolveAgent:async id=>({id,session:{}}),
     },
     agentTeams:{
       spawnTeammate:async(agent,input)=>{
@@ -147,6 +147,9 @@ test("Workspace session inventory and official teammate spawn obey scoped Lead",
     provider:"nvidia",context:"fresh"});
   assert.equal(x.member.name,"revisor2");
   assert.equal(calls.filter(x=>x[0]==="spawn").length,1);
+  assert.deepEqual(calls.find(x=>x[0]==="spawn"),["spawn",lead,"revisor2"]);
+  await assert.rejects(api.createTeammate({workspaceId:W,leadSessionId:lead,
+    name:"too-long",description:"D".repeat(201),prompt:"Inspect",provider:"chutes.ai",context:"fresh"}),denied);
   await assert.rejects(api.createTeammate({workspaceId:W,leadSessionId:"other",
     name:"bad",description:"Bad",prompt:"Attempt",provider:"nvidia",context:"fresh"}),denied);
   await assert.rejects(api.createTeammate({workspaceId:W,leadSessionId:lead,
