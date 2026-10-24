@@ -19,7 +19,7 @@ test('private host binds official Context services and refuses unavailable direc
     return {created:true,workspace:{workspaceId:'workspace-new',path:p,title:'new'}};},
    rename:async({workspaceId,title})=>{rows.get(workspaceId).title=title;return {workspace:{workspaceId,title}};}},
   sessionController:{create:async({workspaceId})=>{rows.get(workspaceId).sessionIds.push('lead-new');return {sessionId:'lead-new'};},
-   resolveAgent:async id=>({agent:{id}})},
+   resolveAgent:async id=>({id,session:{}})},
   agentTeams:{spawnTeammate:async(a,x)=>({member:{id:'member-new',name:x.name,role:'teammate',phase:'active'}}),
    createTask:async()=>({id:'task-new',revision:1,status:'pending'}),
    updateTask:async(a,x)=>({id:x.taskId,revision:x.expectedRevision+1,status:'in_progress'})},
