@@ -66,7 +66,7 @@ jobs:
         env:
           SOURCE_REVISION: ${{ github.sha }}
         run: |
-          TAG="ghcr.io/oaranha/remote-ops-mcp:dsh-platform-diagnostic-${SOURCE_REVISION}"
+          TAG="ghcr.io/oaranha/remote-ops-mcp-dsh-platform-diagnostic:${SOURCE_REVISION}"
           docker tag local/dsh-platform-candidate:latest "$TAG"
           docker push "$TAG"
           echo "PUBLISHED_TAG=$TAG" >> "$GITHUB_STEP_SUMMARY"
