@@ -8,12 +8,12 @@ import {createDshPlatformAgentMeshDispatcher} from "./platform-admin-agent-mesh-
 
 const deny=()=>{throw Error("deepharness_platform_composition_unavailable");};
 export function composeDshPlatformOverAgentMesh({
- grantStore,target,lookupCurrentTarget,dispatchAgentOperation,
+ grantStore,target,lookupCurrentTarget,dispatchAgentOperation,auditFailure,
 }={}){
  if(typeof grantStore?.lookupCurrentGrant!=="function"||
     typeof grantStore?.withAuthorizedWrite!=="function")deny();
  const privateBridge=createDshPlatformAgentMeshDispatcher({
-  target,lookupCurrentTarget,dispatchAgentOperation,
+  target,lookupCurrentTarget,dispatchAgentOperation,auditFailure,
  });
  // The grant store serializes grant revocation against a write transaction.
  // The private backend MUST still implement independent host-side replay before
