@@ -18,6 +18,22 @@ PIN = ':'.join(['ab'] * 32)
 
 
 class HostActivationTests(unittest.TestCase):
+    def test_host_activation_requires_exact_published_digest_and_revision(self):
+        valid = {'State': {'Running': True}, 'Config': {'User': '1000:1000',
+                 'Image': d.IMAGE, 'Labels': {'org.opencontainers.image.revision': d.REVIEWED_REVISION}},
+                 'Image': 'sha256:' + 'a' * 64}
+        self.assertEqual(d.installed_reviewed_host_image(valid), valid['Image'])
+        for broken in [
+            {'Config': {**valid['Config'], 'Image': 'other:image'}},
+            {'Config': {**valid['Config'], 'Labels': {'org.opencontainers.image.revision': 'wrong'}}},
+            {'State': {'Running': False}},
+            {'Image': 'not-an-image-id'},
+        ]:
+            candidate = copy.deepcopy(valid)
+            candidate.update(broken)
+            with self.assertRaises(RuntimeError):
+                d.installed_reviewed_host_image(candidate)
+
     def test_candidate_preserves_v1_and_pins_existing_relay_identity(self):
         original = {'version': 1, 'enabled': True,
                     'semanticBridge': {'enabled': True, 'clientFingerprintSha256': PIN}}
