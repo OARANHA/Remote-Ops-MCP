@@ -145,7 +145,7 @@ jobs:
 
   dsh-control-plane-image-publish:
     needs: verify
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'OARANHA/Remote-Ops-MCP' && github.event.pull_request.head.ref == 'feat/dsh-platform-oauth-transport-contract-20261021'
+    if: github.repository == 'OARANHA/Remote-Ops-MCP' && github.event_name == 'push' && github.ref == 'refs/heads/feat/dsh-platform-oauth-transport-contract-20261021'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -154,11 +154,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
       - name: Verify source revision and build context
         env:
-          SOURCE_REVISION: ${{ github.event.pull_request.head.sha }}
+          SOURCE_REVISION: ${{ github.sha }}
         run: |
           test "$(git rev-parse HEAD)" = "$SOURCE_REVISION"
           test -f Dockerfile
@@ -172,7 +172,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish full control plane with immutable SHA tag
         env:
-          SOURCE_REVISION: ${{ github.event.pull_request.head.sha }}
+          SOURCE_REVISION: ${{ github.sha }}
         run: |
           set -euo pipefail
           image="ghcr.io/oaranha/remote-ops-mcp:dsh-control-plane-sha-$SOURCE_REVISION"
@@ -185,6 +185,6 @@ jobs:
           test -s control-plane-digest.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: dsh-control-plane-published-digest-${{ github.event.pull_request.head.sha }}
+          name: dsh-control-plane-published-digest-${{ github.sha }}
           path: control-plane-digest.txt
           retention-days: 7
