@@ -2,7 +2,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, feat/dsh-platform-oauth-transport-contract-20261021]
 permissions:
   contents: read
 jobs:
