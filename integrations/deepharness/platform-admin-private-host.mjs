@@ -124,7 +124,8 @@ export function createDshPlatformExistingHostHandler({
    let stage="authenticate";
    const auditFailure=()=>ctx.logger?.warn?.("DSH_PLATFORM_DISPATCH_FAILURE_STAGE", {operation:"team.member.create",stage});
    try {
-   if(!authentic(connection))deny();
+   const initialPeerFailure=authenticationFailure(connection);
+   if(initialPeerFailure!==null){auditPeerFailure(initialPeerFailure);deny();}
    stage="validate_envelope";
    const request=validateDshPlatformEnvelope(envelope);
    const action=actionForDshPlatformOperation(request.args.operation);
