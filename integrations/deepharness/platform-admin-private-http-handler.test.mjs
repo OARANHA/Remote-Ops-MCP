@@ -52,3 +52,16 @@ test("private handler fails closed when transport cannot supply connection",asyn
  const res=await invoke(handler);
  assert.equal(res.status,403);assert.equal(calls,0);
 });
+
+test("private HTTP handler audits bounded upstream failures without exposing exceptions",async()=>{
+ const stages=[];
+ const handler=createDshPlatformPrivateHttpHandler({
+  connectionForRequest:()=>({trusted:true}),
+  auditStage:stage=>stages.push(stage),
+  relay:{dispatch:async()=>{throw Error("sensitive-internal-diagnostic");}},
+ });
+ const res=await invoke(handler);
+ assert.equal(res.status,403);
+ assert.deepEqual(stages,["upstream"]);
+ assert.equal(res.payload.includes("sensitive-internal-diagnostic"),false);
+});
