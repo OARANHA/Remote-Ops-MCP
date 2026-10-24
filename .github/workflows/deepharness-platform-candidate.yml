@@ -5,6 +5,12 @@ on:
       - 'integrations/deepharness/**'
       - 'test-deepharness-platform-existing-runtime.mjs'
       - '.github/workflows/deepharness-platform-candidate.yml'
+  push:
+    branches:
+      - 'feat/dsh-platform-oauth-transport-contract-20261021'
+    paths:
+      - 'integrations/deepharness/**'
+      - '.github/workflows/deepharness-platform-candidate.yml'
   workflow_dispatch:
 permissions:
   contents: read
