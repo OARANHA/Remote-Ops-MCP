@@ -67,7 +67,21 @@ export async function executeDshPlatformAgentOperation(envelope,opts={},deps={})
  try{
   if(env.DSH_PLATFORM_AGENT_ENABLED!=="1")deny();
   stage="contract";
-  const payload=validateDshPlatformEnvelope(envelope);
+  let payload;
+  try {
+   payload=validateDshPlatformEnvelope(envelope);
+  } catch {
+   // Only fixed, non-sensitive structural diagnostics; never log argument values.
+   const root=envelope!==null&&typeof envelope==="object"&&!Array.isArray(envelope)?envelope:null;
+   const keys=root?Object.keys(root):[];
+   const args=root&&root.args!==null&&typeof root.args==="object"&&!Array.isArray(root.args)?root.args:null;
+   const argKeys=args?Object.keys(args):[];
+   const shape=keys.length===2&&keys.includes("op")&&keys.includes("args")?"canonical":"noncanonical";
+   const operationType=args?typeof args.operation:"missing";
+   const diagnostic=`shape=${shape} root_count=${Math.min(keys.length,99)} args_count=${Math.min(argKeys.length,99)} operation_type=${operationType}`;
+   try{(deps.auditContract??(label=>console.warn("DSH_PLATFORM_RECEIVER_CONTRACT_SHAPE",label)))(diagnostic);}catch{}
+   deny();
+  }
   const socket=deps.socketPath??SOCKET;
   const uid=deps.agentUid??process.getuid?.();
   const groups=deps.agentGroups??[process.getgid?.(),...(process.getgroups?.()??[])];
