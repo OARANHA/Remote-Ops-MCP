@@ -1,0 +1,61 @@
+name: DeepHarness existing-host platform candidate
+on:
+  pull_request:
+    paths:
+      - 'integrations/deepharness/**'
+      - 'test-deepharness-platform-existing-runtime.mjs'
+      - '.github/workflows/deepharness-platform-candidate.yml'
+  push:
+    branches:
+      - 'feat/dsh-platform-oauth-transport-contract-20261021'
+    paths:
+      - 'integrations/deepharness/**'
+      - '.github/workflows/deepharness-platform-candidate.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: read
+jobs:
+  existing-host:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/checkout@v4
+        with:
+          repository: OARANHA/deepharness
+          ref: 9c1ac05bf9a0a3fa2ef9f95a3248f156c3fa5d15
+          path: .ci-dsh-reviewed
+          persist-credentials: false
+      - name: Apply only the reviewed overlay to the actual deployed source revision
+        run: |
+          test "$(git -C .ci-dsh-reviewed rev-parse HEAD)" = '9c1ac05bf9a0a3fa2ef9f95a3248f156c3fa5d15'
+          git -C .ci-dsh-reviewed apply --check ../integrations/deepharness/platform-admin-existing-runtime.patch
+          git -C .ci-dsh-reviewed apply ../integrations/deepharness/platform-admin-existing-runtime.patch
+          node --check .ci-dsh-reviewed/deploy/mcp/run-operational.mjs
+          node --test integrations/deepharness/platform-admin-agent-mesh-audit.test.mjs
+          node --test test-deepharness-platform-existing-runtime.mjs .ci-dsh-reviewed/deploy/mcp/operational-host.test.mjs .ci-dsh-reviewed/deploy/mcp/existing-profile-host.test.mjs
+      - name: Authenticate only for immutable base image read
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build inert nonroot candidate without installation or RUN instructions
+        env:
+          SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          docker build --platform linux/amd64 --network none --pull=false --build-arg "SOURCE_REVISION=$SOURCE_REVISION" -f integrations/deepharness/Dockerfile.platform-existing-host.review -t local/dsh-platform-candidate .
+          test "$(docker image inspect --format '{{.Config.User}}' local/dsh-platform-candidate)" = '1000:1000'
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --entrypoint node local/dsh-platform-candidate -e 'import("/opt/wandora-mcp-verifier/platform-admin/platform-admin-private-host.mjs").then(m=>{if(process.getuid()===0||typeof m.createDshPlatformExistingHostHandler!=="function")process.exit(1);console.log("DSH_PLATFORM_CANDIDATE_IMPORT_GREEN_NO_HOST_STARTED")})'
+          docker image inspect --format '{"image_id":"{{.Id}}","user":"{{.Config.User}}","cmd":{{json .Config.Cmd}},"revision":"{{index .Config.Labels "org.opencontainers.image.revision"}}"}' local/dsh-platform-candidate > platform-candidate-report.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dsh-platform-candidate-report-${{ github.event.pull_request.head.sha || github.sha }}
+          path: platform-candidate-report.json
+          retention-days: 7

@@ -5,7 +5,7 @@
  */
 import {readFile as systemReadFile} from "node:fs/promises";
 import {fileURLToPath} from "node:url";
-import {createDshAgentMeshUnixRelayOverMtls} from "./agent-mesh-unix-relay.mjs";
+import {createDshAgentMeshUnixRelayOverMtls,createDshPlatformUnixRelayOverMtls} from "./agent-mesh-unix-relay.mjs";
 import {startDshUnixRelayListener} from "./agent-mesh-unix-listener.mjs";
 
 const deny=()=>{throw Error("dsh_unix_relay_startup_denied");};
@@ -17,7 +17,7 @@ const KEY="/run/secrets/dsh-bridge-client-key.pem";
 
 export async function startDshUnixRelayRuntime({
   env=process.env,readFile=systemReadFile,createHandler=createDshAgentMeshUnixRelayOverMtls,
-  startListener=startDshUnixRelayListener,
+  startListener=startDshUnixRelayListener,createPlatformHandler=createDshPlatformUnixRelayOverMtls,
 }={}){
   const socketGroupId=Number(env.DSH_UNIX_RELAY_SOCKET_GID);
   if(env.DSH_UNIX_RELAY_ENABLED!=="1"||
@@ -36,7 +36,23 @@ export async function startDshUnixRelayRuntime({
       workspaceId:env.DSH_UNIX_RELAY_WORKSPACE_ID,
       leadSessionId:env.DSH_UNIX_RELAY_LEAD_SESSION_ID,
     });
-    return await startListener({enabled:true,handler,socketGroupId});
+    const existing=await startListener({enabled:true,handler,socketGroupId});
+    if(env.DSH_PLATFORM_RELAY_ENABLED!=="1")return existing;
+    let platform;
+    try{
+      if(env.DSH_PLATFORM_SOCKET_GID!==String(socketGroupId))deny();
+      platform=await startListener({enabled:true,socketGroupId,
+        socketPath:"/run/wandora/deepharness-platform/bridge.sock",
+        handler:createPlatformHandler({tls,serverFingerprintSha256:env.DSH_BRIDGE_SERVER_FP_SHA256}),
+      });
+    }catch{
+      // Platform failure must not stop the already running V1 relay.
+      process.stderr.write("DSH_PLATFORM_RELAY_NOT_STARTED\n");
+    }
+    return Object.freeze({...existing,platformReady:!!platform,close:async()=>{
+      const results=await Promise.allSettled([existing.close(),...(platform?[platform.close()]:[])]);
+      if(results.some(result=>result.status==="rejected"))deny();
+    }});
   }catch{deny();}
 }
 // Main is never entered from CI imports or the existing Remote-Ops MCP service.

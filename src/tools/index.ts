@@ -298,7 +298,7 @@ const TOOL_DEFS: ToolDef[] = [
       target_id: z.string().regex(/^[a-z0-9][a-z0-9-]{1,39}$/),
       device_id: z.string().regex(/^dev_[A-Za-z0-9_-]{8,80}$/),
       environment: z.enum(["production","staging","development"]).default("production"),
-      preset: z.enum(["operator-workspace","read-only","openhands-read","openhands-execute","postgres-readback","managed-admin","deepharness-semantic-lab"]).default("operator-workspace"),
+      preset: z.enum(["operator-workspace","read-only","openhands-read","openhands-execute","postgres-readback","managed-admin","deepharness-semantic-lab","deepharness-platform-private"]).default("operator-workspace"),
     },
     mutation: true,
     destructive: false,
@@ -308,7 +308,7 @@ const TOOL_DEFS: ToolDef[] = [
       targetId: String(args.target_id),
       deviceId: String(args.device_id),
       environment: (args.environment ?? "production") as "production"|"staging"|"development",
-      preset: (args.preset ?? "operator-workspace") as "operator-workspace"|"read-only"|"openhands-read"|"openhands-execute"|"postgres-readback"|"managed-admin"|"deepharness-semantic-lab",
+      preset: (args.preset ?? "operator-workspace") as "operator-workspace"|"read-only"|"openhands-read"|"openhands-execute"|"postgres-readback"|"managed-admin"|"deepharness-semantic-lab"|"deepharness-platform-private",
     }),
   },
   {

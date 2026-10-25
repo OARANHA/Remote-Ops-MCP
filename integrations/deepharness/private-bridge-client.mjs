@@ -1,5 +1,6 @@
 /** Fixed mTLS client for the DSH semantic endpoint; no caller-controlled URL. */
 import https from "node:https";
+import {validateDshPlatformEnvelope} from "./platform-admin-contract.mjs";
 import {timingSafeEqual} from "node:crypto";
 
 export const DSH_BRIDGE_HOST="deepharness-mcp-backend";
@@ -19,21 +20,23 @@ function exact(value,keys){
 function safeId(value){if(typeof value!=="string"||!ID.test(value))deny();return value;}
 
 export function createDshMtlsRequester({ca,cert,key,serverFingerprintSha256,timeoutMs=10_000,
-  httpsModule=https}={}) {
+  httpsModule=https,protocol="semantic-v1"}={}) {
   if(![ca,cert,key].every(value=>typeof value==="string"||Buffer.isBuffer(value))||
      ![ca,cert,key].every(value=>value.length>0)||!validPin(serverFingerprintSha256)||
      !Number.isSafeInteger(timeoutMs)||timeoutMs<1000||timeoutMs>30_000||
      typeof httpsModule?.request!=="function")deny();
+  if(!["semantic-v1","platform-v2"].includes(protocol))deny();
+  const route=protocol==="platform-v2"?"/wandora/dsh-platform/v2":DSH_BRIDGE_PATH;
   const expected=Buffer.from(fingerprint(serverFingerprintSha256),"hex");
   return async function postJson(payload) {
-    const serialized=JSON.stringify(payload);
+    const serialized=JSON.stringify(protocol==="platform-v2"?validateDshPlatformEnvelope(payload):payload);
     if(Buffer.byteLength(serialized)>16_384)deny();
     return new Promise((resolve,reject)=>{
       let settled=false;
       const fail=()=>{if(!settled){settled=true;reject(Error("deepharness_private_bridge_unavailable"));}};
       let request;
       try {
-        request=httpsModule.request({hostname:DSH_BRIDGE_HOST,port:DSH_BRIDGE_PORT,path:DSH_BRIDGE_PATH,
+        request=httpsModule.request({hostname:DSH_BRIDGE_HOST,port:DSH_BRIDGE_PORT,path:route,
           method:"POST",agent:false,ca,cert,key,rejectUnauthorized:true,servername:DSH_BRIDGE_HOST,
           headers:{"content-type":"application/json","accept":"application/json",
             "content-length":Buffer.byteLength(serialized)}},response=>{

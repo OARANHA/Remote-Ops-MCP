@@ -1,0 +1,289 @@
+"""Offline fault-injection checks; does not claim a real Docker rollout."""
+import contextlib
+import copy
+import importlib.util
+import io
+import json
+import os
+import pathlib
+import tempfile
+import unittest
+import uuid
+from unittest.mock import patch
+
+spec = importlib.util.spec_from_file_location('deploy', pathlib.Path(__file__).with_name('deploy-platform-relay.review.py'))
+d = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(d)
+
+
+class RecoveryTests(unittest.TestCase):
+    def test_retry_preserves_empty_directory_and_rejects_existing_entries(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = pathlib.Path(tmp) / 'platform'
+            folder.mkdir()
+            inode = folder.stat().st_ino
+            with patch.object(d, 'NEW', folder), patch.object(d, 'verify_dir'):
+                self.assertTrue(d.verify_empty_platform_directory())
+                (folder / 'bridge.sock').write_text('preserve')
+                with self.assertRaises(RuntimeError):
+                    d.verify_empty_platform_directory()
+            self.assertEqual(folder.stat().st_ino, inode)
+            self.assertEqual((folder / 'bridge.sock').read_text(), 'preserve')
+
+    @unittest.skipUnless(os.environ.get('DSH_RELAY_DOCKER_TEST_IMAGE'), 'Docker smoke is explicit in CI')
+    def test_real_engine_autoremove_backup_can_restart_original_command(self):
+        image = os.environ['DSH_RELAY_DOCKER_TEST_IMAGE']
+        token = uuid.uuid4().hex
+        backup_name = 'dsh-recovery-test-' + token
+        original_id = recovery_id = None
+        try:
+            original_id = d.run('docker', 'create', '--name', 'dsh-original-test-' + token,
+                                '--rm', '--network', 'none', '--read-only',
+                                '--entrypoint', 'node', image, '-e', 'setInterval(() => {}, 1000)')
+            d.run('docker', 'start', original_id)
+            old = json.loads(d.run('docker', 'inspect', original_id))[0]
+            self.assertTrue(old['State']['Running'])
+            with patch.object(d, 'BACKUP', backup_name):
+                recovery_id = d.prepare_autoremove_backup(old)
+            d.run('docker', 'stop', '--time', '2', original_id)
+            self.assertFalse(d.run('docker', 'ps', '-aq', '--no-trunc', '--filter', 'id=' + original_id))
+            d.run('docker', 'start', recovery_id)
+            clone = json.loads(d.run('docker', 'inspect', recovery_id))[0]
+            self.assertTrue(clone['State']['Running'])
+            self.assertFalse(clone['HostConfig']['AutoRemove'])
+        finally:
+            # Synthetic CI containers only: report structural round-trip differences.
+            if original_id is not None and 'old' in locals():
+                import subprocess
+                result = subprocess.run(['docker', 'inspect', backup_name], capture_output=True, text=True)
+                if result.returncode == 0:
+                    actual = json.loads(result.stdout)[0]['HostConfig']
+                    expected = dict(old['HostConfig'], AutoRemove=False)
+                    differences = {k: {'expected': expected.get(k), 'actual': actual.get(k)}
+                                   for k in sorted(set(expected) | set(actual))
+                                   if expected.get(k) != actual.get(k) or (k in expected) != (k in actual)}
+                    print('SYNTHETIC_RECOVERY_HOSTCONFIG_DIFF=' + json.dumps(differences), flush=True)
+            # Only these test-owned names; never production containers.
+            for name in (backup_name, 'dsh-original-test-' + token):
+                import subprocess
+                subprocess.run(['docker', 'rm', '-f', name], capture_output=True, timeout=30)
+
+    def test_autoremove_rollout_failure_restores_prepared_backup(self):
+        self.exercise_autoremove_recovery(1)
+
+    def test_removal_confirmation_timeout_still_restores_prepared_backup(self):
+        self.exercise_autoremove_recovery(40)
+
+    def exercise_autoremove_recovery(self, delayed_removal_checks):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            olddir, newdir, bundle, quarantine = [root / x for x in ('old', 'new', 'bundle', 'quarantine')]
+            olddir.mkdir()
+            (olddir / 'bridge.sock').write_text('v1')
+            original = {
+                'Id': 'original', 'Image': d.IMAGE, 'State': {'Running': True},
+                'Config': {'User': '995:985', 'Env': [
+                    'DSH_UNIX_RELAY_ENABLED=1', 'DSH_UNIX_RELAY_SOCKET_GID=987',
+                    'DSH_UNIX_RELAY_WORKSPACE_ID=fc24d43c-caf3-4059-8d82-5e9edd3c04c8',
+                    'DSH_UNIX_RELAY_LEAD_SESSION_ID=session-83cba7de-20a3-447b-967a-36315132db1a',
+                    'DSH_BRIDGE_SERVER_FP_SHA256=' + ':'.join(['ab'] * 32),
+                ]},
+                'HostConfig': {'AutoRemove': True, 'ReadonlyRootfs': True, 'GroupAdd': ['987'], 'PortBindings': {},
+                               'Privileged': False, 'RestartPolicy': {'Name': 'no'}},
+                'NetworkSettings': {'Networks': {'deepharness_mcp-private': {}}},
+                'Mounts': [{'Destination': str(olddir), 'Source': str(olddir), 'RW': True, 'Type': 'bind'}],
+            }
+            events = []
+            containers = {'original': original}
+            removal_checks = 0
+
+            def engine(method, path, body=None):
+                events.append(('engine', method))
+                if method == 'GET':
+                    return original
+                clone = copy.deepcopy(original)
+                clone.update(Id='recovery', State={'Running': False, 'Status': 'created'})
+                clone['HostConfig']['AutoRemove'] = False
+                containers['recovery'] = clone
+                return {'Id': 'recovery'}
+
+            def command(*args, **kwargs):
+                nonlocal removal_checks
+                events.append(args)
+                if args[:2] == ('docker', 'inspect'):
+                    key = 'original' if args[2] == d.NAME else args[2]
+                    return json.dumps([containers[key]])
+                if args[:2] == ('docker', 'ps'):
+                    if args[-1] == 'id=original':
+                        removal_checks += 1
+                        if removal_checks <= delayed_removal_checks:
+                            return 'original'  # Stop returned before removal became visible.
+                    return ''
+                if args[:2] == ('docker', 'stop'):
+                    key = args[-1]
+                    containers[key]['State']['Running'] = False
+                    if key == 'original':
+                        self.assertIn('recovery', containers)
+                        self.assertFalse(containers['recovery']['State']['Running'])
+                        del containers['original']  # Docker AutoRemove semantics.
+                    return ''
+                if args[:2] == ('docker', 'create'):
+                    containers['candidate'] = {'State': {'Running': False}}
+                    return 'candidate'
+                if args[:2] == ('docker', 'start'):
+                    key = args[2]
+                    containers[key]['State']['Running'] = key == 'recovery'
+                    if key == 'recovery':
+                        (olddir / 'bridge.sock').write_text('restored')
+                    return ''
+                return ''
+
+            with contextlib.ExitStack() as stack:
+                for key, value in {'OLD': olddir, 'NEW': newdir, 'ROOT': bundle,
+                                   'QUARANTINE': quarantine, 'FILES': {},
+                                   'MOUNTS': {str(olddir): (str(olddir), True)}}.items():
+                    stack.enter_context(patch.object(d, key, value))
+                stack.enter_context(patch.object(d, 'run', command))
+                stack.enter_context(patch.object(d, 'engine_request', engine))
+                stack.enter_context(patch.object(d, 'verify_dir'))
+                stack.enter_context(patch.object(d, 'verify_socket', return_value=True))
+                stack.enter_context(patch.object(d.os, 'chown'))
+                stack.enter_context(patch.object(d.os, 'geteuid', return_value=0))
+                stack.enter_context(patch.object(d.socket, 'gethostname', return_value='28server'))
+                stack.enter_context(patch.object(d.time, 'sleep'))
+                stack.enter_context(patch.object(d.sys, 'argv', ['deploy.py', '--apply']))
+                output = stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+                with self.assertRaises(RuntimeError):
+                    d.main()
+            self.assertNotIn('original', containers)
+            self.assertTrue(containers['recovery']['State']['Running'])
+            self.assertIn(('docker', 'rename', 'recovery', d.NAME), events)
+            self.assertIn('V1_ROLLBACK=GREEN', output.getvalue())
+            self.assertLess(events.index(('engine', 'POST')), events.index(('docker', 'stop', '--time', '15', 'original')))
+
+    def test_autoremove_backup_preserves_configuration_without_starting(self):
+        old = {
+            'Id': 'original', 'Image': 'sha256:image',
+            'Config': {'Image': 'sha256:image', 'Env': ['PRIVATE=value'], 'Cmd': ['run']},
+            'HostConfig': {'AutoRemove': True, 'ReadonlyRootfs': True, 'NetworkMode': 'private', 'OomKillDisable': None},
+            'Mounts': [{'Destination': '/socket', 'Source': '/socket', 'RW': True, 'Type': 'bind'}],
+        }
+        clone = json.loads(json.dumps(old))
+        clone.update(Id='recovery', State={'Running': False, 'Status': 'created'})
+        clone['HostConfig']['AutoRemove'] = False
+        clone['HostConfig']['OomKillDisable'] = False  # Observed real Docker default.
+        requests = []
+
+        def engine(method, path, body=None):
+            requests.append((method, path, body))
+            if method == 'GET':
+                return old
+            self.assertTrue(old['HostConfig']['AutoRemove'])
+            self.assertFalse(body['HostConfig']['AutoRemove'])
+            self.assertIs(body['HostConfig']['OomKillDisable'], False)
+            self.assertEqual(body['Env'], old['Config']['Env'])
+            return {'Id': 'recovery'}
+
+        with patch.object(d, 'engine_request', engine, create=True), patch.object(d, 'run', return_value=json.dumps([clone])) as command:
+            self.assertEqual(d.prepare_autoremove_backup(old), 'recovery')
+        self.assertEqual([x[0] for x in requests], ['GET', 'POST'])
+        self.assertEqual(command.call_args.args, ('docker', 'inspect', 'recovery'))
+        self.assertTrue(old['HostConfig']['AutoRemove'])
+
+    def test_autoremove_backup_mismatch_aborts_before_stopping_original(self):
+        old = {'Id': 'original', 'Image': 'image', 'Config': {},
+               'HostConfig': {'AutoRemove': True, 'ReadonlyRootfs': True}, 'Mounts': []}
+        wrong = dict(old, Id='recovery', State={'Running': False, 'Status': 'created'})
+        with patch.object(d, 'engine_request', side_effect=[old, {'Id': 'recovery'}], create=True), patch.object(d, 'run', return_value=json.dumps([wrong])) as command:
+            with self.assertRaises(RuntimeError):
+                d.prepare_autoremove_backup(old)
+        self.assertEqual(command.call_count, 1)
+        self.assertEqual(command.call_args.args[:2], ('docker', 'inspect'))
+
+    def test_changed_writable_layer_denies_backup_before_creation(self):
+        old = {'Id': 'original', 'HostConfig': {'AutoRemove': True}}
+        with patch.object(d, 'run', return_value='C /app/code'), patch.object(d, 'engine_request') as engine:
+            with self.assertRaises(RuntimeError):
+                d.prepare_autoremove_backup(old)
+        engine.assert_not_called()
+
+    def test_quarantine_moves_symlink_without_following_target(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            source, private = root / 'source', root / 'private'
+            source.mkdir()
+            private.mkdir()
+            victim = root / 'unrelated'
+            victim.write_text('preserve')
+            (source / 'bridge.sock').symlink_to(victim)
+            d.quarantine_endpoint(source, private, 'failed-entry')
+            self.assertTrue((private / 'failed-entry').is_symlink())
+            self.assertEqual(victim.read_text(), 'preserve')
+            self.assertFalse((source / 'bridge.sock').is_symlink())
+
+    def test_rollback_stops_candidate_before_handling_invalid_endpoints(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            old, new, private = [root / p for p in ('old', 'new', 'private')]
+            for folder in (old, new, private):
+                folder.mkdir()
+            (old / 'bridge.sock').write_text('bad candidate V1 endpoint')
+            (new / 'bridge.sock').mkdir()  # Deliberately not a valid socket.
+            events = []
+            state = {'candidate': True, 'original': False}
+
+            def command(*args, **kwargs):
+                events.append(args)
+                if args[:2] == ('docker', 'stop'):
+                    state['candidate'] = False
+                elif args[:2] == ('docker', 'inspect'):
+                    return json.dumps([{'State': {'Running': state[args[2]]}}])
+                elif args[:2] == ('docker', 'rm'):
+                    self.assertFalse(state['candidate'])
+                elif args[:2] == ('docker', 'start'):
+                    self.assertFalse(state['candidate'])
+                    self.assertFalse((old / 'bridge.sock').exists())
+                    state['original'] = True
+                    (old / 'bridge.sock').write_text('restored')
+                return ''
+
+            def verify(p):
+                self.assertFalse(state['candidate'])
+                return p.read_text() == 'restored'
+
+            with patch.object(d, 'OLD', old), patch.object(d, 'NEW', new), patch.object(d, 'run', command), patch.object(d, 'verify_socket', verify), contextlib.redirect_stdout(io.StringIO()) as out:
+                d.restore_v1('original', 'candidate', True, private)
+            self.assertTrue(state['original'])
+            self.assertEqual(events[0], ('docker', 'stop', '--time', '15', 'candidate'))
+            self.assertTrue((private / 'candidate-v2-endpoint').is_dir())
+            self.assertEqual((private / 'candidate-v1-endpoint').read_text(), 'bad candidate V1 endpoint')
+            self.assertIn('V1_ROLLBACK=GREEN', out.getvalue())
+
+    def test_cross_device_quarantine_is_denied_before_moving_endpoint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            source, private = root / 'source', root / 'private'
+            source.mkdir()
+            private.mkdir()
+            (source / 'bridge.sock').write_text('keep')
+            class Device:
+                def __init__(self, dev):
+                    self.st_dev = dev
+            with patch.object(d.os, 'fstat', side_effect=[Device(1), Device(2)]):
+                with self.assertRaises(RuntimeError):
+                    d.quarantine_endpoint(source, private, 'cross-device')
+            self.assertEqual((source / 'bridge.sock').read_text(), 'keep')
+
+    def test_quarantine_of_absent_endpoint_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            source, private = root / 'source', root / 'private'
+            source.mkdir()
+            private.mkdir()
+            d.quarantine_endpoint(source, private, 'missing')
+            self.assertEqual(list(private.iterdir()), [])
+
+
+if __name__ == '__main__':
+    unittest.main()
+

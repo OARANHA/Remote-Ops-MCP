@@ -5,6 +5,7 @@
  * supplied by the caller-side composition, never accepted in user arguments.
  */
 import {join,resolve,sep} from "node:path";
+import {createDshCleanupSkillReader} from "./platform-cleanup-skill-catalog.mjs";
 const deny=()=>{throw Error("dsh_platform_admin_denied");};
 const obj=x=>x!==null&&typeof x==="object"&&!Array.isArray(x);
 const ID=/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
@@ -32,7 +33,7 @@ function view(ws){
  */
 export function createOfficialDshPlatformAdmin({
   workspaceRegistry,workspaceController,directoryPickerController,
-  sessionController,agentTeams,workspaceParent,authorizeRead,withAuthorizedWrite,
+  sessionController,agentTeams,sessionSkillCatalog,workspaceParent,authorizeRead,withAuthorizedWrite,auditStage,
 }={}){
   if(typeof authorizeRead!=="function"||typeof withAuthorizedWrite!=="function"||
     typeof workspaceRegistry?.list!=="function"||
@@ -45,6 +46,7 @@ export function createOfficialDshPlatformAdmin({
     typeof sessionController?.resolveAgent!=="function"||
     typeof agentTeams?.createTask!=="function"||
     typeof agentTeams?.updateTask!=="function"||
+    typeof agentTeams?.listMembers!=="function"||
     typeof workspaceParent!=="string"||!workspaceParent.startsWith("/")||
     resolve(workspaceParent)!==workspaceParent||workspaceParent==="/")deny();
   const root=workspaceParent;
@@ -66,7 +68,20 @@ export function createOfficialDshPlatformAdmin({
   }
   const write=(operation,scope,work)=>
     withAuthorizedWrite(Object.freeze({operation,...scope}),work);
+  // Optional official session-addressed skill catalog. Kept inert until an
+  // independently scoped skills.list grant and private transport are wired.
+  const skillReader=sessionSkillCatalog===undefined?undefined:
+    createDshCleanupSkillReader({
+      listSkills:({sessionId})=>sessionSkillCatalog.list({sessionId},new AbortController().signal),
+      authorizeRead:scope=>authorizeRead(scope),
+    });
   return Object.freeze({
+    ...(skillReader===undefined?{}:{async listSessionSkills(input){
+      exact(input,["workspaceId","sessionId"]);
+      const ws=workspace(input.workspaceId);
+      lead(ws,input.sessionId);
+      return skillReader.list({workspaceId:ws.id,sessionId:input.sessionId});
+    }}),
     async listWorkspaces(){
       return read("workspace.list",{},()=>{
         const all=workspaceRegistry.list();
@@ -126,24 +141,56 @@ export function createOfficialDshPlatformAdmin({
         return Object.freeze([...current.sessionIds].map(id));
       });
     },
+    async listTeamMemberStates(input){
+      exact(input,["workspaceId","leadSessionId"]);
+      const ws=workspace(input.workspaceId),leadSessionId=lead(ws,input.leadSessionId);
+      return read("team.member.read",{workspaceId:ws.id,leadSessionId},async()=>{
+        lead(workspace(ws.id),leadSessionId);
+        const agent=await sessionController.resolveAgent(leadSessionId);
+        if(!agent||typeof agent.id!=="string"||typeof agent.session!=="object"||agent.session===null)deny();
+        const members=await agentTeams.listMembers(agent);
+        if(!Array.isArray(members)||members.length>200)deny();
+        const seen=new Set();
+        const states=members.map(member=>{
+          if(!obj(member)||!ID.test(member.id)||seen.has(member.id)||
+             typeof member.name!=="string"||member.name.length<1||member.name.length>80||
+             /[\0\r\n]/.test(member.name)||!["lead","teammate"].includes(member.role)||
+             typeof member.phase!=="string"||!/^[a-z][a-z0-9_-]{0,31}$/.test(member.phase))deny();
+          seen.add(member.id);
+          return Object.freeze({id:member.id,name:member.name,role:member.role,phase:member.phase});
+        });
+        return Object.freeze({workspaceId:ws.id,leadSessionId,members:Object.freeze(states)});
+      });
+    },
     async createTeammate(input){
       exact(input,["workspaceId","leadSessionId","name","description","prompt","provider","context"]);
       const ws=workspace(input.workspaceId),leadSessionId=lead(ws,input.leadSessionId);
-      const name=label(input.name,80),description=label(input.description,500);
+      const name=label(input.name,80),description=label(input.description,200);
       const prompt=label(input.prompt,4096),provider=id(input.provider);
       if(!["fresh","fork"].includes(input.context))deny();
       return write("team.member.create",{workspaceId:ws.id,leadSessionId},async()=>{
         lead(workspace(ws.id),leadSessionId);
-        const resolved=await sessionController.resolveAgent(leadSessionId);
-        if(!resolved?.agent||resolved.error||typeof agentTeams.spawnTeammate!=="function")deny();
-        const created=await agentTeams.spawnTeammate(resolved.agent,{
-          name,description,prompt:[{type:"text",text:prompt}],
-          context:input.context,provider,signal:new AbortController().signal,
-        });
-        const member=created?.member;
-        if(!ID.test(member?.id)||member?.name!==name||member?.role!=="teammate")deny();
-        return Object.freeze({workspaceId:ws.id,leadSessionId,
-          member:{id:member.id,name:member.name,role:"teammate",phase:member.phase}});
+        // Only fixed stage labels leave this adapter; never emit prompts,
+        // provider credentials, session identities or thrown error messages.
+        let stage="resolve_agent";
+        try{
+          const agent=await sessionController.resolveAgent(leadSessionId);
+          if(!agent||typeof agent.id!=="string"||typeof agent.session!=="object"||
+             typeof agentTeams.spawnTeammate!=="function")deny();
+          stage="spawn_teammate";
+          const created=await agentTeams.spawnTeammate(agent,{
+            name,description,prompt:[{type:"text",text:prompt}],
+            context:input.context,provider,signal:new AbortController().signal,
+          });
+          stage="validate_member";
+          const member=created?.member;
+          if(!ID.test(member?.id)||member?.name!==name||member?.role!=="teammate")deny();
+          return Object.freeze({workspaceId:ws.id,leadSessionId,
+            member:{id:member.id,name:member.name,role:"teammate",phase:member.phase}});
+        }catch(error){
+          try{auditStage?.({operation:"team.member.create",stage});}catch{}
+          throw error;
+        }
       });
     },
     async createTeamTask(input){
@@ -152,9 +199,9 @@ export function createOfficialDshPlatformAdmin({
       const subject=label(input.subject,240),description=label(input.description,1500);
       return write("team.task.create",{workspaceId:ws.id,leadSessionId},async()=>{
         lead(workspace(ws.id),leadSessionId);
-        const resolved=await sessionController.resolveAgent(leadSessionId);
-        if(!resolved?.agent||resolved.error)deny();
-        const task=await agentTeams.createTask(resolved.agent,{subject,description});
+        const agent=await sessionController.resolveAgent(leadSessionId);
+        if(!agent||typeof agent.id!=="string"||typeof agent.session!=="object")deny();
+        const task=await agentTeams.createTask(agent,{subject,description});
         if(!ID.test(task?.id)||!Number.isSafeInteger(task.revision))deny();
         return Object.freeze({taskId:task.id,revision:task.revision,status:task.status});
       });
@@ -169,9 +216,9 @@ export function createOfficialDshPlatformAdmin({
         (input.action==="reassign"&&input.owner===null))deny();
       return write("team.task.update",{workspaceId:ws.id,leadSessionId},async()=>{
         lead(workspace(ws.id),leadSessionId);
-        const resolved=await sessionController.resolveAgent(leadSessionId);
-        if(!resolved?.agent||resolved.error)deny();
-        const task=await agentTeams.updateTask(resolved.agent,{
+        const agent=await sessionController.resolveAgent(leadSessionId);
+        if(!agent||typeof agent.id!=="string"||typeof agent.session!=="object")deny();
+        const task=await agentTeams.updateTask(agent,{
           taskId,expectedRevision:revision,action:input.action,
           ...(input.owner===null?{}:{owner:input.owner}),
         });
