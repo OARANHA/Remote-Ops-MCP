@@ -15,7 +15,7 @@ import { redactText, redactObject } from "../security/redact.js";
 import { filterDockerListByAllowlist } from "../security/docker-list-scope.js";
 import type { ExecResult } from "../ssh/pool.js";
 import { effectiveTargetEnabled } from "../state/store.js";
-import { portainerStatus, portainerEndpoints, portainerStacks, portainerStack, updatePortainerStackEnv, redeployPortainerGitStack, createPortainerGitStack, startPortainerStack, stopPortainerStack, deletePortainerStack } from "../portainer/client.js";
+import { withPortainerConnection, portainerStatus, portainerEndpoints, portainerStacks, portainerStack, updatePortainerStackEnv, redeployPortainerGitStack, createPortainerGitStack, startPortainerStack, stopPortainerStack, deletePortainerStack } from "../portainer/client.js";
 
 /**
  * TOOLS V1 — 100% READ-ONLY.
@@ -39,6 +39,14 @@ export interface ToolDef {
   mutation?: boolean;
   destructive?: boolean;
   idempotent?: boolean;
+}
+
+function portainerSelection(args: Record<string, unknown>): "wandora" | "vigia-elus" {
+  const value = args.connection ?? "wandora";
+  if (value !== "wandora" && value !== "vigia-elus") {
+    throw new OpsError("INVALID_ARGUMENT", "conexão Portainer desconhecida");
+  }
+  return value;
 }
 
 // ---------- helpers ----------
@@ -1273,63 +1281,67 @@ const TOOL_DEFS: ToolDef[] = [
   {
     name: "portainer_status",
     description: "Valida a conexão autenticada com a API do Portainer configurada no control plane e retorna somente status redigido. O token nunca é retornado.",
-    inputSchema: {},
-    run: async () => portainerStatus(),
+    inputSchema: { connection: z.enum(["wandora", "vigia-elus"]).default("wandora") },
+    run: async (args) => withPortainerConnection(portainerSelection(args), () => portainerStatus()),
   },
   {
     name: "portainer_endpoints_list",
     description: "Lista os ambientes/endpoints do Portainer necessários para criar e operar stacks. Não retorna credenciais nem URLs internas.",
-    inputSchema: {},
-    run: async () => portainerEndpoints(),
+    inputSchema: { connection: z.enum(["wandora", "vigia-elus"]).default("wandora") },
+    run: async (args) => withPortainerConnection(portainerSelection(args), () => portainerEndpoints()),
   },
   {
     name: "portainer_stacks_list",
     description: "Lista stacks gerenciadas pelo Portainer com metadados seguros. Valores de variáveis de ambiente são sempre redigidos.",
-    inputSchema: {},
-    run: async () => portainerStacks(),
+    inputSchema: { connection: z.enum(["wandora", "vigia-elus"]).default("wandora") },
+    run: async (args) => withPortainerConnection(portainerSelection(args), () => portainerStacks()),
   },
   {
     name: "portainer_stack_get",
     description: "Inspeciona uma stack do Portainer por ID. Valores de variáveis de ambiente e credenciais Git são sempre redigidos.",
     inputSchema: {
+      connection: z.enum(["wandora", "vigia-elus"]).default("wandora"),
       stack_id: z.number().int().positive(),
     },
-    run: async (args) => portainerStack(Number(args.stack_id)),
+    run: async (args) => withPortainerConnection(portainerSelection(args), () => portainerStack(Number(args.stack_id))),
   },
   {
     name: "portainer_stack_start",
     description: "Inicia uma stack parada no Portainer. Exige stack_id e confirmação exata do nome da stack.",
     inputSchema: {
+      connection: z.enum(["wandora", "vigia-elus"]).default("wandora"),
       stack_id: z.number().int().positive(),
       confirm_stack_name: z.string().min(1).max(120),
     },
     mutation: true,
     destructive: false,
     idempotent: false,
-    run: async (args) => startPortainerStack({
+    run: async (args) => withPortainerConnection(portainerSelection(args), () => startPortainerStack({
       stackId: Number(args.stack_id),
       confirmStackName: String(args.confirm_stack_name),
-    }),
+    })),
   },
   {
     name: "portainer_stack_stop",
     description: "Para uma stack no Portainer. Exige stack_id e confirmação exata do nome da stack.",
     inputSchema: {
+      connection: z.enum(["wandora", "vigia-elus"]).default("wandora"),
       stack_id: z.number().int().positive(),
       confirm_stack_name: z.string().min(1).max(120),
     },
     mutation: true,
     destructive: true,
     idempotent: false,
-    run: async (args) => stopPortainerStack({
+    run: async (args) => withPortainerConnection(portainerSelection(args), () => stopPortainerStack({
       stackId: Number(args.stack_id),
       confirmStackName: String(args.confirm_stack_name),
-    }),
+    })),
   },
   {
     name: "portainer_stack_delete",
     description: "Remove uma stack gerenciada pelo Portainer. Exige stack_id e confirmação exata do nome; volumes só são removidos quando remove_volumes=true.",
     inputSchema: {
+      connection: z.enum(["wandora", "vigia-elus"]).default("wandora"),
       stack_id: z.number().int().positive(),
       confirm_stack_name: z.string().min(1).max(120),
       remove_volumes: z.boolean().default(false),
@@ -1337,16 +1349,17 @@ const TOOL_DEFS: ToolDef[] = [
     mutation: true,
     destructive: true,
     idempotent: false,
-    run: async (args) => deletePortainerStack({
+    run: async (args) => withPortainerConnection(portainerSelection(args), () => deletePortainerStack({
       stackId: Number(args.stack_id),
       confirmStackName: String(args.confirm_stack_name),
       removeVolumes: args.remove_volumes === true,
-    }),
+    })),
   },
   {
     name: "portainer_stack_update_env",
     description: "Atualiza variáveis de ambiente de uma stack Portainer e faz redeploy preservando as demais variáveis por padrão. Para stacks Git usa o fluxo git/redeploy; para stacks Compose reenvia o stack file atual. Exige confirmação exata do nome da stack.",
     inputSchema: {
+      connection: z.enum(["wandora", "vigia-elus"]).default("wandora"),
       stack_id: z.number().int().positive(),
       confirm_stack_name: z.string().min(1).max(120),
       changes: z.array(z.object({
@@ -1361,7 +1374,7 @@ const TOOL_DEFS: ToolDef[] = [
     mutation: true,
     destructive: true,
     idempotent: false,
-    run: async (args) => {
+    run: async (args) => withPortainerConnection(portainerSelection(args), async () => {
       const changes = (args.changes ?? []) as Array<{name:string;value:string}>;
       const unsetNames = (args.unset_names ?? []) as string[];
       if (changes.length === 0 && unsetNames.length === 0 && args.replace_all !== true) {
@@ -1376,12 +1389,13 @@ const TOOL_DEFS: ToolDef[] = [
         pullImage: args.pull_image === true,
         prune: args.prune === true,
       });
-    },
+    }),
   },
   {
     name: "portainer_stack_git_redeploy",
     description: "Faz Pull and redeploy de uma stack criada a partir de Git, preservando as variáveis atuais. Exige confirmação exata do nome da stack.",
     inputSchema: {
+      connection: z.enum(["wandora", "vigia-elus"]).default("wandora"),
       stack_id: z.number().int().positive(),
       confirm_stack_name: z.string().min(1).max(120),
       pull_image: z.boolean().default(true),
@@ -1390,17 +1404,18 @@ const TOOL_DEFS: ToolDef[] = [
     mutation: true,
     destructive: true,
     idempotent: false,
-    run: async (args) => redeployPortainerGitStack({
+    run: async (args) => withPortainerConnection(portainerSelection(args), () => redeployPortainerGitStack({
       stackId: Number(args.stack_id),
       confirmStackName: String(args.confirm_stack_name),
       pullImage: args.pull_image !== false,
       prune: args.prune === true,
-    }),
+    })),
   },
   {
     name: "portainer_stack_create_git",
     description: "Cria no Portainer uma nova stack Docker Standalone a partir de um repositório Git público. As variáveis ficam gerenciáveis no Portainer. Não aceita credenciais Git nesta primeira versão.",
     inputSchema: {
+      connection: z.enum(["wandora", "vigia-elus"]).default("wandora"),
       endpoint_id: z.number().int().positive(),
       name: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,62}$/),
       confirm_stack_name: z.string().min(1).max(63),
@@ -1415,7 +1430,7 @@ const TOOL_DEFS: ToolDef[] = [
     mutation: true,
     destructive: false,
     idempotent: false,
-    run: async (args) => {
+    run: async (args) => withPortainerConnection(portainerSelection(args), async () => {
       const name = String(args.name);
       if (String(args.confirm_stack_name) !== name) {
         throw new OpsError("INVALID_ARGUMENT", "confirm_stack_name deve ser exatamente igual a name");
@@ -1428,7 +1443,7 @@ const TOOL_DEFS: ToolDef[] = [
         composeFile: String(args.compose_file),
         env: (args.env ?? []) as Array<{name:string;value:string}>,
       });
-    },
+    }),
   },
 
   // ============ OpenHands Agent Mesh (fixed local backend, opt-in capabilities) ============

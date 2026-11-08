@@ -43,6 +43,8 @@ const EnvSchema = z.object({
     .transform((value) => value.replace(/\/+$/, ""))
     .default("https://portainer.wandora.com.br"),
   PORTAINER_API_KEY_FILE: z.string().default("/app/secrets/portainer_api_key"),
+  PORTAINER_VIGIA_URL: z.string().url().refine((url) => url === "https://ops-vigia.wandora.com.br", "destino Vigia não autorizado").default("https://ops-vigia.wandora.com.br"),
+  PORTAINER_VIGIA_API_KEY_FILE: z.literal("/app/secrets/portainer_vigia_api_key").default("/app/secrets/portainer_vigia_api_key"),
   PORTAINER_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120_000).default(20_000),
 });
 

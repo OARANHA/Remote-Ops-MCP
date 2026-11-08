@@ -17,6 +17,8 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: npm run build
+      - name: Verify isolated Portainer connections and credentials
+        run: node test-portainer-multi-instance.mjs
       - run: node --experimental-strip-types --test test-openhands-bridge.mjs
       - run: node --experimental-strip-types --test test-docker-list-scope.mjs
       - run: node --test integrations/deepharness/*.test.mjs
