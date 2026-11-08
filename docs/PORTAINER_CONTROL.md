@@ -39,6 +39,40 @@ No Portainer:
 
 Não envie o token em issue, commit ou pull request.
 
+## Instâncias nomeadas (Wandora e Vigia)
+
+O MCP usa duas conexões **fixas e independentes**, sem endpoint arbitrário informado pelo solicitante:
+
+| `connection` | Portainer | Arquivo dentro do contêiner |
+| --- | --- | --- |
+| `wandora` (padrão legado) | `https://portainer.wandora.com.br` | `/app/secrets/portainer_api_key` |
+| `vigia-elus` | `https://ops-vigia.wandora.com.br` | `/app/secrets/portainer_vigia_api_key` |
+
+Os arquivos são distintos. **Não substitua** `portainer_api_key` com o token do Vigia.
+No servidor Wandora inspecionado em 2026-11-08, o mount real do Docker
+`remote-ops-mcp` foi confirmado como:
+
+`/opt/wandora/stacks/remote-ops-mcp/runtime/secrets -> /app/secrets`
+
+Logo, no host, guarde o token Vigia em
+`/opt/wandora/stacks/remote-ops-mcp/runtime/secrets/portainer_vigia_api_key`.
+Arquivo restrito, não comitar e não retornar token ao cliente. Mantenha o token
+Wandora no arquivo `portainer_api_key`. Se o token antigo foi substituído,
+restaure/rotacione **somente** o token Wandora antes de reiniciar o MCP.
+
+Todas as ferramentas `portainer_*` aceitam o parâmetro opcional
+`connection: "wandora" | "vigia-elus"`. O padrão é `wandora` por
+compatibilidade. Selecione `vigia-elus` **explicitamente** em toda operação
+sobre a stack ELUS360. IDs de stacks e endpoints são locais a cada instância:
+sempre liste e confirme a stack na instância selecionada antes de mutações.
+A seleção é isolada por contexto assíncrono; cada conexão usa credencial e cache
+independentes. Recarregue o processo depois de rotacionar uma chave, porque a
+chave bem-sucedida pode permanecer em cache.
+
+O conjunto de destinos é fechado no código. A conexão Vigia é fixada em
+`https://ops-vigia.wandora.com.br`; não há URL arbitrária por parâmetro.
+Manter `prune:false` em redeploy, preservar digests e verificar o rollback.
+
 ## Ferramentas adicionadas
 
 ### Leitura
