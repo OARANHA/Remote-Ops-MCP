@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { env } from "../lib/env.js";
 import { OpsError } from "../lib/errors.js";
 import { redactObject, redactText } from "../security/redact.js";
@@ -6,30 +7,53 @@ import { redactObject, redactText } from "../security/redact.js";
 type JsonObject = Record<string, unknown>;
 type EnvVar = { name: string; value: string };
 
-let cachedApiKey: string | undefined;
+type PortainerConnection = "wandora" | "vigia-elus";
+const portainerScope = new AsyncLocalStorage<PortainerConnection>();
+const apiKeyCache = new Map<PortainerConnection, string>();
 
-async function apiKey(): Promise<string> {
-  if (cachedApiKey) return cachedApiKey;
+export function withPortainerConnection<T>(
+  connection: PortainerConnection,
+  fn: () => Promise<T>,
+): Promise<T> {
+  if (connection !== "wandora" && connection !== "vigia-elus") {
+    throw new OpsError("INVALID_ARGUMENT", "conexão Portainer desconhecida");
+  }
+  return portainerScope.run(connection, fn);
+}
+
+function activeConnection(): PortainerConnection {
+  return portainerScope.getStore() ?? "wandora";
+}
+
+function connectionConfig(connection: PortainerConnection): { url: string; keyFile: string } {
+  return connection === "vigia-elus"
+    ? { url: env.PORTAINER_VIGIA_URL, keyFile: env.PORTAINER_VIGIA_API_KEY_FILE }
+    : { url: env.PORTAINER_URL, keyFile: env.PORTAINER_API_KEY_FILE };
+}
+
+async function apiKey(connection: PortainerConnection): Promise<string> {
+  const cached = apiKeyCache.get(connection);
+  if (cached) return cached;
   let raw: string;
   try {
-    raw = await readFile(env.PORTAINER_API_KEY_FILE, "utf8");
+    raw = await readFile(connectionConfig(connection).keyFile, "utf8");
   } catch {
     throw new OpsError(
       "CAPABILITY_DENIED",
       "Portainer API não configurada",
-      `crie um access token no Portainer e grave-o somente em ${env.PORTAINER_API_KEY_FILE}`,
+      `configure a credencial da conexão ${connection} no arquivo de segredos dedicado`,
     );
   }
   const token = raw.trim();
   if (!token || token.length < 16 || /\s/.test(token)) {
     throw new OpsError("CAPABILITY_DENIED", "token do Portainer ausente ou inválido");
   }
-  cachedApiKey = token;
+  apiKeyCache.set(connection, token);
   return token;
 }
 
-function apiUrl(path: string): string {
-  const base = env.PORTAINER_URL.replace(/\/+$/, "");
+function apiUrl(path: string, connection: PortainerConnection): string {
+  const base = connectionConfig(connection).url.replace(/\/+$/, "");
   const normalized = path.startsWith("/") ? path : `/${path}`;
   return `${base}/api${normalized}`;
 }
@@ -38,11 +62,12 @@ async function requestJson<T = unknown>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
-  const token = await apiKey();
+  const connection = activeConnection();
+  const token = await apiKey(connection);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), env.PORTAINER_TIMEOUT_MS);
   try {
-    const response = await fetch(apiUrl(path), {
+    const response = await fetch(apiUrl(path, connection), {
       ...init,
       headers: {
         Accept: "application/json",
@@ -69,7 +94,7 @@ async function requestJson<T = unknown>(
           ? JSON.stringify(redactObject(payload)).slice(0, 800)
           : String(payload ?? "").slice(0, 800);
       if (response.status === 401 || response.status === 403) {
-        cachedApiKey = undefined;
+        apiKeyCache.delete(connection);
         throw new OpsError(
           "CAPABILITY_DENIED",
           `Portainer recusou a credencial (HTTP ${response.status})`,
@@ -165,7 +190,8 @@ function stackName(stack: JsonObject): string {
 export async function portainerStatus(): Promise<unknown> {
   const status = await requestJson<JsonObject>("/system/status");
   return redactObject({
-    configuredUrl: env.PORTAINER_URL,
+    connection: activeConnection(),
+    configuredUrl: connectionConfig(activeConnection()).url,
     status,
   });
 }
